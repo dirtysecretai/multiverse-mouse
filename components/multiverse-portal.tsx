@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { AlertTriangle, ExternalLink, Terminal } from "lucide-react"
+import { AlertTriangle, ChevronUp, ChevronDown, ExternalLink, Terminal } from "lucide-react"
 
 // --- ICONS ---
 const PatreonIcon = () => (
@@ -22,16 +22,15 @@ const InstagramIcon = () => (
   </svg>
 )
 
-// --- INTERFACES ---
 interface AdminState { isShopOpen: boolean; isMaintenanceMode: boolean }
 interface CarouselImage { id: string; url: string; alt: string }
 
-// --- COMPONENTS ---
+// --- RESTORED: STYLIZED PORTAL CARD ---
 function PortalCard({ icon, label, sublabel, variant, href }: { icon: any, label: string, sublabel: string, variant: string, href: string }) {
   const getStyle = () => {
-    if (variant === "primary") return "border-cyan-500/40 bg-cyan-500/5 hover:shadow-[0_0_30px_rgba(0,255,255,0.1)]"
-    if (variant === "secondary") return "border-fuchsia-500/30 bg-fuchsia-500/5 hover:shadow-[0_0_30px_rgba(255,0,255,0.1)]"
-    return "border-slate-700/50 bg-slate-900/50"
+    if (variant === "primary") return "border-cyan-500/40 bg-cyan-500/5 hover:shadow-[0_0_30px_rgba(0,255,255,0.1)] hover:border-cyan-400"
+    if (variant === "secondary") return "border-fuchsia-500/30 bg-fuchsia-500/5 hover:shadow-[0_0_30px_rgba(255,0,255,0.1)] hover:border-fuchsia-400"
+    return "border-slate-700/50 bg-slate-900/50 hover:border-slate-500"
   }
 
   return (
@@ -48,18 +47,26 @@ function PortalCard({ icon, label, sublabel, variant, href }: { icon: any, label
   )
 }
 
+// --- RESTORED: MANUAL CONTROLS & 9:16 ASPECT ---
 function VerticalCarousel({ images, side }: { images: CarouselImage[]; side: string }) {
   const [index, setIndex] = useState(0)
+  
+  const goUp = () => setIndex((p) => (p - 1 + images.length) % images.length)
+  const goDown = () => setIndex((p) => (p + 1) % images.length)
+
   useEffect(() => {
-    const int = setInterval(() => setIndex((p) => (p + 1) % images.length), 4000)
+    const int = setInterval(goDown, 5000)
     return () => clearInterval(int)
   }, [images.length])
 
   return (
-    <div className="h-full flex flex-col border border-cyan-500/20 bg-slate-950/50 rounded-xl overflow-hidden">
+    <div className="h-full flex flex-col border border-cyan-500/20 bg-slate-950/50 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(0,0,0,0.5)]">
       <div className="px-3 py-2 border-b border-cyan-500/20 bg-slate-900/80 flex items-center justify-between">
-        <span className="text-[10px] font-mono text-cyan-400">FEED_{side.toUpperCase()}</span>
-        <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full bg-red-500/50" /><div className="w-1.5 h-1.5 rounded-full bg-green-500/50" /></div>
+        <div className="flex items-center gap-2">
+           <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full bg-red-500/50" /><div className="w-1.5 h-1.5 rounded-full bg-green-500/50" /></div>
+           <span className="text-[10px] font-mono text-cyan-400 tracking-widest">FEED_{side.toUpperCase()}</span>
+        </div>
+        <button onClick={goUp} className="text-cyan-400/50 hover:text-cyan-400"><ChevronUp size={14}/></button>
       </div>
       <div className="relative flex-1 overflow-hidden aspect-[9/16]">
         <div className="absolute inset-0 transition-transform duration-700 ease-in-out" style={{ transform: `translateY(-${index * 100}%)` }}>
@@ -70,6 +77,11 @@ function VerticalCarousel({ images, side }: { images: CarouselImage[]; side: str
             </div>
           ))}
         </div>
+        {/* RESTORED: SCANLINE OVERLAY */}
+        <div className="absolute inset-0 pointer-events-none bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,rgba(0,255,255,0.03)_2px,rgba(0,255,255,0.03)_4px)]" />
+      </div>
+      <div className="px-3 py-1 border-t border-cyan-500/20 bg-slate-900/80 flex justify-center">
+         <button onClick={goDown} className="text-cyan-400/50 hover:text-cyan-400"><ChevronDown size={14}/></button>
       </div>
     </div>
   )
@@ -77,10 +89,8 @@ function VerticalCarousel({ images, side }: { images: CarouselImage[]; side: str
 
 export default function MultiversePortal() {
   const [adminState, setAdminState] = useState<AdminState>({ isShopOpen: false, isMaintenanceMode: false })
-  const [echoMessage, setEchoMessage] = useState("")
-  const [visibleName, setVisibleName] = useState(false)
-  const [userName, setUserName] = useState("")
-  const [isTransmitting, setIsTransmitting] = useState(false)
+  const [echoMessage, setEchoMessage] = useState(""); const [visibleName, setVisibleName] = useState(false)
+  const [userName, setUserName] = useState(""); const [isTransmitting, setIsTransmitting] = useState(false)
   const [submitSuccess, setSubmitSuccess] = useState(false)
 
   const leftImages = [
@@ -98,18 +108,19 @@ export default function MultiversePortal() {
     { id: "19", url: "https://i.imgur.com/L3uqQTb.jpeg", alt: "19" }, { id: "20", url: "https://i.imgur.com/1rbyw9S.jpeg", alt: "20" },
   ]
 
-  useEffect(() => {
-    const fetchConfig = async () => {
-      try {
-        const res = await fetch('/api/admin/config')
-        if (res.ok) { 
-          const data = await res.json()
-          setAdminState({ isShopOpen: !!data.isShopOpen, isMaintenanceMode: !!data.isMaintenanceMode }) 
-        }
-      } catch (e) { console.error("Sync failed") }
-    }
-    fetchConfig(); const interval = setInterval(fetchConfig, 10000); return () => clearInterval(interval)
+  const fetchConfig = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/config')
+      if (res.ok) { 
+        const d = await res.json()
+        setAdminState({ isShopOpen: !!d.isShopOpen, isMaintenanceMode: !!d.isMaintenanceMode }) 
+      }
+    } catch (e) { console.error("Config fetch failed") }
   }, [])
+
+  useEffect(() => {
+    fetchConfig(); const i = setInterval(fetchConfig, 10000); return () => clearInterval(i)
+  }, [fetchConfig])
 
   const handleSubmit = async () => {
     if (!echoMessage.trim()) return; setIsTransmitting(true)
@@ -122,52 +133,71 @@ export default function MultiversePortal() {
     } catch (e) { alert("Signal lost.") } finally { setIsTransmitting(false) }
   }
 
-  if (adminState.isMaintenanceMode) {
-    return (
-      <div className="min-h-screen bg-[#050810] flex flex-col items-center justify-center p-6 text-center">
-        <div className="mb-8 p-6 border border-yellow-500/30 bg-yellow-500/5 rounded-2xl backdrop-blur-md">
-          <div className="flex items-center justify-center gap-2 text-yellow-500 mb-4 font-mono text-sm tracking-widest">
-            <AlertTriangle className="animate-pulse" /> SYSTEMS_OFFLINE
-          </div>
-          <h1 className="text-4xl font-black italic text-white tracking-tighter">MULTIVERSE MOUSE</h1>
-          <p className="mt-4 text-slate-500 text-xs font-mono uppercase tracking-[0.3em]">&gt; Initializing Repair Sequences...</p>
-        </div>
-        <div className="w-full max-w-lg space-y-3">
-          <PortalCard icon={<PatreonIcon />} label="Enter the Patreon" sublabel="EXCLUSIVE_CONTENT" variant="primary" href="https://www.patreon.com/DirtySecretAi" />
-          <PortalCard icon={<InstagramIcon />} label="Main Instagram" sublabel="@MULTIVERSEMOUSE" variant="default" href="https://www.instagram.com/multiuniverseai" />
-          <PortalCard icon={<InstagramIcon />} label="Backup Portal #1" sublabel="@DSECRETAI" variant="secondary" href="https://www.instagram.com/dsecretai" />
-          <PortalCard icon={<InstagramIcon />} label="Backup Portal #2" sublabel="@SYNTHETICARCADIA" variant="secondary" href="https://www.instagram.com/syntheticarcadia" />
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-[#050810] grid grid-cols-1 lg:grid-cols-[300px_1fr_300px] gap-6 p-6 overflow-hidden">
-      <aside className="hidden lg:block h-[calc(100vh-48px)] sticky top-6"><VerticalCarousel images={leftImages} side="left" /></aside>
-      <main className="flex flex-col items-center py-4">
-        <h1 className="text-4xl font-black italic mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500">MULTIVERSE MOUSE</h1>
-        <p className="text-slate-500 font-mono text-[10px] mb-8 uppercase tracking-[0.3em]">&gt; Custom content portal // New drops weekly</p>
-        
-        <div className="w-full max-w-lg space-y-3 mb-8">
-          <PortalCard icon={<PatreonIcon />} label="Enter the Patreon" sublabel="EXCLUSIVE_CONTENT" variant="primary" href="https://www.patreon.com/DirtySecretAi" />
-          <PortalCard icon={<InstagramIcon />} label="Main Instagram" sublabel="@MULTIVERSEMOUSE" variant="default" href="https://www.instagram.com/multiuniverseai" />
-          <PortalCard icon={<InstagramIcon />} label="Backup Portal #1" sublabel="@DSECRETAI" variant="secondary" href="https://www.instagram.com/dsecretai" />
-          <PortalCard icon={<InstagramIcon />} label="Backup Portal #2" sublabel="@SYNTHETICARCADIA" variant="secondary" href="https://www.instagram.com/syntheticarcadia" />
-        </div>
-
-        <div className="w-full max-w-lg bg-slate-900/30 p-5 rounded-xl border border-slate-800/50 backdrop-blur-sm">
-          <div className="flex items-center gap-2 mb-4 text-cyan-400 font-mono text-xs"><Terminal size={14} /> echo_chamber.exe</div>
-          {visibleName && <Input value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Alias..." className="bg-slate-950 border-slate-800 mb-3 font-mono text-sm" />}
-          <Textarea value={echoMessage} onChange={(e) => setEchoMessage(e.target.value)} placeholder="Submit Request..." className="bg-slate-950 border-slate-800 mb-4 resize-none min-h-[100px] font-mono text-sm" />
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 uppercase tracking-widest"><Switch checked={visibleName} onCheckedChange={setVisibleName} /> VISIBLE_NAME</div>
-            <Button onClick={handleSubmit} disabled={isTransmitting || !echoMessage.trim()} className="bg-cyan-500 hover:bg-cyan-400 text-black font-mono px-8">{isTransmitting ? "..." : "TRANSMIT"}</Button>
+    <div className="min-h-screen bg-[#050810] relative overflow-hidden font-mono">
+      {/* RESTORED: BACKGROUND GRID EFFECT */}
+      <div className="fixed inset-0 bg-[linear-gradient(rgba(0,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
+      
+      {adminState.isMaintenanceMode ? (
+        <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-6 text-center">
+          <div className="mb-8 p-6 border border-yellow-500/30 bg-yellow-500/5 rounded-2xl backdrop-blur-md">
+            <div className="flex items-center justify-center gap-2 text-yellow-500 mb-4 text-xs tracking-[0.4em] font-bold">
+              <AlertTriangle className="animate-pulse" /> SYSTEMS_OFFLINE
+            </div>
+            <h1 className="text-4xl md:text-5xl font-black italic text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]">MULTIVERSE MOUSE</h1>
+            <p className="mt-4 text-slate-500 text-[10px] tracking-[0.3em] uppercase">&gt; Initializing Repair Sequences...</p>
           </div>
-          {submitSuccess && <p className="mt-4 text-cyan-400 text-center font-mono text-[10px] animate-pulse">✓ TRANSMISSION_RECEIVED</p>}
+          <div className="w-full max-w-lg space-y-3">
+             <PortalCard icon={<PatreonIcon />} label="Enter the Patreon" sublabel="EXCLUSIVE_CONTENT" variant="primary" href="https://www.patreon.com/DirtySecretAi" />
+             <PortalCard icon={<InstagramIcon />} label="Main Instagram" sublabel="@MULTIVERSEMOUSE" variant="default" href="https://www.instagram.com/multiuniverseai" />
+             <PortalCard icon={<InstagramIcon />} label="Backup Portal #1" sublabel="@DSECRETAI" variant="secondary" href="https://www.instagram.com/dsecretai" />
+             <PortalCard icon={<InstagramIcon />} label="Backup Portal #2" sublabel="@SYNTHETICARCADIA" variant="secondary" href="https://www.instagram.com/syntheticarcadia" />
+          </div>
         </div>
-      </main>
-      <aside className="hidden lg:block h-[calc(100vh-48px)] sticky top-6"><VerticalCarousel images={rightImages} side="right" /></aside>
+      ) : (
+        <main className="relative z-10 grid grid-cols-1 lg:grid-cols-[300px_1fr_300px] gap-6 p-6 max-w-[1600px] mx-auto">
+          <aside className="hidden lg:block h-[calc(100vh-48px)] sticky top-6"><VerticalCarousel images={leftImages} side="left" /></aside>
+          
+          <div className="flex flex-col items-center py-4">
+            <h1 className="text-4xl md:text-5xl font-black italic mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500 text-center">MULTIVERSE MOUSE</h1>
+            <p className="text-slate-500 text-[10px] mb-8 uppercase tracking-[0.3em] text-center">&gt; Custom content portal // New drops weekly</p>
+
+            <div className={`px-4 py-2 rounded-lg text-xs mb-8 border ${adminState.isShopOpen ? 'border-cyan-500/50 text-cyan-400 bg-cyan-500/10' : 'border-slate-800 text-slate-600 bg-slate-900/50'}`}>
+              {adminState.isShopOpen ? 'STATUS: TRANSMITTING' : 'STATUS: <OFFLINE>'}
+            </div>
+
+            <div className="w-full max-w-lg space-y-3 mb-10">
+              <PortalCard icon={<PatreonIcon />} label="Enter the Patreon" sublabel="EXCLUSIVE_CONTENT" variant="primary" href="https://www.patreon.com/DirtySecretAi" />
+              <PortalCard icon={<InstagramIcon />} label="Main Instagram" sublabel="@MULTIVERSEMOUSE" variant="default" href="https://www.instagram.com/multiuniverseai" />
+              <PortalCard icon={<InstagramIcon />} label="Backup Portal #1" sublabel="@DSECRETAI" variant="secondary" href="https://www.instagram.com/dsecretai" />
+              <PortalCard icon={<InstagramIcon />} label="Backup Portal #2" sublabel="@SYNTHETICARCADIA" variant="secondary" href="https://www.instagram.com/syntheticarcadia" />
+            </div>
+
+            <div className="w-full max-w-lg bg-slate-900/30 p-5 rounded-xl border border-slate-800/50 backdrop-blur-sm">
+              <div className="flex items-center gap-2 mb-4 text-cyan-400 font-mono text-xs"><Terminal size={14} /> echo_chamber.exe</div>
+              {visibleName && (
+                <Input value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Alias..." className="bg-slate-950 border-slate-800 mb-3 text-white placeholder-slate-600" />
+              )}
+              {/* RESTORED: VISIBLE TEXT FIX */}
+              <Textarea 
+                value={echoMessage} 
+                onChange={(e) => setEchoMessage(e.target.value)} 
+                placeholder="Submit Request..." 
+                className="bg-slate-950 border-slate-800 mb-4 resize-none min-h-[120px] text-white placeholder-slate-600 focus:border-cyan-500/50" 
+              />
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase tracking-widest"><Switch checked={visibleName} onCheckedChange={setVisibleName} className="data-[state=checked]:bg-cyan-500" /> VISIBLE_NAME</div>
+                <Button onClick={handleSubmit} disabled={isTransmitting || !echoMessage.trim()} className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold px-8 transition-all hover:shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                  {isTransmitting ? "..." : "TRANSMIT"}
+                </Button>
+              </div>
+              {submitSuccess && <p className="mt-4 text-cyan-400 text-center text-[10px] animate-pulse">✓ TRANSMISSION_RECEIVED</p>}
+            </div>
+          </div>
+
+          <aside className="hidden lg:block h-[calc(100vh-48px)] sticky top-6"><VerticalCarousel images={rightImages} side="right" /></aside>
+        </main>
+      )}
     </div>
   )
 }
