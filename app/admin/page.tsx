@@ -55,11 +55,16 @@ export default function AdminPage() {
     }
   }
 
+  // app/admin/page.tsx - Replace your current useEffect with this:
   useEffect(() => {
     const authStatus = localStorage.getItem("multiverse-admin-auth")
     if (authStatus === "true") {
       setIsAuthenticated(true)
       fetchCloudData()
+
+      // Add a heartbeat: Refresh data every 10 seconds
+      const interval = setInterval(fetchCloudData, 10000)
+      return () => clearInterval(interval)
     }
   }, [])
 
@@ -73,8 +78,24 @@ export default function AdminPage() {
   }
 
   const updateAdminState = async (updates: Partial<AdminState>) => {
-    const newState = { ...adminState, ...updates }
+    // Force the new values to be booleans using !!
+    const newState = { 
+      isShopOpen: !!(updates.isShopOpen ?? adminState.isShopOpen), 
+      isMaintenanceMode: !!(updates.isMaintenanceMode ?? adminState.isMaintenanceMode) 
+    }
+    
     setAdminState(newState) // Update UI immediately
+
+    try {
+      await fetch('/api/admin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newState),
+      })
+    } catch (err) {
+      console.error("Cloud sync failed:", err)
+    }
+  }
 
     try {
       await fetch('/api/admin/config', {

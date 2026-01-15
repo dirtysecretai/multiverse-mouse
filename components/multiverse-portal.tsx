@@ -315,16 +315,28 @@ export default function MultiversePortal() {
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [isTransmitting, setIsTransmitting] = useState(false)
 
-  // Load admin state from localStorage
+  // Replace lines 246-271 with this:
   useEffect(() => {
-    const savedState = localStorage.getItem("multiverse-admin-state")
-    if (savedState) {
+    const fetchGlobalConfig = async () => {
       try {
-        setAdminState(JSON.parse(savedState))
-      } catch (error) {
-        console.error("Failed to parse admin state:", error)
+        const response = await fetch('/api/admin/config')
+        if (response.ok) {
+          const data = await response.json()
+          setAdminState({
+            isShopOpen: !!data.isShopOpen,
+            isMaintenanceMode: !!data.isMaintenanceMode,
+          })
+        }
+      } catch (err) {
+        console.error("Portal sync failed:", err)
       }
     }
+
+    fetchGlobalConfig()
+    // Optional: Refresh every 30 seconds to catch admin changes
+    const interval = setInterval(fetchGlobalConfig, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === "multiverse-admin-state" && e.newValue) {
