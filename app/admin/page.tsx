@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -14,7 +14,7 @@ interface AdminState {
 }
 
 interface EchoMessage {
-  id: number
+  id: number // Matched to Prisma schema
   message: string
   visibleName: boolean
   name?: string
@@ -33,40 +33,39 @@ export default function AdminPage() {
 
   const ADMIN_PASSWORD = "multipassword1010"
 
-  const fetchCloudData = async () => {
+  const fetchCloudData = useCallback(async () => {
     setIsLoading(true)
     try {
-      // Fetch Messages
       const msgRes = await fetch('/api/echo')
-      const msgData = await msgRes.json()
-      setEchoMessages(msgData)
+      if (msgRes.ok) {
+        const msgData = await msgRes.json()
+        setEchoMessages(Array.isArray(msgData) ? msgData : [])
+      }
 
-      // Fetch Site Config
       const configRes = await fetch('/api/admin/config')
-      const configData = await configRes.json()
-      setAdminState({
-        isShopOpen: configData.isShopOpen,
-        isMaintenanceMode: configData.isMaintenanceMode,
-      })
+      if (configRes.ok) {
+        const configData = await configRes.json()
+        setAdminState({
+          isShopOpen: !!configData.isShopOpen, // Boolean safety
+          isMaintenanceMode: !!configData.isMaintenanceMode,
+        })
+      }
     } catch (err) {
       console.error("Sync failed:", err)
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
 
-  // app/admin/page.tsx - Replace your current useEffect with this:
   useEffect(() => {
     const authStatus = localStorage.getItem("multiverse-admin-auth")
     if (authStatus === "true") {
       setIsAuthenticated(true)
       fetchCloudData()
-
-      // Add a heartbeat: Refresh data every 10 seconds
-      const interval = setInterval(fetchCloudData, 10000)
+      const interval = setInterval(fetchCloudData, 10000) // 10s Heartbeat
       return () => clearInterval(interval)
     }
-  }, [])
+  }, [fetchCloudData])
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
@@ -78,24 +77,11 @@ export default function AdminPage() {
   }
 
   const updateAdminState = async (updates: Partial<AdminState>) => {
-    // Force the new values to be booleans using !!
     const newState = { 
       isShopOpen: !!(updates.isShopOpen ?? adminState.isShopOpen), 
       isMaintenanceMode: !!(updates.isMaintenanceMode ?? adminState.isMaintenanceMode) 
     }
-    
-    setAdminState(newState) // Update UI immediately
-
-    try {
-      await fetch('/api/admin/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newState),
-      })
-    } catch (err) {
-      console.error("Cloud sync failed:", err)
-    }
-  }
+    setAdminState(newState)
 
     try {
       await fetch('/api/admin/config', {
@@ -147,12 +133,12 @@ export default function AdminPage() {
             <div className="text-2xl font-bold">{adminState.isShopOpen ? "OPEN" : "CLOSED"}</div>
             <p className="text-xs text-slate-500">GLOBAL_SHOP_STATUS</p>
           </div>
-          <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/40">
+          <div className="p-6 rounded-xl border border-yellow-500/30 bg-slate-900/40">
             <AlertTriangle className="text-yellow-400 mb-2" />
             <div className="text-2xl font-bold">{adminState.isMaintenanceMode ? "ACTIVE" : "INACTIVE"}</div>
             <p className="text-xs text-slate-500">MAINTENANCE_BANNER</p>
           </div>
-          <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/40">
+          <div className="p-6 rounded-xl border border-fuchsia-400/30 bg-slate-900/40">
             <MessageSquare className="text-fuchsia-400 mb-2" />
             <div className="text-2xl font-bold">{echoMessages.length}</div>
             <p className="text-xs text-slate-500">CLOUD_MESSAGES</p>
