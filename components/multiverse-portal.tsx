@@ -313,6 +313,7 @@ export default function MultiversePortal() {
   const [visibleName, setVisibleName] = useState(false)
   const [userName, setUserName] = useState("")
   const [submitSuccess, setSubmitSuccess] = useState(false)
+  const [isTransmitting, setIsTransmitting] = useState(false)
 
   // Load admin state from localStorage
   useEffect(() => {
@@ -339,25 +340,40 @@ export default function MultiversePortal() {
     return () => window.removeEventListener("storage", handleStorageChange)
   }, [])
 
-  const handleSubmitEcho = () => {
+  const handleSubmitEcho = async () => {
     if (!echoMessage.trim()) return
 
-    const message: EchoMessage = {
-      id: Date.now().toString(),
-      message: echoMessage,
-      visibleName: visibleName,
-      name: visibleName ? userName : undefined,
-      timestamp: Date.now(),
+    setIsTransmitting(true)
+
+    try {
+      // This sends the data to your new /api/echo/route.ts file
+      const response = await fetch('/api/echo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: visibleName ? userName : "Anonymous",
+          message: echoMessage,
+          visibleName: visibleName,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to transmit')
+
+      // If successful, clear the form and show the success message
+      setEchoMessage("")
+      setUserName("")
+      setSubmitSuccess(true)
+      setTimeout(() => setSubmitSuccess(false), 3000)
+      
+      console.log("Transmission saved to the cloud database.")
+    } catch (error) {
+      console.error("Transmission failed:", error)
+      alert("The signal was lost. Please try again.")
+    } finally {
+      setIsTransmitting(false)
     }
-
-    // Store in localStorage
-    const existingMessages = JSON.parse(localStorage.getItem("echo-messages") || "[]")
-    localStorage.setItem("echo-messages", JSON.stringify([...existingMessages, message]))
-
-    setEchoMessage("")
-    setUserName("")
-    setSubmitSuccess(true)
-    setTimeout(() => setSubmitSuccess(false), 3000)
   }
 
   /* Sample carousel images - replace these URLs with your actual images
@@ -655,11 +671,21 @@ export default function MultiversePortal() {
 
                 <Button 
                   onClick={handleSubmitEcho}
-                  disabled={!echoMessage.trim()}
-                  className="bg-cyan-500 hover:bg-cyan-400 text-black font-mono font-semibold gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  // This prevents double-sending while your cloud database is processing
+                  disabled={!echoMessage.trim() || isTransmitting}
+                  className="bg-cyan-500 hover:bg-cyan-400 text-black font-mono font-semibold gap-2 disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px]"
                 >
-                  <Send className="w-4 h-4" />
-                  TRANSMIT
+                  {isTransmitting ? (
+                    <span className="flex items-center gap-2">
+                      <div className="w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                      SENDING...
+                    </span>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      TRANSMIT
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
