@@ -1,20 +1,25 @@
+// src/app/api/admin/config/route.ts
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// GET current settings
 export async function GET() {
   try {
+    // Look for the specific row you created in Prisma Studio
     const state = await prisma.systemState.findUnique({ where: { id: 1 } });
-    // Default to closed if not found
-    return NextResponse.json(state || { isShopOpen: false, isMaintenanceMode: false });
+    
+    // CRUCIAL: Always return a valid object even if the DB is empty
+    return NextResponse.json({
+      isShopOpen: state?.isShopOpen ?? false,
+      isMaintenanceMode: state?.isMaintenanceMode ?? false,
+    });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
+    console.error("GET config error:", error);
+    return NextResponse.json({ isShopOpen: false, isMaintenanceMode: false });
   }
 }
 
-// UPDATE settings
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -32,6 +37,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(updatedState);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 });
+    console.error("POST config error:", error);
+    return NextResponse.json({ error: 'Sync failed' }, { status: 500 });
   }
 }
