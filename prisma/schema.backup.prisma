@@ -1,0 +1,131 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id            Int      @id @default(autoincrement())
+  name          String
+  description   String   @db.Text
+  price         Float
+  imageUrl      String
+  category      String
+  stock         Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  productType   String   @default("regular")
+  slotPosition  Int?
+  isSlotActive  Boolean  @default(false)
+}
+
+model EchoMessage {
+  id           Int      @id @default(autoincrement())
+  message      String   @db.Text
+  visibleName  Boolean  @default(false)
+  name         String?
+  imageCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+}
+
+// Keep your existing SystemState table
+model SystemState {
+  id                      Int      @id @default(autoincrement())
+  isShopOpen              Boolean  @default(false)
+  isMaintenanceMode       Boolean  @default(false)
+  runesMaintenance        Boolean  @default(false)
+  echoChamberMaintenance  Boolean  @default(false)
+  galleriesMaintenance    Boolean  @default(false)
+  promptPacksMaintenance  Boolean  @default(false)
+  updatedAt               DateTime @updatedAt
+}
+
+// GALLERY SYSTEM MODELS
+
+model Gallery {
+  id                  Int             @id @default(autoincrement())
+  title               String
+  description         String          @db.Text
+  coverImageUrl       String
+  coverImagePosition  String?         @default("center")
+  price               Float
+  isActive            Boolean         @default(true)
+  isFeatured          Boolean         @default(false)
+  loreIntro           String?         @db.Text
+  loreOutro           String?         @db.Text
+  accessType          String          @default("purchase")
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  
+  images              GalleryImage[]
+  access              GalleryAccess[]
+}
+
+model GalleryImage {
+  id          Int      @id @default(autoincrement())
+  galleryId   Int
+  imageUrl    String
+  caption     String?  @db.Text
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  gallery     Gallery  @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  
+  @@index([galleryId])
+}
+
+model User {
+  id            Int              @id @default(autoincrement())
+  email         String           @unique
+  name          String?
+  isPatron      Boolean          @default(false)
+  hasAllAccess  Boolean          @default(false)
+  paypalEmail   String?
+  customerId    String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  
+  galleryAccess GalleryAccess[]
+  purchases     Purchase[]
+}
+
+model GalleryAccess {
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  galleryId  Int
+  grantedAt  DateTime  @default(now())
+  expiresAt  DateTime?
+  
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gallery    Gallery   @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, galleryId])
+  @@index([userId])
+  @@index([galleryId])
+}
+
+model Purchase {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  itemType        String
+  itemId          Int
+  amount          Float
+  currency        String   @default("USD")
+  paypalOrderId   String?
+  paypalPayerId   String?
+  paymentStatus   String   @default("pending")
+  createdAt       DateTime @default(now())
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([paypalOrderId])
+}

@@ -1,43 +1,83 @@
-// src/app/api/admin/config/route.ts
-import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { NextResponse } from 'next/server'
+import { PrismaClient } from '@prisma/client'
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient()
 
+// GET - Fetch current admin configuration
 export async function GET() {
   try {
-    // Look for the specific row you created in Prisma Studio
-    const state = await prisma.systemState.findUnique({ where: { id: 1 } });
+    const config = await prisma.systemState.findFirst()
     
-    // CRUCIAL: Always return a valid object even if the DB is empty
-    return NextResponse.json({
-      isShopOpen: state?.isShopOpen ?? false,
-      isMaintenanceMode: state?.isMaintenanceMode ?? false,
-    });
+    if (!config) {
+      // Create default config if none exists
+      const newConfig = await prisma.systemState.create({
+        data: {
+          isShopOpen: false,
+          isMaintenanceMode: false,
+          runesMaintenance: false,
+          echoChamberMaintenance: false,
+          galleriesMaintenance: false,
+          promptPacksMaintenance: false,
+          aiGenerationMaintenance: false,
+        }
+      })
+      return NextResponse.json(newConfig)
+    }
+    
+    return NextResponse.json(config)
   } catch (error) {
-    console.error("GET config error:", error);
-    return NextResponse.json({ isShopOpen: false, isMaintenanceMode: false });
+    console.error('Error fetching config:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch config' },
+      { status: 500 }
+    )
   }
 }
 
+// POST - Update admin configuration
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const updatedState = await prisma.systemState.upsert({
-      where: { id: 1 },
-      update: {
-        isShopOpen: body.isShopOpen,
-        isMaintenanceMode: body.isMaintenanceMode,
-      },
-      create: {
-        id: 1,
-        isShopOpen: body.isShopOpen,
-        isMaintenanceMode: body.isMaintenanceMode,
-      },
-    });
-    return NextResponse.json(updatedState);
+    const body = await request.json()
+    
+    // Find or create the system state
+    let config = await prisma.systemState.findFirst()
+    
+    if (!config) {
+      // Create if doesn't exist
+      config = await prisma.systemState.create({
+        data: {
+          isShopOpen: body.isShopOpen ?? false,
+          isMaintenanceMode: body.isMaintenanceMode ?? false,
+          runesMaintenance: body.runesMaintenance ?? false,
+          echoChamberMaintenance: body.echoChamberMaintenance ?? false,
+          galleriesMaintenance: body.galleriesMaintenance ?? false,
+          promptPacksMaintenance: body.promptPacksMaintenance ?? false,
+          aiGenerationMaintenance: body.aiGenerationMaintenance ?? false,
+        }
+      })
+    } else {
+      // Update existing
+      config = await prisma.systemState.update({
+        where: { id: config.id },
+        data: {
+          isShopOpen: body.isShopOpen ?? config.isShopOpen,
+          isMaintenanceMode: body.isMaintenanceMode ?? config.isMaintenanceMode,
+          runesMaintenance: body.runesMaintenance ?? config.runesMaintenance,
+          echoChamberMaintenance: body.echoChamberMaintenance ?? config.echoChamberMaintenance,
+          galleriesMaintenance: body.galleriesMaintenance ?? config.galleriesMaintenance,
+          promptPacksMaintenance: body.promptPacksMaintenance ?? config.promptPacksMaintenance,
+          aiGenerationMaintenance: body.aiGenerationMaintenance ?? config.aiGenerationMaintenance,
+        }
+      })
+    }
+    
+    console.log('Config updated:', config)
+    return NextResponse.json(config)
   } catch (error) {
-    console.error("POST config error:", error);
-    return NextResponse.json({ error: 'Sync failed' }, { status: 500 });
+    console.error('Error updating config:', error)
+    return NextResponse.json(
+      { error: 'Failed to update config' },
+      { status: 500 }
+    )
   }
 }

@@ -1,0 +1,118 @@
+import { NextResponse } from 'next/server'
+import { PrismaClient } from '@prisma/client'
+
+const prisma = new PrismaClient()
+const ADMIN_PASSWORD = "multipassword1010"
+
+// GET - Fetch all discount codes
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const password = searchParams.get('password')
+
+    if (password !== ADMIN_PASSWORD) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const discounts = await prisma.discountCode.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { usedBy: true }
+        }
+      }
+    })
+
+    return NextResponse.json(discounts)
+  } catch (error) {
+    console.error('Error fetching discounts:', error)
+    return NextResponse.json({ error: 'Failed to fetch discounts' }, { status: 500 })
+  }
+}
+
+// POST - Create new discount code
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const { password, code, type, value, usageLimit, expiresAt } = body
+
+    if (password !== ADMIN_PASSWORD) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!code || !type || value === undefined) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    // Check if code already exists
+    const existing = await prisma.discountCode.findUnique({
+      where: { code: code.toUpperCase() }
+    })
+
+    if (existing) {
+      return NextResponse.json({ error: 'Code already exists' }, { status: 400 })
+    }
+
+    const discount = await prisma.discountCode.create({
+      data: {
+        code: code.toUpperCase(),
+        type,
+        value: parseFloat(value),
+        usageLimit: usageLimit ? parseInt(usageLimit) : null,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        isActive: true
+      }
+    })
+
+    return NextResponse.json(discount)
+  } catch (error) {
+    console.error('Error creating discount:', error)
+    return NextResponse.json({ error: 'Failed to create discount' }, { status: 500 })
+  }
+}
+
+// PUT - Update discount code
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json()
+    const { password, id, isActive } = body
+
+    if (password !== ADMIN_PASSWORD) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const updated = await prisma.discountCode.update({
+      where: { id },
+      data: {
+        isActive
+      }
+    })
+
+    return NextResponse.json(updated)
+  } catch (error) {
+    console.error('Error updating discount:', error)
+    return NextResponse.json({ error: 'Failed to update discount' }, { status: 500 })
+  }
+}
+
+// DELETE - Remove discount code
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const password = searchParams.get('password')
+    const id = parseInt(searchParams.get('id') || '0')
+
+    if (password !== ADMIN_PASSWORD) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    await prisma.discountCode.delete({
+      where: { id }
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting discount:', error)
+    return NextResponse.json({ error: 'Failed to delete discount' }, { status: 500 })
+  }
+}
