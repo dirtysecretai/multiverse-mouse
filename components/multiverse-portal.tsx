@@ -508,7 +508,11 @@ export default function MultiversePortal() {
     return pack ? { ...pack, isSlotActive: pack.isSlotActive } : { name: `Slot ${slotNum}`, imageUrl: '', isSlotActive: false, id: 0 }
   })
 
-  if (adminState.isMaintenanceMode) {
+  // Check if current user is admin
+  const isAdmin = user?.email === "dirtysecretai@gmail.com"
+
+  // Show maintenance page to non-admins only
+  if (adminState.isMaintenanceMode && !isAdmin) {
     return (
       <div className="min-h-screen bg-[#050810] flex items-center justify-center p-6">
         <div className="text-center p-12 rounded-2xl border-2 border-yellow-500/30 bg-yellow-500/5 backdrop-blur-sm max-w-md">
