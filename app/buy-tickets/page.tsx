@@ -82,6 +82,19 @@ export default function BuyTicketsPage() {
   const [checkingDiscount, setCheckingDiscount] = useState(false)
   const [acceptedTOS, setAcceptedTOS] = useState(false)
 
+  // IMPORTANT: In Next.js client components, process.env.NEXT_PUBLIC_* 
+  // variables are replaced at BUILD time, not runtime
+  // This means the value must be available during the Vercel build
+  const paypalClientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || ""
+  
+  // Debug log to verify Client ID is available
+  useEffect(() => {
+    console.log("PayPal Client ID loaded:", paypalClientId ? "✅ YES" : "❌ NO (empty)")
+    if (!paypalClientId) {
+      console.error("CRITICAL: NEXT_PUBLIC_PAYPAL_CLIENT_ID is missing! PayPal buttons will not render.")
+    }
+  }, [paypalClientId])
+
   useEffect(() => {
     checkAuth()
   }, [])
@@ -223,7 +236,7 @@ export default function BuyTicketsPage() {
 
   return (
     <PayPalScriptProvider options={{ 
-      clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "",
+      clientId: paypalClientId || "",
       currency: "USD",
       intent: "capture"
     }}>
