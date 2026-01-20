@@ -122,7 +122,7 @@ export default function AdminPage() {
     expiresAt: ''
   })
 
-  const ADMIN_PASSWORD = "multipassword1010"
+  const [adminPassword, setAdminPassword] = useState("") // Store verified password in memory
 
   const fetchCloudData = useCallback(async () => {
     setIsLoading(true)
@@ -167,28 +167,50 @@ export default function AdminPage() {
 
   useEffect(() => {
     const authStatus = localStorage.getItem("multiverse-admin-auth")
-    if (authStatus === "true") {
+    const savedPassword = sessionStorage.getItem("admin-password")
+    
+    if (authStatus === "true" && savedPassword) {
+      setAdminPassword(savedPassword)
       setIsAuthenticated(true)
       fetchCloudData()
       fetchCarousels()
       fetchDiscounts()
       const interval = setInterval(fetchCloudData, 10000)
       return () => clearInterval(interval)
+    } else {
+      // Clear auth if password not in session
+      localStorage.removeItem("multiverse-admin-auth")
     }
   }, [fetchCloudData])
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (password === ADMIN_PASSWORD) {
-      setIsAuthenticated(true)
-      localStorage.setItem("multiverse-admin-auth", "true")
-      fetchCloudData()
+    
+    try {
+      const response = await fetch('/api/admin/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      })
+      
+      if (response.ok) {
+        setAdminPassword(password) // Store password in state for API calls
+        sessionStorage.setItem("admin-password", password) // Store in session (clears on browser close)
+        setIsAuthenticated(true)
+        localStorage.setItem("multiverse-admin-auth", "true")
+        fetchCloudData()
+      } else {
+        alert("❌ Invalid password")
+      }
+    } catch (error) {
+      console.error("Auth error:", error)
+      alert("❌ Authentication failed")
     }
   }
 
   const fetchCarousels = async () => {
     try {
-      const res = await fetch(`/api/admin/carousels?password=${ADMIN_PASSWORD}`)
+      const res = await fetch(`/api/admin/carousels?password=${adminPassword}`)
       if (res.ok) {
         const data = await res.json()
         setCarousels(data)
@@ -200,7 +222,7 @@ export default function AdminPage() {
 
   const fetchDiscounts = async () => {
     try {
-      const res = await fetch(`/api/admin/discounts?password=${ADMIN_PASSWORD}`)
+      const res = await fetch(`/api/admin/discounts?password=${adminPassword}`)
       if (res.ok) {
         const data = await res.json()
         setDiscounts(data)
@@ -664,7 +686,7 @@ export default function AdminPage() {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                      password: ADMIN_PASSWORD,
+                      password: adminPassword,
                       ...discountForm
                     })
                   })
@@ -818,7 +840,7 @@ export default function AdminPage() {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                          password: ADMIN_PASSWORD,
+                          password: adminPassword,
                           id: discount.id,
                           isActive: !discount.isActive
                         })
@@ -836,7 +858,7 @@ export default function AdminPage() {
                   <Button
                     onClick={async () => {
                       if (confirm(`Delete discount code "${discount.code}"?`)) {
-                        await fetch(`/api/admin/discounts?password=${ADMIN_PASSWORD}&id=${discount.id}`, {
+                        await fetch(`/api/admin/discounts?password=${adminPassword}&id=${discount.id}`, {
                           method: 'DELETE'
                         })
                         fetchDiscounts()
@@ -967,7 +989,7 @@ export default function AdminPage() {
               setUploadingCarousel(true)
               
               const formData = new FormData(e.currentTarget)
-              formData.append('password', ADMIN_PASSWORD)
+              formData.append('password', adminPassword)
               formData.set('side', carouselSide) // Use state value for Select
               
               try {
@@ -1069,7 +1091,7 @@ export default function AdminPage() {
                                     method: 'PUT',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
-                                      password: ADMIN_PASSWORD,
+                                      password: adminPassword,
                                       id: carousel.id,
                                       position: parseInt(newPos)
                                     })
@@ -1085,7 +1107,7 @@ export default function AdminPage() {
                               size="sm"
                               onClick={async () => {
                                 if (confirm('Delete this image?')) {
-                                  await fetch(`/api/admin/carousels?password=${ADMIN_PASSWORD}&id=${carousel.id}`, {
+                                  await fetch(`/api/admin/carousels?password=${adminPassword}&id=${carousel.id}`, {
                                     method: 'DELETE'
                                   })
                                   fetchCarousels()
@@ -1128,7 +1150,7 @@ export default function AdminPage() {
                                     method: 'PUT',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
-                                      password: ADMIN_PASSWORD,
+                                      password: adminPassword,
                                       id: carousel.id,
                                       position: parseInt(newPos)
                                     })
@@ -1144,7 +1166,7 @@ export default function AdminPage() {
                               size="sm"
                               onClick={async () => {
                                 if (confirm('Delete this image?')) {
-                                  await fetch(`/api/admin/carousels?password=${ADMIN_PASSWORD}&id=${carousel.id}`, {
+                                  await fetch(`/api/admin/carousels?password=${adminPassword}&id=${carousel.id}`, {
                                     method: 'DELETE'
                                   })
                                   fetchCarousels()
