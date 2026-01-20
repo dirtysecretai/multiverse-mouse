@@ -210,7 +210,6 @@ export default function AdminPage() {
       alert("❌ Authentication failed")
     }
   }
-  }
 
   const fetchCarousels = async (pwd?: string) => {
     const passToUse = pwd || adminPassword
