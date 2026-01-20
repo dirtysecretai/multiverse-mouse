@@ -173,8 +173,9 @@ export default function AdminPage() {
       setAdminPassword(savedPassword)
       setIsAuthenticated(true)
       fetchCloudData()
-      fetchCarousels()
-      fetchDiscounts()
+      // Pass password directly to avoid race condition with state
+      fetchCarousels(savedPassword)
+      fetchDiscounts(savedPassword)
       const interval = setInterval(fetchCloudData, 10000)
       return () => clearInterval(interval)
     } else {
@@ -182,7 +183,6 @@ export default function AdminPage() {
       localStorage.removeItem("multiverse-admin-auth")
     }
   }, [fetchCloudData])
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -199,6 +199,9 @@ export default function AdminPage() {
         setIsAuthenticated(true)
         localStorage.setItem("multiverse-admin-auth", "true")
         fetchCloudData()
+        // Pass password directly to fetch on login
+        fetchCarousels(password)
+        fetchDiscounts(password)
       } else {
         alert("❌ Invalid password")
       }
@@ -207,10 +210,14 @@ export default function AdminPage() {
       alert("❌ Authentication failed")
     }
   }
+  }
 
-  const fetchCarousels = async () => {
+  const fetchCarousels = async (pwd?: string) => {
+    const passToUse = pwd || adminPassword
+    if (!passToUse) return
+    
     try {
-      const res = await fetch(`/api/admin/carousels?password=${adminPassword}`)
+      const res = await fetch(`/api/admin/carousels?password=${passToUse}`)
       if (res.ok) {
         const data = await res.json()
         setCarousels(data)
@@ -220,9 +227,12 @@ export default function AdminPage() {
     }
   }
 
-  const fetchDiscounts = async () => {
+  const fetchDiscounts = async (pwd?: string) => {
+    const passToUse = pwd || adminPassword
+    if (!passToUse) return
+    
     try {
-      const res = await fetch(`/api/admin/discounts?password=${adminPassword}`)
+      const res = await fetch(`/api/admin/discounts?password=${passToUse}`)
       if (res.ok) {
         const data = await res.json()
         setDiscounts(data)
