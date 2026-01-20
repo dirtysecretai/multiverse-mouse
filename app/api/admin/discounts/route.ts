@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
-const ADMIN_PASSWORD = "multipassword1010"
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
 
-// GET - Fetch all discount codes
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -30,11 +29,9 @@ export async function GET(request: Request) {
   }
 }
 
-// POST - Create new discount code
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    const { password, code, type, value, usageLimit, expiresAt } = body
+    const { password, code, type, value, usageLimit, expiresAt } = await request.json()
 
     if (password !== ADMIN_PASSWORD) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -71,31 +68,26 @@ export async function POST(request: Request) {
   }
 }
 
-// PUT - Update discount code
 export async function PUT(request: Request) {
   try {
-    const body = await request.json()
-    const { password, id, isActive } = body
+    const { password, id, isActive } = await request.json()
 
     if (password !== ADMIN_PASSWORD) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const updated = await prisma.discountCode.update({
+    const discount = await prisma.discountCode.update({
       where: { id },
-      data: {
-        isActive
-      }
+      data: { isActive }
     })
 
-    return NextResponse.json(updated)
+    return NextResponse.json(discount)
   } catch (error) {
     console.error('Error updating discount:', error)
     return NextResponse.json({ error: 'Failed to update discount' }, { status: 500 })
   }
 }
 
-// DELETE - Remove discount code
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url)

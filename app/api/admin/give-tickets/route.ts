@@ -3,7 +3,6 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-const ADMIN_PASSWORD = "multipassword1010"
 
 export async function POST(request: Request) {
   try {
@@ -11,7 +10,7 @@ export async function POST(request: Request) {
     const { password, userEmail, ticketsToAdd } = body
 
     // Verify admin password
-    if (password !== ADMIN_PASSWORD) {
+    if (password !== process.env.ADMIN_PASSWORD) {
       return NextResponse.json(
         { error: 'Invalid admin password' },
         { status: 401 }
