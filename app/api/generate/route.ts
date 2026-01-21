@@ -36,6 +36,8 @@ export async function POST(request: Request) {
 
     // Check system state
     const systemState = await prisma.systemState.findFirst()
+    
+    // Check global AI generation maintenance
     if (systemState?.aiGenerationMaintenance) {
       return NextResponse.json(
         { error: 'Multiverse Scanner is offline for maintenance' },
@@ -43,14 +45,14 @@ export async function POST(request: Request) {
       )
     }
 
-    // Parse request body - UPDATED: Accept model parameter
+    // Parse request body
     const body = await request.json()
     const { 
       prompt, 
       quality = '2k', 
       aspectRatio = '16:9', 
       referenceImages = [],
-      model = 'gemini-3-pro-image' // NEW: Accept selected model
+      model = 'gemini-3-pro-image'
     } = body
 
     if (!prompt || prompt.trim().length === 0) {
@@ -60,7 +62,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // NEW: Validate model exists and is available
+    // Validate model exists and is available
     const selectedModel = getModelById(model)
     if (!selectedModel || !selectedModel.isAvailable) {
       return NextResponse.json({ 
@@ -68,11 +70,26 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
-    // NEW: Get ticket cost for selected model
+    // NEW: Check per-model maintenance status
+    if (model === 'gemini-3-pro-image-preview' && systemState?.geminiProMaintenance) {
+      return NextResponse.json(
+        { error: 'Pro Scanner v3 is currently offline. Please try Flash Scanner v2.5 instead.' },
+        { status: 503 }
+      )
+    }
+    
+    if (model === 'gemini-2.5-flash-image' && systemState?.geminiFlashMaintenance) {
+      return NextResponse.json(
+        { error: 'Flash Scanner v2.5 is currently offline. Please try Pro Scanner v3 instead.' },
+        { status: 503 }
+      )
+    }
+
+    // Get ticket cost for selected model
     const ticketCost = getTicketCost(model)
     console.log('Selected model:', selectedModel.displayName, '- Cost:', ticketCost, 'ticket(s)')
 
-    // Check ticket balance - UPDATED: Use dynamic ticket cost
+    // Check ticket balance
     const ticketRecord = await prisma.ticket.findUnique({
       where: { userId: user.id }
     })
@@ -106,7 +123,6 @@ export async function POST(request: Request) {
     console.log(`Generating image with ${selectedModel.displayName}...`)
     const generateStart = Date.now()
 
-    // UPDATED: Use selected model in API endpoint
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`
 
     // Build content parts array
@@ -116,7 +132,6 @@ export async function POST(request: Request) {
     if (referenceImages && referenceImages.length > 0) {
       console.log(`Adding ${referenceImages.length} reference images`)
       for (const imageBase64 of referenceImages) {
-        // Extract base64 data (remove data:image/...;base64, prefix)
         const base64Data = imageBase64.split(',')[1] || imageBase64
         contentParts.push({
           inlineData: {
@@ -132,16 +147,13 @@ export async function POST(request: Request) {
       ? 'Generate in ultra-high resolution 4K quality with maximum detail and clarity. ' 
       : ''
     
-    // Keep aspect ratio in prompt since imageConfig not supported in REST API
     const aspectInstructions = `Aspect ratio must be ${aspectRatio}. `
-    
     const fullPrompt = qualityInstructions + aspectInstructions + prompt.trim()
     
     contentParts.push({
       text: fullPrompt
     })
 
-    // Convert quality to uppercase for API (2k -> 2K, 4k -> 4K)
     const imageSize = quality.toUpperCase()
     
     const requestBody: any = {
@@ -154,10 +166,6 @@ export async function POST(request: Request) {
         topK: 40,
       }
     }
-    
-    // Note: imageConfig is NOT supported in REST API
-    // Models generate at their default resolutions
-    // Flash: ~1024px, Pro: ~2048px default
 
     console.log('Calling Gemini API with', contentParts.length, 'parts...')
     
@@ -173,9 +181,8 @@ export async function POST(request: Request) {
       const errorText = await response.text()
       console.error('Gemini API call failed:', response.status, errorText)
       
-      // NEW: Check for rate limit error (429)
+      // Check for rate limit error (429)
       if (response.status === 429) {
-        // Auto-suggestion to switch models
         const otherModel = model === 'gemini-3-pro-image-preview' 
           ? 'Flash Scanner v2.5 (2000/day available!)' 
           : 'Pro Scanner v3'
@@ -216,20 +223,18 @@ export async function POST(request: Request) {
       )
     }
 
-    // Loop through ALL parts to find the image (model might include text first like "Here you go!")
+    // Loop through ALL parts to find the image
     let imageBytes
     for (const part of candidate.content.parts) {
       if (part.inlineData && part.inlineData.data) {
         imageBytes = part.inlineData.data
         console.log('Found image in inlineData, size:', imageBytes.length)
-        break // Found it!
+        break
       } else if (part.text) {
         console.log('Model included text:', part.text.substring(0, 100))
-        // Continue looking for image in other parts
       }
     }
     
-    // If no image found in any part, then error
     if (!imageBytes) {
       console.error('No image data found in any part')
       return NextResponse.json(
@@ -253,7 +258,7 @@ export async function POST(request: Request) {
 
     console.log('Image uploaded:', blob.url)
 
-    // UPDATED: Consume dynamic ticket cost
+    // Consume tickets
     console.log(`Consuming ${ticketCost} ticket(s)...`)
     const updatedTicket = await prisma.ticket.update({
       where: { userId: user.id },
@@ -264,7 +269,7 @@ export async function POST(request: Request) {
     })
     console.log('Tickets consumed. New balance:', updatedTicket.balance)
 
-    // UPDATED: Save with model tracking
+    // Save with model tracking
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + 30)
 
@@ -273,8 +278,8 @@ export async function POST(request: Request) {
         userId: user.id,
         prompt: prompt.trim(),
         imageUrl: blob.url,
-        model, // NEW: Track which model was used
-        ticketCost, // NEW: Track ticket cost
+        model,
+        ticketCost,
         expiresAt,
       },
     })
@@ -289,8 +294,8 @@ export async function POST(request: Request) {
       newBalance: updatedTicket.balance,
       message: 'Universe scan complete!',
       generationTime: generateTime,
-      modelUsed: selectedModel.displayName, // NEW: Return model info
-      ticketsUsed: ticketCost, // NEW: Return tickets used
+      modelUsed: selectedModel.displayName,
+      ticketsUsed: ticketCost,
     })
 
   } catch (error: any) {

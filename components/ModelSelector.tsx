@@ -8,12 +8,21 @@ interface ModelSelectorProps {
   selectedModel: string
   onModelSelect: (modelId: string) => void
   userTickets: number
+  geminiProMaintenance?: boolean
+  geminiFlashMaintenance?: boolean
 }
 
-export function ModelSelector({ selectedModel, onModelSelect, userTickets }: ModelSelectorProps) {
+export function ModelSelector({ selectedModel, onModelSelect, userTickets, geminiProMaintenance, geminiFlashMaintenance }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const availableModels = getAvailableModels()
   const currentModel = AI_MODELS.find(m => m.id === selectedModel) || availableModels[0]
+
+  // Check if a model is in maintenance
+  const isInMaintenance = (modelId: string) => {
+    if (modelId === 'gemini-3-pro-image-preview') return geminiProMaintenance
+    if (modelId === 'gemini-2.5-flash-image') return geminiFlashMaintenance
+    return false
+  }
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
@@ -26,25 +35,39 @@ export function ModelSelector({ selectedModel, onModelSelect, userTickets }: Mod
 
   const canAfford = (ticketCost: number) => userTickets >= ticketCost
 
+  const currentModelInMaintenance = isInMaintenance(currentModel.id)
+
   return (
     <>
       {/* Selected Model Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className={`w-full p-4 rounded-xl border-2 ${CATEGORY_COLORS[currentModel.category].border} ${CATEGORY_COLORS[currentModel.category].bg} 
-                    hover:shadow-lg ${CATEGORY_COLORS[currentModel.category].glow} transition-all duration-300
+        className={`w-full p-4 rounded-xl border-2 
+                    ${currentModelInMaintenance 
+                      ? 'border-yellow-500/50 bg-yellow-500/10 hover:shadow-yellow-500/20' 
+                      : `${CATEGORY_COLORS[currentModel.category].border} ${CATEGORY_COLORS[currentModel.category].bg} ${CATEGORY_COLORS[currentModel.category].glow}`
+                    }
+                    hover:shadow-lg transition-all duration-300
                     flex items-center justify-between`}
       >
         <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg ${CATEGORY_COLORS[currentModel.category].bg}`}>
+          <div className={`p-2 rounded-lg ${currentModelInMaintenance ? 'bg-yellow-500/20' : CATEGORY_COLORS[currentModel.category].bg}`}>
             {getCategoryIcon(currentModel.category)}
           </div>
           <div className="text-left">
-            <div className={`font-bold text-sm ${CATEGORY_COLORS[currentModel.category].text}`}>
+            <div className={`font-bold text-sm ${currentModelInMaintenance ? 'text-yellow-500' : CATEGORY_COLORS[currentModel.category].text}`}>
               {currentModel.displayName}
+              {currentModelInMaintenance && (
+                <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">
+                  MAINTENANCE
+                </span>
+              )}
             </div>
             <div className="text-xs text-slate-400">
-              {currentModel.ticketCost} ticket{currentModel.ticketCost > 1 ? 's' : ''} per scan
+              {currentModelInMaintenance 
+                ? 'Model temporarily offline'
+                : `${currentModel.ticketCost} ticket${currentModel.ticketCost > 1 ? 's' : ''} per scan`
+              }
             </div>
           </div>
         </div>
@@ -77,6 +100,7 @@ export function ModelSelector({ selectedModel, onModelSelect, userTickets }: Mod
             <div className="space-y-3">
               {availableModels.map((model) => {
                 const affordable = canAfford(model.ticketCost)
+                const maintenance = isInMaintenance(model.id)
                 const colors = CATEGORY_COLORS[model.category]
                 const isSelected = model.id === selectedModel
 
@@ -84,30 +108,39 @@ export function ModelSelector({ selectedModel, onModelSelect, userTickets }: Mod
                   <button
                     key={model.id}
                     onClick={() => {
-                      if (affordable) {
+                      if (affordable && !maintenance) {
                         onModelSelect(model.id)
                         setIsOpen(false)
                       }
                     }}
-                    disabled={!affordable}
-                    className={`w-full p-4 rounded-xl border-2 ${colors.border} ${colors.bg}
-                              ${affordable ? 'hover:shadow-lg hover:scale-[1.02] cursor-pointer' : 'opacity-40 cursor-not-allowed'}
+                    disabled={!affordable || maintenance}
+                    className={`w-full p-4 rounded-xl border-2 
+                              ${maintenance 
+                                ? 'border-yellow-500/50 bg-yellow-500/10' 
+                                : `${colors.border} ${colors.bg}`
+                              }
+                              ${affordable && !maintenance ? 'hover:shadow-lg hover:scale-[1.02] cursor-pointer' : 'opacity-40 cursor-not-allowed'}
                               ${isSelected ? 'ring-4 ring-white/50' : ''}
                               transition-all duration-300 text-left`}
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
                         {getCategoryIcon(model.category)}
-                        <span className={`font-bold text-base ${colors.text}`}>
+                        <span className={`font-bold text-base ${maintenance ? 'text-yellow-500' : colors.text}`}>
                           {model.displayName}
                         </span>
-                        {isSelected && (
+                        {maintenance && (
+                          <span className="text-xs px-2 py-1 rounded-full bg-yellow-500 text-black font-bold">
+                            MAINTENANCE
+                          </span>
+                        )}
+                        {isSelected && !maintenance && (
                           <span className="text-xs px-2 py-1 rounded-full bg-white text-black font-bold">
                             SELECTED
                           </span>
                         )}
                       </div>
-                      <span className={`text-sm font-bold px-3 py-1 rounded-lg ${colors.bg} ${colors.text}`}>
+                      <span className={`text-sm font-bold px-3 py-1 rounded-lg ${maintenance ? 'bg-yellow-500/20 text-yellow-500' : `${colors.bg} ${colors.text}`}`}>
                         {model.ticketCost} 🎫
                       </span>
                     </div>
@@ -119,7 +152,12 @@ export function ModelSelector({ selectedModel, onModelSelect, userTickets }: Mod
                       <span>Daily Limit: <span className="text-white font-semibold">{model.rateLimit.rpd}</span></span>
                     </div>
 
-                    {!affordable && (
+                    {maintenance && (
+                      <div className="mt-3 text-xs text-yellow-500 font-semibold">
+                        ⚠️ Model temporarily offline for maintenance
+                      </div>
+                    )}
+                    {!affordable && !maintenance && (
                       <div className="mt-3 text-xs text-red-400 font-semibold">
                         ⚠️ Need {model.ticketCost - userTickets} more ticket{model.ticketCost - userTickets > 1 ? 's' : ''}
                       </div>
