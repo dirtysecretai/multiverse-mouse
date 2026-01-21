@@ -257,6 +257,8 @@ export default function MultiversePortal() {
     galleriesMaintenance: false,
     promptPacksMaintenance: false,
     aiGenerationMaintenance: false,
+    geminiProMaintenance: false,
+    geminiFlashMaintenance: false,
   })
 
   // User session state
