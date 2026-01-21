@@ -37,6 +37,8 @@ interface AdminState {
   galleriesMaintenance: boolean
   promptPacksMaintenance: boolean
   aiGenerationMaintenance: boolean
+  geminiProMaintenance: boolean
+  geminiFlashMaintenance: boolean
 }
 
 interface UserData {
@@ -368,6 +370,8 @@ export default function MultiversePortal() {
           galleriesMaintenance: !!data.galleriesMaintenance,
           promptPacksMaintenance: !!data.promptPacksMaintenance,
           aiGenerationMaintenance: !!data.aiGenerationMaintenance || false,
+          geminiProMaintenance: !!data.geminiProMaintenance || false,
+          geminiFlashMaintenance: !!data.geminiFlashMaintenance || false,
         })
       }
     } catch (err) {
@@ -754,6 +758,8 @@ export default function MultiversePortal() {
                   selectedModel={selectedModel}
                   onModelSelect={setSelectedModel}
                   userTickets={user?.ticketBalance || 0}
+                  geminiProMaintenance={adminState.geminiProMaintenance}
+                  geminiFlashMaintenance={adminState.geminiFlashMaintenance}
                 />
               </div>
 

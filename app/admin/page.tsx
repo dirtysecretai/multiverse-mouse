@@ -26,6 +26,8 @@ interface AdminState {
   galleriesMaintenance: boolean
   promptPacksMaintenance: boolean
   aiGenerationMaintenance: boolean
+  geminiProMaintenance: boolean
+  geminiFlashMaintenance: boolean
 }
 
 interface EchoMessage {
@@ -83,6 +85,8 @@ export default function AdminPage() {
     galleriesMaintenance: false,
     promptPacksMaintenance: false,
     aiGenerationMaintenance: false,
+    geminiProMaintenance: false,
+    geminiFlashMaintenance: false,
   })
   const [echoMessages, setEchoMessages] = useState<EchoMessage[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -145,6 +149,8 @@ export default function AdminPage() {
           galleriesMaintenance: !!configData.galleriesMaintenance,
           promptPacksMaintenance: !!configData.promptPacksMaintenance,
           aiGenerationMaintenance: !!configData.aiGenerationMaintenance,
+          geminiProMaintenance: !!configData.geminiProMaintenance,
+          geminiFlashMaintenance: !!configData.geminiFlashMaintenance,
         })
       }
 
@@ -663,6 +669,53 @@ export default function AdminPage() {
               </div>
               <p className="text-xs text-slate-500 mt-1">
                 Multiverse Scanner (homepage)
+              </p>
+            </div>
+
+            {/* Per-Model Maintenance Toggles */}
+            <div className="p-4 rounded-xl border border-slate-800 bg-gradient-to-br from-purple-500/10 to-fuchsia-500/10">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={16} className="text-purple-400" />
+                  <span className="text-sm font-bold text-purple-400">PRO_SCANNER_V3</span>
+                  <span className="text-[10px] text-slate-600">(250 RPD)</span>
+                </div>
+                <button
+                  onClick={() => updateAdminState({ geminiProMaintenance: !adminState.geminiProMaintenance })}
+                  className={`relative w-12 h-6 rounded-full transition-all ${
+                    adminState.geminiProMaintenance ? 'bg-red-500' : 'bg-green-500'
+                  }`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                    adminState.geminiProMaintenance ? 'left-7' : 'left-1'
+                  }`} />
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1">
+                {adminState.geminiProMaintenance ? "🔴 OFFLINE" : "🟢 ONLINE"}
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl border border-slate-800 bg-gradient-to-br from-cyan-500/10 to-blue-500/10">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Zap size={16} className="text-cyan-400" />
+                  <span className="text-sm font-bold text-cyan-400">FLASH_SCANNER_V2.5</span>
+                  <span className="text-[10px] text-slate-600">(2000 RPD)</span>
+                </div>
+                <button
+                  onClick={() => updateAdminState({ geminiFlashMaintenance: !adminState.geminiFlashMaintenance })}
+                  className={`relative w-12 h-6 rounded-full transition-all ${
+                    adminState.geminiFlashMaintenance ? 'bg-red-500' : 'bg-green-500'
+                  }`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                    adminState.geminiFlashMaintenance ? 'left-7' : 'left-1'
+                  }`} />
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1">
+                {adminState.geminiFlashMaintenance ? "🔴 OFFLINE" : "🟢 ONLINE"}
               </p>
             </div>
           </div>

@@ -19,6 +19,8 @@ export async function GET() {
           galleriesMaintenance: false,
           promptPacksMaintenance: false,
           aiGenerationMaintenance: false,
+          geminiProMaintenance: false,
+          geminiFlashMaintenance: false,
         }
       })
       return NextResponse.json(newConfig)
@@ -53,6 +55,8 @@ export async function POST(request: Request) {
           galleriesMaintenance: body.galleriesMaintenance ?? false,
           promptPacksMaintenance: body.promptPacksMaintenance ?? false,
           aiGenerationMaintenance: body.aiGenerationMaintenance ?? false,
+          geminiProMaintenance: body.geminiProMaintenance ?? false,
+          geminiFlashMaintenance: body.geminiFlashMaintenance ?? false,
         }
       })
     } else {
@@ -67,6 +71,8 @@ export async function POST(request: Request) {
           galleriesMaintenance: body.galleriesMaintenance ?? config.galleriesMaintenance,
           promptPacksMaintenance: body.promptPacksMaintenance ?? config.promptPacksMaintenance,
           aiGenerationMaintenance: body.aiGenerationMaintenance ?? config.aiGenerationMaintenance,
+          geminiProMaintenance: body.geminiProMaintenance ?? config.geminiProMaintenance,
+          geminiFlashMaintenance: body.geminiFlashMaintenance ?? config.geminiFlashMaintenance,
         }
       })
     }

@@ -107,7 +107,12 @@ model SystemState {
   echoChamberMaintenance  Boolean  @default(false)
   galleriesMaintenance    Boolean  @default(false)
   promptPacksMaintenance  Boolean  @default(false)
-  aiGenerationMaintenance Boolean  @default(false) // NEW: Toggle for AI generation
+  aiGenerationMaintenance Boolean  @default(false) // Global AI generation toggle
+  
+  // Per-model maintenance toggles
+  geminiProMaintenance    Boolean  @default(false) // Gemini Pro Scanner v3
+  geminiFlashMaintenance  Boolean  @default(false) // Gemini Flash Scanner v2.5
+  
   updatedAt               DateTime @updatedAt
 }
 
