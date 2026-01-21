@@ -1,4 +1,4 @@
-// Complete Prisma schema with authentication (MIGRATION-SAFE VERSION)
+// Complete Prisma schema with authentication and AI model tracking
 generator client {
   provider = "prisma-client-js"
 }
@@ -74,7 +74,7 @@ model TicketPurchase {
 }
 
 // ============================================
-// AI GENERATED IMAGES
+// AI GENERATED IMAGES (with model tracking)
 // ============================================
 
 model GeneratedImage {
@@ -82,6 +82,8 @@ model GeneratedImage {
   userId     Int
   prompt     String   @db.Text
   imageUrl   String   // Blob/R2 URL
+  model      String   @default("gemini-3-pro-image") // Track which AI model was used
+  ticketCost Int      @default(1) // How many tickets this generation cost
   createdAt  DateTime @default(now())
   expiresAt  DateTime // 30 days from creation
   isDeleted  Boolean  @default(false)
@@ -90,6 +92,7 @@ model GeneratedImage {
   
   @@index([userId])
   @@index([expiresAt])
+  @@index([model]) // Index for analytics
 }
 
 // ============================================
@@ -211,7 +214,7 @@ model DiscountCode {
   id            Int      @id @default(autoincrement())
   code          String   @unique
   type          String   // 'percentage' or 'fixed'
-  value         Float    // e.g., 20 for 20% or 5 for $5 off
+  value         Float    // e.g., 20 for 20% or $5 off
   isActive      Boolean  @default(true)
   usageLimit    Int?     // null = unlimited
   timesUsed     Int      @default(0)

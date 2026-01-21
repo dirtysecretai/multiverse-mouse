@@ -16,6 +16,7 @@ import {
   Terminal, RefreshCw, Clock, Store, AlertTriangle, MessageSquare, Activity, Package, Plus, Trash2, Edit, Crown, Zap, Power, PowerOff, Wrench, Upload, Image as ImageIcon, X, Sparkles, Ticket, Tag
 } from "lucide-react"
 import { ImageCropper } from "@/components/image-cropper"
+import { RateLimitsDashboard } from "@/components/RateLimitsDashboard"
 
 interface AdminState {
   isShopOpen: boolean
@@ -1200,6 +1201,10 @@ export default function AdminPage() {
             </div>
           </div>
         </div>
+
+        {/* AI Model Rate Limits Dashboard */}
+        <RateLimitsDashboard adminPassword={adminPassword} />
+
         {/* Galleries Management */}
         <div className="mb-12">
           <div className="flex items-center justify-between mb-6">

@@ -385,12 +385,16 @@ export default function DashboardPage() {
               </svg>
             </button>
             
-            <div className="bg-slate-900 rounded-2xl overflow-hidden border-2 border-cyan-500/30">
-              <img 
-                src={selectedImage.imageUrl} 
-                alt={selectedImage.prompt}
-                className="w-full h-auto"
-              />
+            <div className="bg-slate-900 rounded-2xl overflow-hidden border-2 border-cyan-500/30 max-h-[85vh] flex flex-col">
+              {/* Image container with scroll */}
+              <div className="overflow-y-auto max-h-[65vh]">
+                <img 
+                  src={selectedImage.imageUrl} 
+                  alt={selectedImage.prompt}
+                  className="w-full h-auto object-contain"
+                />
+              </div>
+              {/* Buttons always visible at bottom */}
               <div className="p-6 border-t border-slate-800">
                 <p className="text-sm text-slate-300 mb-4">{selectedImage.prompt}</p>
                 <div className="flex gap-3">

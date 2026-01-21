@@ -11,6 +11,8 @@ import { RuneSlot } from "@/components/rune-slot"
 import { PromptPackSlot } from "@/components/prompt-pack-slot"
 import { PromptPackModal } from "@/components/prompt-pack-modal"
 import { useRouter } from "next/navigation"
+import { ModelSelector } from "@/components/ModelSelector"
+import { getTicketCost } from "@/config/ai-models.config"
 
 // --- ICONS ---
 const PatreonIcon = () => (
@@ -265,8 +267,10 @@ export default function MultiversePortal() {
   const [aspectRatio, setAspectRatio] = useState<'1:1' | '4:5' | '9:16' | '16:9'>('16:9')
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
+  const [showImageModal, setShowImageModal] = useState(false)
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [referenceImages, setReferenceImages] = useState<string[]>([])
+  const [selectedModel, setSelectedModel] = useState('gemini-3-pro-image')
 
   // Other state
   const [echoMessage, setEchoMessage] = useState("")
@@ -416,8 +420,11 @@ export default function MultiversePortal() {
       return
     }
 
-    if (user.ticketBalance < 1) {
-      setGenerationError('Insufficient tickets. Purchase more to continue scanning.')
+    // Get ticket cost for selected model
+    const ticketCost = getTicketCost(selectedModel)
+    
+    if (user.ticketBalance < ticketCost) {
+      setGenerationError(`Insufficient tickets. Need ${ticketCost} ticket(s) for this model. Purchase more to continue scanning.`)
       return
     }
 
@@ -434,6 +441,7 @@ export default function MultiversePortal() {
           quality,
           aspectRatio,
           referenceImages,
+          model: selectedModel,
         }),
       })
 
@@ -739,6 +747,16 @@ export default function MultiversePortal() {
                 </div>
               </div>
 
+              {/* Model Selector */}
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">AI Model</label>
+                <ModelSelector 
+                  selectedModel={selectedModel}
+                  onModelSelect={setSelectedModel}
+                  userTickets={user?.ticketBalance || 0}
+                />
+              </div>
+
               {/* Scan Parameters */}
               <div className="grid grid-cols-2 gap-3 mb-4">
                 {/* Quality */}
@@ -805,7 +823,7 @@ export default function MultiversePortal() {
                 ) : (
                   <>
                     <Eye className="mr-2" size={20} />
-                    SCAN UNIVERSE (1 ticket)
+                    SCAN UNIVERSE ({getTicketCost(selectedModel)} ticket{getTicketCost(selectedModel) > 1 ? 's' : ''})
                   </>
                 )}
               </Button>
@@ -830,7 +848,10 @@ export default function MultiversePortal() {
               {generatedImage && (
                 <div className="mt-4 p-4 rounded-lg border border-cyan-500/30 bg-slate-950">
                   <p className="text-xs font-bold text-cyan-400 mb-2 uppercase">Universe Scan Complete</p>
-                  <div className="relative aspect-video rounded-lg overflow-hidden bg-slate-900 mb-3">
+                  <div 
+                    className="relative aspect-video rounded-lg overflow-hidden bg-slate-900 mb-3 cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => setShowImageModal(true)}
+                  >
                     <img src={generatedImage} alt="Generated" className="w-full h-full object-contain" />
                   </div>
                   <div className="flex gap-2">
@@ -1004,6 +1025,67 @@ export default function MultiversePortal() {
           <VerticalCarousel images={rightImages} side="right" />
         </aside>
       </main>
+
+      {/* Image Preview Modal */}
+      {showImageModal && generatedImage && (
+        <div 
+          className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowImageModal(false)}
+        >
+          <div className="relative max-w-5xl w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setShowImageModal(false)}
+              className="absolute -top-12 right-0 text-white hover:text-cyan-400 transition-colors"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            <div className="bg-slate-900 rounded-2xl overflow-hidden border-2 border-cyan-500/30 max-h-[85vh] flex flex-col">
+              {/* Image container with scroll */}
+              <div className="overflow-y-auto max-h-[65vh]">
+                <img 
+                  src={generatedImage} 
+                  alt="Generated" 
+                  className="w-full h-auto object-contain"
+                />
+              </div>
+              {/* Buttons always visible at bottom */}
+              <div className="p-6 border-t border-slate-800">
+                <p className="text-sm text-slate-300 mb-4">{coordinates}</p>
+                <div className="flex gap-3">
+                  <a
+                    href={generatedImage}
+                    download
+                    className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2"
+                  >
+                    <Download size={16} />
+                    Download Full Size
+                  </a>
+                  <button
+                    onClick={() => {
+                      localStorage.setItem('rescan_prompt', coordinates)
+                      setGeneratedImage(null)
+                      setShowImageModal(false)
+                      window.scrollTo({ 
+                        top: document.getElementById('scanner-section')?.offsetTop || 0, 
+                        behavior: 'smooth' 
+                      })
+                    }}
+                    className="bg-fuchsia-500 hover:bg-fuchsia-400 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Rescan
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
