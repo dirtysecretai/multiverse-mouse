@@ -69,6 +69,42 @@ export const AI_MODELS: AIModel[] = [
     provider: 'fal'
   },
 
+  // DIRECT GEMINI API MODELS (No FAL.ai filtering!)
+  
+  // PRO SCANNER V3 - Direct Gemini API (Gemini 3 Pro Image Preview)
+  {
+    id: 'gemini-3-pro-image',
+    name: 'gemini-3-pro-image-preview',  // Correct model from Google AI Studio
+    displayName: 'Pro Scanner v3',
+    description: 'Direct Gemini API - No filtering! 1 ticket (2K) or 2 tickets (4K)',
+    ticketCost: 1,
+    category: 'standard',
+    rateLimit: {
+      rpm: 10,
+      rpd: 250  // Was 250/day based on Tier 2
+    },
+    quality: 'high',
+    isAvailable: true,
+    provider: 'gemini'
+  },
+
+  // FLASH SCANNER V2.5 - Direct Gemini API (Gemini 2.5 Flash Image)
+  {
+    id: 'gemini-2.5-flash-image',
+    name: 'gemini-2.5-flash-image',
+    displayName: 'Flash Scanner v2.5',
+    description: 'Direct Gemini API - Fast generation, no filtering!',
+    ticketCost: 1,
+    category: 'standard',
+    rateLimit: {
+      rpm: 100,
+      rpd: 2000  // Was 2000/day based on Tier 2
+    },
+    quality: 'balanced',
+    isAvailable: true,
+    provider: 'gemini'
+  },
+
   // IMAGEN MODELS - Require Vertex AI (different setup)
   // Uncomment these when you set up Vertex AI
   /*
@@ -169,8 +205,8 @@ export function getTicketCost(modelId: string, quality?: '2k' | '4k'): number {
   const model = getModelById(modelId)
   if (!model) return 1
   
-  // NanoBanana Pro: 1 ticket for 2K, 2 tickets for 4K
-  if (modelId === 'nano-banana-pro' && quality === '4k') {
+  // NanoBanana Pro & Pro Scanner v3: 1 ticket for 2K, 2 tickets for 4K
+  if ((modelId === 'nano-banana-pro' || modelId === 'gemini-3-pro-image') && quality === '4k') {
     return 2
   }
   

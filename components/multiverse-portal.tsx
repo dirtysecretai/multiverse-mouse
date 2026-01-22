@@ -418,16 +418,9 @@ export default function MultiversePortal() {
     fetchGalleries()
   }, [checkSession, fetchAdminConfig, fetchProducts, fetchGalleries])
 
-  // Auto-switch away from 9:16 if NanoBanana Pro is selected
+  // Auto-clear reference images if model doesn't support them (Cluster, Flash Scanner v2.5)
   useEffect(() => {
-    if (selectedModel === 'nano-banana-pro' && aspectRatio === '9:16') {
-      setAspectRatio('16:9')
-    }
-  }, [selectedModel, aspectRatio])
-
-  // Auto-clear reference images if NanoBanana Cluster is selected (doesn't support them)
-  useEffect(() => {
-    if (selectedModel === 'nano-banana' && referenceImages.length > 0) {
+    if ((selectedModel === 'nano-banana' || selectedModel === 'gemini-2.5-flash-image') && referenceImages.length > 0) {
       setReferenceImages([])
     }
   }, [selectedModel, referenceImages.length])
@@ -711,8 +704,9 @@ export default function MultiversePortal() {
                 />
               </div>
 
-              {/* Reference Images Upload - Only for NanoBanana Pro and SeeDream */}
-              {selectedModel !== 'nano-banana' && (
+              {/* Reference Images Upload - Only for models that support it */}
+              {/* NanoBanana Cluster and Flash Scanner v2.5 don't support reference images */}
+              {selectedModel !== 'nano-banana' && selectedModel !== 'gemini-2.5-flash-image' && (
                 <div className="mb-4">
                   <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">
                     Reference Images (Optional)
@@ -826,34 +820,21 @@ export default function MultiversePortal() {
                 <div>
                   <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">Dimensions</label>
                   <div className="grid grid-cols-4 gap-1">
-                    {(['1:1', '4:5', '9:16', '16:9'] as const).map((ratio) => {
-                      // Block 9:16 for NanoBanana Pro due to quality issues
-                      const isDisabled = selectedModel === 'nano-banana-pro' && ratio === '9:16'
-                      
-                      return (
-                        <button
-                          key={ratio}
-                          onClick={() => setAspectRatio(ratio)}
-                          disabled={isGenerating || isDisabled}
-                          className={`p-2 rounded-lg font-bold text-xs transition-all ${
-                            aspectRatio === ratio
-                              ? 'bg-fuchsia-500 text-black'
-                              : isDisabled
-                              ? 'bg-slate-900 text-slate-600 cursor-not-allowed opacity-50'
-                              : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                          }`}
-                        >
-                          {ratio === '1:1' ? 'Square' : ratio}
-                        </button>
-                      )
-                    })}
+                    {(['1:1', '4:5', '9:16', '16:9'] as const).map((ratio) => (
+                      <button
+                        key={ratio}
+                        onClick={() => setAspectRatio(ratio)}
+                        disabled={isGenerating}
+                        className={`p-2 rounded-lg font-bold text-xs transition-all ${
+                          aspectRatio === ratio
+                            ? 'bg-fuchsia-500 text-black'
+                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                        }`}
+                      >
+                        {ratio === '1:1' ? 'Square' : ratio}
+                      </button>
+                    ))}
                   </div>
-                  {selectedModel === 'nano-banana-pro' && (
-                    <p className="text-xs text-yellow-400 mt-2 flex items-start gap-1">
-                      <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
-                      <span>9:16 (vertical) disabled for NanoBanana Pro due to quality issues. Use 16:9 or 1:1 for best results.</span>
-                    </p>
-                  )}
                 </div>
               </div>
 
@@ -900,7 +881,30 @@ export default function MultiversePortal() {
               )}
 
               {/* Generated Image Display */}
-              {generatedImage && (
+              {isGenerating && (
+                <div className="mt-4 p-4 rounded-lg border border-cyan-500/30 bg-slate-950">
+                  <p className="text-xs font-bold text-cyan-400 mb-2 uppercase">Image Loading</p>
+                  <div className="relative aspect-video rounded-lg overflow-hidden bg-slate-900 mb-3 flex items-center justify-center">
+                    <div className="text-center">
+                      <Zap className="w-12 h-12 text-cyan-400 mx-auto animate-pulse mb-3" />
+                      <p className="text-slate-400 text-sm mb-2">Generating image...</p>
+                      <div className="flex items-center justify-center gap-1">
+                        <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></div>
+                        <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
+                        <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse" style={{animationDelay: '0.4s'}}></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-yellow-500/10 border border-yellow-500/50 rounded p-2">
+                    <p className="text-yellow-400 text-xs font-bold flex items-center gap-2">
+                      <AlertTriangle size={14} />
+                      DO NOT REFRESH - Image loading
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {generatedImage && !isGenerating && (
                 <div className="mt-4 p-4 rounded-lg border border-cyan-500/30 bg-slate-950">
                   <p className="text-xs font-bold text-cyan-400 mb-2 uppercase">Universe Scan Complete</p>
                   

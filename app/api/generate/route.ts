@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       quality = '2k', 
       aspectRatio = '16:9', 
       referenceImages = [],
-      model = 'gemini-3-pro-image'
+      model = 'gemini-2.5-flash-image'  // Default to Flash Scanner v2.5
     } = body
 
     if (!prompt || prompt.trim().length === 0) {
@@ -158,13 +158,6 @@ export async function POST(request: Request) {
         if (model === 'nano-banana' && referenceImages && referenceImages.length > 0) {
           return NextResponse.json({
             error: 'NanoBanana does not support reference images. Please use NanoBanana Pro or SeeDream 4.5 for reference image features.'
-          }, { status: 400 })
-        }
-
-        // Block 9:16 aspect ratio for NanoBanana Pro due to quality degradation issues
-        if (model === 'nano-banana-pro' && aspectRatio === '9:16') {
-          return NextResponse.json({
-            error: '9:16 (vertical) aspect ratio is not supported for NanoBanana Pro due to quality issues. Please use 16:9, 4:5, or 1:1 instead.'
           }, { status: 400 })
         }
 
@@ -275,13 +268,7 @@ export async function POST(request: Request) {
           allResults.push(result)
           console.log(`Image ${i + 1}/${imagesToGenerate} generated successfully`)
           
-          // Log FULL response to verify parameters were received
-          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-          console.log(`📥 FAL.ai Full Response #${i + 1}:`)
-          console.log(JSON.stringify(result, null, 2))
-          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-          
-          // CRITICAL CHECK: Verify if our parameters made it through
+          // Log only essential metadata (not full response with base64!)
           if (model === 'nano-banana-pro') {
             if (result.data && result.data.images && result.data.images[0]) {
               const img = result.data.images[0]
@@ -401,7 +388,9 @@ export async function POST(request: Request) {
         )
       }
 
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`
+      // Use the model's actual name (not ID) for API calls
+      const modelName = selectedModel.name
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`
 
       // Build content parts array
       const contentParts: any[] = []
@@ -483,6 +472,21 @@ export async function POST(request: Request) {
       const generateTime = Date.now() - generateStart
       console.log(`Image generated in ${generateTime}ms`)
 
+      // Check for prompt-level blocks FIRST (blocked before generation even starts)
+      if (result.promptFeedback && result.promptFeedback.blockReason) {
+        const blockReason = result.promptFeedback.blockReason
+        console.error('Prompt blocked:', {
+          blockReason,
+          promptFeedback: result.promptFeedback,
+          prompt: prompt.substring(0, 100)
+        })
+        
+        return NextResponse.json({
+          error: 'Sensitive content detected. Ticket not charged. Try another prompt or use SeeDream 4.5 / NanoBanana Pro for less restrictive generation.',
+          blocked: true
+        }, { status: 400 })
+      }
+
       // Extract image from response
       if (!result.candidates || result.candidates.length === 0) {
         console.error('No candidates in response:', result)
@@ -493,6 +497,33 @@ export async function POST(request: Request) {
       }
 
       const candidate = result.candidates[0]
+      
+      // Check for content filtering BEFORE checking content parts
+      if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+        const finishReason = candidate.finishReason
+        const finishMessage = candidate.finishMessage || ''
+        
+        console.error('Generation blocked:', {
+          finishReason,
+          finishMessage,
+          prompt: prompt.substring(0, 100)
+        })
+        
+        // Specific handling for different block reasons
+        if (finishReason === 'SAFETY' || finishReason === 'IMAGE_SAFETY' || finishReason === 'IMAGE_OTHER') {
+          return NextResponse.json({
+            error: 'Sensitive content detected. Ticket not charged. Try another prompt or use SeeDream 4.5 / NanoBanana Pro for less restrictive generation.',
+            blocked: true
+          }, { status: 400 })
+        }
+        
+        // Other finish reasons
+        return NextResponse.json({
+          error: `Generation blocked: ${finishReason}. Ticket not charged. Try rephrasing your prompt.`,
+          blocked: true
+        }, { status: 400 })
+      }
+      
       if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
         console.error('No content parts in candidate:', candidate)
         return NextResponse.json(
@@ -503,18 +534,38 @@ export async function POST(request: Request) {
 
       // Loop through ALL parts to find the image
       let imageBytes
+      let refusalText = ''
       for (const part of candidate.content.parts) {
         if (part.inlineData && part.inlineData.data) {
           imageBytes = part.inlineData.data
           console.log('Found image in inlineData, size:', imageBytes.length)
           break
         } else if (part.text) {
+          refusalText = part.text
           console.log('Model included text:', part.text.substring(0, 100))
         }
       }
       
       if (!imageBytes) {
         console.error('No image data found in any part')
+        
+        // Check if the text is a refusal due to sensitive content
+        const sensitiveKeywords = ['explicit', 'nudity', 'nude', 'sexually', "can't create", "cannot create", "inappropriate", "unsafe"]
+        const isSensitiveRefusal = sensitiveKeywords.some(keyword => 
+          refusalText.toLowerCase().includes(keyword)
+        )
+        
+        if (isSensitiveRefusal) {
+          return NextResponse.json(
+            { 
+              error: 'Sensitive content detected. Ticket not charged. Try another prompt or use SeeDream 4.5 for less restrictive generation.',
+              blocked: true
+            },
+            { status: 400 }
+          )
+        }
+        
+        // Generic error for other text responses
         return NextResponse.json(
           { error: 'Model returned text instead of image. Try a different prompt or remove reference images.' },
           { status: 500 }
