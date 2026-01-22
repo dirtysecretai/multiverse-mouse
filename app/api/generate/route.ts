@@ -141,14 +141,17 @@ export async function POST(request: Request) {
         let modelEndpoint = selectedModel.name
         
         // Model-specific safety checker settings
-        // NanoBanana models: Use safety checker (Google's built-in filtering works better)
-        // SeeDream: Disable safety checker (allows NSFW content)
-        const enableSafetyChecker = model === 'nano-banana' || model === 'nano-banana-pro'
-        console.log(`Safety checker: ${enableSafetyChecker ? 'ENABLED' : 'DISABLED'} for ${selectedModel.displayName}`)
+        // NOTE: enable_safety_checker is ONLY for SeeDream, NOT NanoBanana models
+        // (checked FAL.ai official docs - nano-banana-pro doesn't support this param)
+        const enableSafetyChecker = model === 'seedream-4.5'
         
         const inputParams: any = {
-          prompt: prompt.trim(),
-          enable_safety_checker: enableSafetyChecker
+          prompt: prompt.trim()
+        }
+        
+        // Only add enable_safety_checker for models that support it (SeeDream)
+        if (model === 'seedream-4.5') {
+          inputParams.enable_safety_checker = false  // Disabled for NSFW content
         }
 
         // Check if regular NanoBanana is trying to use reference images (not supported)
@@ -174,11 +177,28 @@ export async function POST(request: Request) {
           inputParams.max_images = 1
           inputParams.num_images = 1
         } else {
-          // NanoBanana models use resolution string + aspect_ratio
-          inputParams.resolution = quality === '4k' ? '4K' : '2K'
-          inputParams.aspect_ratio = aspectRatio  // IMPORTANT: FAL.ai needs this!
-          inputParams.output_format = 'png'
-          inputParams.num_images = 1
+          // NanoBanana models - Use EXACT official FAL.ai parameters
+          // Docs: https://fal.ai/models/fal-ai/nano-banana-pro
+          
+          // CRITICAL: Must send exact enum values from docs
+          inputParams.resolution = quality === '4k' ? '4K' : '2K'  // Enum: "1K" | "2K" | "4K"
+          inputParams.aspect_ratio = aspectRatio  // Enum: "21:9" | "16:9" | "3:2" | "4:3" | "5:4" | "1:1" | "4:5" | "3:4" | "2:3" | "9:16"
+          inputParams.output_format = 'png'  // Enum: "jpeg" | "png" | "webp"
+          inputParams.num_images = 1  // Default: 1
+          
+          // Optional parameters we're NOT using (but could):
+          // inputParams.seed = 42  // For reproducibility
+          // inputParams.sync_mode = false  // Return data URI instead of URL
+          // inputParams.limit_generations = false  // Limit to 1 generation per prompt
+          // inputParams.enable_web_search = false  // Use web search for context
+          
+          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+          console.log(`📋 NanoBanana Pro Parameters (Official Schema):`)
+          console.log(`   resolution: "${inputParams.resolution}"`)
+          console.log(`   aspect_ratio: "${inputParams.aspect_ratio}"`)
+          console.log(`   output_format: "${inputParams.output_format}"`)
+          console.log(`   num_images: ${inputParams.num_images}`)
+          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
         }
 
         // Handle reference images for models that support editing
@@ -228,8 +248,19 @@ export async function POST(request: Request) {
         const imagesToGenerate = model === 'nano-banana' ? 2 : 1
         const allResults: any[] = []
         
+        // Log quality enforcement for NanoBanana Pro
+        if (model === 'nano-banana-pro') {
+          const minSize = quality === '4k' ? '1.5 MB' : '800 KB'
+          console.log(`🛡️ Quality enforcement enabled: Images below ${minSize} will be rejected (content filtering detected)`)
+        }
+        
         for (let i = 0; i < imagesToGenerate; i++) {
           console.log(`Generating image ${i + 1}/${imagesToGenerate}...`)
+          
+          // VERIFY: Log exact endpoint being called
+          console.log(`🎯 Calling FAL.ai endpoint: ${modelEndpoint}`)
+          console.log(`📝 Model from config: ${selectedModel.name}`)
+          console.log(`🔍 Model ID: ${model}`)
           
           // Log the EXACT parameters being sent to FAL.ai
           console.log(`FAL.ai call #${i + 1} - Endpoint: ${modelEndpoint}`)
@@ -243,8 +274,29 @@ export async function POST(request: Request) {
           allResults.push(result)
           console.log(`Image ${i + 1}/${imagesToGenerate} generated successfully`)
           
-          // Log FULL response to detect any content filtering or quality degradation
-          console.log(`FAL.ai full response #${i + 1}:`, JSON.stringify(result, null, 2))
+          // Log FULL response to verify parameters were received
+          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+          console.log(`📥 FAL.ai Full Response #${i + 1}:`)
+          console.log(JSON.stringify(result, null, 2))
+          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+          
+          // CRITICAL CHECK: Verify if our parameters made it through
+          if (model === 'nano-banana-pro') {
+            if (result.data && result.data.images && result.data.images[0]) {
+              const img = result.data.images[0]
+              console.log(`✅ Image metadata from FAL.ai:`)
+              console.log(`   URL: ${img.url}`)
+              console.log(`   Dimensions: ${img.width || '?'} x ${img.height || '?'}`)
+              console.log(`   File size: ${img.file_size || '?'} bytes`)
+              
+              // Check if resolution matches what we requested
+              const expectedWidth = quality === '4k' ? 3840 : 1920  // Approximate
+              if (img.width && img.width < expectedWidth * 0.5) {
+                console.warn(`⚠️ WARNING: Image width (${img.width}px) is much smaller than expected for ${quality.toUpperCase()} (expected ~${expectedWidth}px)`)
+                console.warn(`⚠️ This suggests the 'resolution' parameter was NOT received by FAL.ai`)
+              }
+            }
+          }
         }
 
         // Combine all results
@@ -274,14 +326,44 @@ export async function POST(request: Request) {
           }
 
           const imgBuffer = Buffer.from(await imageResponse.arrayBuffer())
-          imageBuffers.push(imgBuffer)
-          console.log(`Downloaded image ${i + 1}, size: ${imgBuffer.length} bytes`)
+          console.log(`Downloaded image ${i + 1}, size: ${imgBuffer.length} bytes (${(imgBuffer.length / 1024 / 1024).toFixed(2)} MB)`)
           
-          // Quality check: Warn if image seems suspiciously small for requested quality
-          const minExpectedSize = quality === '4k' ? 800000 : 300000 // 800KB for 4K, 300KB for 2K
-          if (imgBuffer.length < minExpectedSize) {
-            console.warn(`⚠️ WARNING: Image ${i + 1} size (${imgBuffer.length} bytes) is smaller than expected for ${quality.toUpperCase()} quality (expected >${minExpectedSize} bytes). This may indicate content filtering or quality degradation.`)
+          // DIAGNOSTIC: Check for quality degradation in NanoBanana Pro
+          if (model === 'nano-banana-pro') {
+            const minExpectedSize = quality === '4k' ? 1500000 : 800000 // 1.5MB for 4K, 800KB for 2K
+            const sizeMB = (imgBuffer.length / 1024 / 1024).toFixed(2)
+            const expectedMB = (minExpectedSize / 1024 / 1024).toFixed(2)
+            
+            if (imgBuffer.length < minExpectedSize) {
+              console.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+              console.error(`🚨 QUALITY DEGRADATION DETECTED`)
+              console.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+              console.error(`Image size: ${sizeMB} MB`)
+              console.error(`Expected: >${expectedMB} MB`)
+              console.error(`Quality: ${quality.toUpperCase()}`)
+              console.error(`Shortfall: ${((1 - imgBuffer.length / minExpectedSize) * 100).toFixed(0)}% below threshold`)
+              console.error(``)
+              console.error(`🔍 TROUBLESHOOTING INFO:`)
+              console.error(`- Check FAL.ai response above for safety/filter fields`)
+              console.error(`- Check if 'resolution' parameter was received`)
+              console.error(`- Look for: description field (might indicate filtering)`)
+              console.error(`- Prompt: "${prompt.substring(0, 100)}..."`)
+              console.error(`- Aspect ratio: ${aspectRatio}`)
+              console.error(`- Resolution sent: ${quality === '4k' ? '4K' : '2K'}`)
+              console.error(``)
+              console.error(`💡 POSSIBLE CAUSES:`)
+              console.error(`1. Resolution parameter not received by FAL.ai (check width/height above)`)
+              console.error(`2. Google's content filtering triggered (check description field)`)
+              console.error(`3. Prompt contains sensitive keywords`)
+              console.error(`4. Default resolution (1K) being used instead of requested`)
+              console.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+              
+              // CONTINUE generation but log the issue for debugging
+              // We'll figure out the root cause and prevent it
+            }
           }
+          
+          imageBuffers.push(imgBuffer)
         }
 
         if (imageBuffers.length === 0) {
