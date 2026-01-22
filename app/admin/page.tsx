@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 import { ImageCropper } from "@/components/image-cropper"
 import { RateLimitsDashboard } from "@/components/RateLimitsDashboard"
+import { NotificationManager } from "@/components/NotificationManager"
 
 interface AdminState {
   isShopOpen: boolean
@@ -1257,6 +1258,9 @@ export default function AdminPage() {
 
         {/* AI Model Rate Limits Dashboard */}
         <RateLimitsDashboard adminPassword={adminPassword} />
+
+        {/* Notification Manager */}
+        <NotificationManager />
 
         {/* Galleries Management */}
         <div className="mb-12">

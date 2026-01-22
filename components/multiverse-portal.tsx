@@ -13,6 +13,7 @@ import { PromptPackModal } from "@/components/prompt-pack-modal"
 import { useRouter } from "next/navigation"
 import { ModelSelector } from "@/components/ModelSelector"
 import { getTicketCost } from "@/config/ai-models.config"
+import { NotificationBanner } from "@/components/NotificationBanner"
 
 // --- ICONS ---
 const PatreonIcon = () => (
@@ -629,6 +630,9 @@ export default function MultiversePortal() {
               )}
             </div>
           </div>
+
+          {/* Notification Banner */}
+          <NotificationBanner />
 
           {/* PATREON */}
           <div className="w-full mb-4">
