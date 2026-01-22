@@ -189,9 +189,11 @@ export async function POST(request: Request) {
               const base64Data = imageBase64.split(',')[1] || imageBase64
               const imageBuffer = Buffer.from(base64Data, 'base64')
               
-              // Upload to FAL storage (Node.js compatible)
-              // FAL.ai accepts Buffer directly in Node.js environment
-              const uploadedUrl = await fal.storage.upload(imageBuffer)
+              // Create a Blob from the buffer (Node.js v18+ has native Blob)
+              const blob = new Blob([imageBuffer], { type: 'image/jpeg' })
+              
+              // Upload to FAL storage
+              const uploadedUrl = await fal.storage.upload(blob)
               
               imageUrls.push(uploadedUrl)
               console.log(`Uploaded reference image: ${uploadedUrl}`)
