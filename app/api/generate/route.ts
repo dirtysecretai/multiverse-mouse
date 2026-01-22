@@ -151,6 +151,13 @@ export async function POST(request: Request) {
           }, { status: 400 })
         }
 
+        // Block 9:16 aspect ratio for NanoBanana Pro due to quality degradation issues
+        if (model === 'nano-banana-pro' && aspectRatio === '9:16') {
+          return NextResponse.json({
+            error: '9:16 (vertical) aspect ratio is not supported for NanoBanana Pro due to quality issues. Please use 16:9, 4:5, or 1:1 instead.'
+          }, { status: 400 })
+        }
+
         // Configure quality/resolution based on model
         if (model === 'seedream-4.5') {
           // SeeDream uses image_size object
@@ -228,6 +235,9 @@ export async function POST(request: Request) {
           
           allResults.push(result)
           console.log(`Image ${i + 1}/${imagesToGenerate} generated successfully`)
+          
+          // Log FULL response to detect any content filtering or quality degradation
+          console.log(`FAL.ai full response #${i + 1}:`, JSON.stringify(result, null, 2))
         }
 
         // Combine all results
@@ -259,6 +269,12 @@ export async function POST(request: Request) {
           const imgBuffer = Buffer.from(await imageResponse.arrayBuffer())
           imageBuffers.push(imgBuffer)
           console.log(`Downloaded image ${i + 1}, size: ${imgBuffer.length} bytes`)
+          
+          // Quality check: Warn if image seems suspiciously small for requested quality
+          const minExpectedSize = quality === '4k' ? 800000 : 300000 // 800KB for 4K, 300KB for 2K
+          if (imgBuffer.length < minExpectedSize) {
+            console.warn(`⚠️ WARNING: Image ${i + 1} size (${imgBuffer.length} bytes) is smaller than expected for ${quality.toUpperCase()} quality (expected >${minExpectedSize} bytes). This may indicate content filtering or quality degradation.`)
+          }
         }
 
         if (imageBuffers.length === 0) {
