@@ -273,6 +273,7 @@ export default function MultiversePortal() {
   const [aspectRatio, setAspectRatio] = useState<'1:1' | '4:5' | '9:16' | '16:9'>('16:9')
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
+  const [generatedImages, setGeneratedImages] = useState<Array<{url: string, id: string}>>([])
   const [showImageModal, setShowImageModal] = useState(false)
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [referenceImages, setReferenceImages] = useState<string[]>([])
@@ -454,6 +455,7 @@ export default function MultiversePortal() {
     setIsGenerating(true)
     setGenerationError(null)
     setGeneratedImage(null)
+    setGeneratedImages([])
 
     try {
       const res = await fetch('/api/generate', {
@@ -471,7 +473,15 @@ export default function MultiversePortal() {
       const data = await res.json()
 
       if (data.success) {
-        setGeneratedImage(data.imageUrl)
+        // Check if multi-image response (NanoBanana Cluster returns 2 images)
+        if (data.images && data.images.length > 1) {
+          setGeneratedImages(data.images)
+          setGeneratedImage(data.images[0].url) // Set first image for modal
+        } else {
+          setGeneratedImage(data.imageUrl)
+          setGeneratedImages([]) // Clear multi-image array
+        }
+        
         // Update user ticket balance
         if (user) {
           setUser({ ...user, ticketBalance: data.newBalance })
@@ -893,35 +903,87 @@ export default function MultiversePortal() {
               {generatedImage && (
                 <div className="mt-4 p-4 rounded-lg border border-cyan-500/30 bg-slate-950">
                   <p className="text-xs font-bold text-cyan-400 mb-2 uppercase">Universe Scan Complete</p>
-                  <div 
-                    className="relative aspect-video rounded-lg overflow-hidden bg-slate-900 mb-3 cursor-pointer hover:opacity-90 transition-opacity"
-                    onClick={() => setShowImageModal(true)}
-                  >
-                    <img src={generatedImage} alt="Generated" className="w-full h-full object-contain" />
-                  </div>
-                  <div className="flex gap-2">
-                    <a href={generatedImage} download className="flex-1">
-                      <Button className="w-full bg-slate-800 hover:bg-slate-700 text-xs h-8">
-                        Download
-                      </Button>
-                    </a>
+                  
+                  {/* Multi-image display for NanoBanana Cluster (2 images) */}
+                  {generatedImages.length > 1 ? (
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      {generatedImages.map((img, idx) => (
+                        <div key={img.id} className="space-y-2">
+                          <div 
+                            className="relative aspect-square rounded-lg overflow-hidden bg-slate-900 cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => {
+                              setGeneratedImage(img.url)
+                              setShowImageModal(true)
+                            }}
+                          >
+                            <img src={img.url} alt={`Generated ${idx + 1}`} className="w-full h-full object-contain" />
+                          </div>
+                          <p className="text-xs text-slate-400 text-center">Image {idx + 1}/{generatedImages.length}</p>
+                          <a href={img.url} download className="block">
+                            <Button className="w-full bg-slate-800 hover:bg-slate-700 text-xs h-8">
+                              <Download className="w-3 h-3 mr-1" />
+                              Download {idx + 1}
+                            </Button>
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    /* Single image display */
+                    <>
+                      <div 
+                        className="relative aspect-video rounded-lg overflow-hidden bg-slate-900 mb-3 cursor-pointer hover:opacity-90 transition-opacity"
+                        onClick={() => setShowImageModal(true)}
+                      >
+                        <img src={generatedImage} alt="Generated" className="w-full h-full object-contain" />
+                      </div>
+                      <div className="flex gap-2">
+                        <a href={generatedImage} download className="flex-1">
+                          <Button className="w-full bg-slate-800 hover:bg-slate-700 text-xs h-8">
+                            Download
+                          </Button>
+                        </a>
+                        <Button
+                          onClick={() => {
+                            localStorage.setItem('rescan_prompt', coordinates)
+                            setGeneratedImage(null)
+                            setGeneratedImages([])
+                            window.scrollTo({ 
+                              top: document.getElementById('scanner-section')?.offsetTop || 0, 
+                              behavior: 'smooth' 
+                            })
+                          }}
+                          className="bg-fuchsia-500 hover:bg-fuchsia-400 text-white font-bold text-xs h-8 flex items-center gap-1"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Rescan
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                  
+                  {/* Rescan button for multi-image */}
+                  {generatedImages.length > 1 && (
                     <Button
                       onClick={() => {
                         localStorage.setItem('rescan_prompt', coordinates)
                         setGeneratedImage(null)
+                        setGeneratedImages([])
                         window.scrollTo({ 
                           top: document.getElementById('scanner-section')?.offsetTop || 0, 
                           behavior: 'smooth' 
                         })
                       }}
-                      className="bg-fuchsia-500 hover:bg-fuchsia-400 text-white font-bold text-xs h-8 flex items-center gap-1"
+                      className="w-full bg-fuchsia-500 hover:bg-fuchsia-400 text-white font-bold text-xs h-8 flex items-center justify-center gap-1"
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
                       Rescan
                     </Button>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1112,6 +1174,7 @@ export default function MultiversePortal() {
                     onClick={() => {
                       localStorage.setItem('rescan_prompt', coordinates)
                       setGeneratedImage(null)
+                      setGeneratedImages([])
                       setShowImageModal(false)
                       window.scrollTo({ 
                         top: document.getElementById('scanner-section')?.offsetTop || 0, 
