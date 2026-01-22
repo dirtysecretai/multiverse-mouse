@@ -186,9 +186,12 @@ export async function POST(request: Request) {
           inputParams.output_format = 'png'  // Enum: "jpeg" | "png" | "webp"
           inputParams.num_images = 1  // Default: 1
           
-          // EXPERIMENT: Try limit_generations to prevent FAL.ai from filtering
-          // Theory: FAL.ai might generate multiple internally and pick "safest" one
-          inputParams.limit_generations = true  // Force exactly 1 generation, no filtering between options
+          // EXPERIMENTS to bypass FAL.ai filtering:
+          inputParams.limit_generations = true  // Didn't work alone, but keep it
+          inputParams.sync_mode = true  // Return as data URI, bypass FAL.ai's history/processing
+          
+          // Try JPEG to see if PNG processing has filtering
+          // inputParams.output_format = 'jpeg'
           
           console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
           console.log(`📋 NanoBanana Pro Parameters (Official Schema):`)
