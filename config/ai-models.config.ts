@@ -1,4 +1,4 @@
-// AI Model Configuration - Only models that work with current Gemini API setup
+// AI Model Configuration - FAL.ai models (NanoBanana + SeeDream)
 // Imagen models require different setup (commented out for now)
 
 export interface AIModel {
@@ -14,39 +14,59 @@ export interface AIModel {
   }
   quality: 'fast' | 'balanced' | 'high' | 'ultra'
   isAvailable: boolean
+  provider?: 'gemini' | 'fal'
 }
 
 export const AI_MODELS: AIModel[] = [
-  // PRO SCANNER - From rate limits: gemini-3-pro-image (257/250 used)
+  // NANOBANANA - FAL.ai (Gemini 2.5 Flash Image) - Fast & Cheap - 2 IMAGES!
   {
-    id: 'gemini-3-pro-image-preview',
-    name: 'gemini-3-pro-image',
-    displayName: 'Pro Scanner v3',
-    description: 'Professional scanning - may be at daily quota (257/250)',
+    id: 'nano-banana',
+    name: 'fal-ai/nano-banana',
+    displayName: 'NanoBanana Cluster',
+    description: 'Fast, artistic generation - 1 ticket for 2 images!',
     ticketCost: 1,
     category: 'standard',
     rateLimit: {
-      rpm: 20,
-      rpd: 250
-    },
-    quality: 'balanced',
-    isAvailable: true
-  },
-  
-  // FLASH SCANNER - From rate limits: gemini-2.5-flash-preview-image (3/2000 used)
-  {
-    id: 'gemini-2.5-flash-image',
-    name: 'gemini-2.5-flash-preview-image',
-    displayName: 'Flash Scanner v2.5',
-    description: 'Fast scanning with huge capacity (1997 left today!)',
-    ticketCost: 1,
-    category: 'standard',
-    rateLimit: {
-      rpm: 500,
-      rpd: 2000
+      rpm: 0, // No rate limit on FAL.ai
+      rpd: 0  // Unlimited with credits
     },
     quality: 'fast',
-    isAvailable: true
+    isAvailable: true,
+    provider: 'fal'
+  },
+
+  // NANOBANANA PRO - FAL.ai (Gemini 3 Pro Image) - High Quality
+  {
+    id: 'nano-banana-pro',
+    name: 'fal-ai/nano-banana-pro',
+    displayName: 'NanoBanana Pro',
+    description: 'Premium quality - 1 ticket (2K) or 2 tickets (4K)',
+    ticketCost: 1,
+    category: 'standard',
+    rateLimit: {
+      rpm: 0, // No rate limit on FAL.ai
+      rpd: 0  // Unlimited with credits
+    },
+    quality: 'high',
+    isAvailable: true,
+    provider: 'fal'
+  },
+
+  // SEEDREAM 4.5 - FAL.ai (ByteDance)
+  {
+    id: 'seedream-4.5',
+    name: 'fal-ai/bytedance/seedream/v4.5/text-to-image',
+    displayName: 'SeeDream 4.5',
+    description: 'Premium quality with excellent text rendering',
+    ticketCost: 1,
+    category: 'standard',
+    rateLimit: {
+      rpm: 0, // No rate limit on FAL.ai
+      rpd: 0  // Unlimited with credits
+    },
+    quality: 'high',
+    isAvailable: true,
+    provider: 'fal'
   },
 
   // IMAGEN MODELS - Require Vertex AI (different setup)
@@ -145,9 +165,17 @@ export function getModelsByCategory(category: 'standard' | 'premium' | 'ultra'):
   return AI_MODELS.filter(m => m.category === category && m.isAvailable)
 }
 
-export function getTicketCost(modelId: string): number {
+export function getTicketCost(modelId: string, quality?: '2k' | '4k'): number {
   const model = getModelById(modelId)
-  return model?.ticketCost || 1
+  if (!model) return 1
+  
+  // NanoBanana Pro: 1 ticket for 2K, 2 tickets for 4K
+  if (modelId === 'nano-banana-pro' && quality === '4k') {
+    return 2
+  }
+  
+  // All other models use base ticket cost
+  return model.ticketCost
 }
 
 // Category colors for UI

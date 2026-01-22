@@ -19,8 +19,9 @@ export async function GET() {
           galleriesMaintenance: false,
           promptPacksMaintenance: false,
           aiGenerationMaintenance: false,
-          geminiProMaintenance: false,
-          geminiFlashMaintenance: false,
+          nanoBananaMaintenance: false,
+          nanoBananaProMaintenance: false,
+          seedreamMaintenance: false,
         }
       })
       return NextResponse.json(newConfig)
@@ -55,8 +56,9 @@ export async function POST(request: Request) {
           galleriesMaintenance: body.galleriesMaintenance ?? false,
           promptPacksMaintenance: body.promptPacksMaintenance ?? false,
           aiGenerationMaintenance: body.aiGenerationMaintenance ?? false,
-          geminiProMaintenance: body.geminiProMaintenance ?? false,
-          geminiFlashMaintenance: body.geminiFlashMaintenance ?? false,
+          nanoBananaMaintenance: body.nanoBananaMaintenance ?? false,
+          nanoBananaProMaintenance: body.nanoBananaProMaintenance ?? false,
+          seedreamMaintenance: body.seedreamMaintenance ?? false,
         }
       })
     } else {
@@ -71,8 +73,9 @@ export async function POST(request: Request) {
           galleriesMaintenance: body.galleriesMaintenance ?? config.galleriesMaintenance,
           promptPacksMaintenance: body.promptPacksMaintenance ?? config.promptPacksMaintenance,
           aiGenerationMaintenance: body.aiGenerationMaintenance ?? config.aiGenerationMaintenance,
-          geminiProMaintenance: body.geminiProMaintenance ?? config.geminiProMaintenance,
-          geminiFlashMaintenance: body.geminiFlashMaintenance ?? config.geminiFlashMaintenance,
+          nanoBananaMaintenance: body.nanoBananaMaintenance ?? config.nanoBananaMaintenance,
+          nanoBananaProMaintenance: body.nanoBananaProMaintenance ?? config.nanoBananaProMaintenance,
+          seedreamMaintenance: body.seedreamMaintenance ?? config.seedreamMaintenance,
         }
       })
     }

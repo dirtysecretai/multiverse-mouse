@@ -8,19 +8,21 @@ interface ModelSelectorProps {
   selectedModel: string
   onModelSelect: (modelId: string) => void
   userTickets: number
-  geminiProMaintenance?: boolean
-  geminiFlashMaintenance?: boolean
+  nanoBananaProMaintenance?: boolean
+  nanoBananaMaintenance?: boolean
+  seedreamMaintenance?: boolean
 }
 
-export function ModelSelector({ selectedModel, onModelSelect, userTickets, geminiProMaintenance, geminiFlashMaintenance }: ModelSelectorProps) {
+export function ModelSelector({ selectedModel, onModelSelect, userTickets, nanoBananaProMaintenance, nanoBananaMaintenance, seedreamMaintenance }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const availableModels = getAvailableModels()
   const currentModel = AI_MODELS.find(m => m.id === selectedModel) || availableModels[0]
 
   // Check if a model is in maintenance
   const isInMaintenance = (modelId: string) => {
-    if (modelId === 'gemini-3-pro-image-preview') return geminiProMaintenance
-    if (modelId === 'gemini-2.5-flash-image') return geminiFlashMaintenance
+    if (modelId === 'nano-banana-pro') return nanoBananaProMaintenance
+    if (modelId === 'nano-banana') return nanoBananaMaintenance
+    if (modelId === 'seedream-4.5') return seedreamMaintenance
     return false
   }
 

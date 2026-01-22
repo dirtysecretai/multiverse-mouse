@@ -110,10 +110,11 @@ model SystemState {
   aiGenerationMaintenance Boolean  @default(false) // Global AI generation toggle
   
   // Per-model maintenance toggles
-  geminiProMaintenance    Boolean  @default(false) // Gemini Pro Scanner v3
-  geminiFlashMaintenance  Boolean  @default(false) // Gemini Flash Scanner v2.5
+  nanoBananaMaintenance    Boolean  @default(false) // NanoBanana (Gemini 2.5 Flash)
+  nanoBananaProMaintenance Boolean  @default(false) // NanoBanana Pro (Gemini 3 Pro)
+  seedreamMaintenance      Boolean  @default(false) // SeeDream 4.5
   
-  updatedAt               DateTime @updatedAt
+  updatedAt                DateTime @updatedAt
 }
 
 model EchoMessage {

@@ -10,6 +10,7 @@
     "postinstall": "prisma generate --no-engine"
   },
   "dependencies": {
+    "@fal-ai/client": "^1.8.3",
     "@google-cloud/vertexai": "^1.10.0",
     "@paypal/react-paypal-js": "^8.9.2",
     "@prisma/client": "^6.2.1",

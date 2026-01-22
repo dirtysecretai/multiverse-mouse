@@ -189,7 +189,10 @@ export default function AdminImagesPage() {
                 />
                 <div className="absolute top-2 right-2">
                   <span className="px-2 py-1 rounded-lg bg-black/80 text-xs text-cyan-400 font-mono">
-                    {image.model.includes('flash') ? 'Flash' : 'Pro'}
+                    {image.model === 'nano-banana' ? 'NanoBanana Cluster' : 
+                     image.model === 'nano-banana-pro' ? 'NanoBanana Pro' :
+                     image.model === 'seedream-4.5' ? 'SeeDream 4.5' :
+                     image.model.includes('flash') ? 'Flash' : 'Pro'}
                   </span>
                 </div>
               </div>
