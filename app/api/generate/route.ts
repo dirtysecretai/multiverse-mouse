@@ -160,8 +160,10 @@ export async function POST(request: Request) {
           inputParams.max_images = 1
           inputParams.num_images = 1
         } else {
-          // NanoBanana models use resolution string
+          // NanoBanana models use resolution string + aspect_ratio
           inputParams.resolution = quality === '4k' ? '4K' : '2K'
+          inputParams.aspect_ratio = aspectRatio  // IMPORTANT: FAL.ai needs this!
+          inputParams.output_format = 'png'
           inputParams.num_images = 1
         }
 
@@ -187,10 +189,9 @@ export async function POST(request: Request) {
               const base64Data = imageBase64.split(',')[1] || imageBase64
               const imageBuffer = Buffer.from(base64Data, 'base64')
               
-              // Upload to FAL storage
-              const blob = new Blob([imageBuffer], { type: 'image/jpeg' })
-              const file = new File([blob], `ref-${Date.now()}.jpg`, { type: 'image/jpeg' })
-              const uploadedUrl = await fal.storage.upload(file)
+              // Upload to FAL storage (Node.js compatible)
+              // FAL.ai accepts Buffer directly in Node.js environment
+              const uploadedUrl = await fal.storage.upload(imageBuffer)
               
               imageUrls.push(uploadedUrl)
               console.log(`Uploaded reference image: ${uploadedUrl}`)
@@ -213,6 +214,10 @@ export async function POST(request: Request) {
         
         for (let i = 0; i < imagesToGenerate; i++) {
           console.log(`Generating image ${i + 1}/${imagesToGenerate}...`)
+          
+          // Log the EXACT parameters being sent to FAL.ai
+          console.log(`FAL.ai call #${i + 1} - Endpoint: ${modelEndpoint}`)
+          console.log(`FAL.ai call #${i + 1} - Parameters:`, JSON.stringify(inputParams, null, 2))
           
           const result = await fal.subscribe(modelEndpoint, {
             input: inputParams,
