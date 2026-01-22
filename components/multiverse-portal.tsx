@@ -424,6 +424,13 @@ export default function MultiversePortal() {
     }
   }, [selectedModel, aspectRatio])
 
+  // Auto-clear reference images if NanoBanana Cluster is selected (doesn't support them)
+  useEffect(() => {
+    if (selectedModel === 'nano-banana' && referenceImages.length > 0) {
+      setReferenceImages([])
+    }
+  }, [selectedModel, referenceImages.length])
+
   // AI Generation handler
   const handleGenerate = async () => {
     if (!user) {
@@ -436,8 +443,8 @@ export default function MultiversePortal() {
       return
     }
 
-    // Get ticket cost for selected model
-    const ticketCost = getTicketCost(selectedModel)
+    // Get ticket cost for selected model (quality-aware for NanoBanana Pro)
+    const ticketCost = getTicketCost(selectedModel, quality)
     
     if (user.ticketBalance < ticketCost) {
       setGenerationError(`Insufficient tickets. Need ${ticketCost} ticket(s) for this model. Purchase more to continue scanning.`)
@@ -694,74 +701,76 @@ export default function MultiversePortal() {
                 />
               </div>
 
-              {/* Reference Images Upload - NEW! */}
-              <div className="mb-4">
-                <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">
-                  Reference Images (Optional)
-                </label>
-                <div className="space-y-2">
-                  {/* Upload Button */}
-                  <div className="flex gap-2">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={async (e) => {
-                        const files = e.target.files
-                        if (!files) return
-                        
-                        const newImages: string[] = []
-                        for (let i = 0; i < Math.min(files.length, 3); i++) {
-                          const file = files[i]
-                          const base64 = await new Promise<string>((resolve) => {
-                            const reader = new FileReader()
-                            reader.onload = () => resolve(reader.result as string)
-                            reader.readAsDataURL(file)
-                          })
-                          newImages.push(base64)
-                        }
-                        setReferenceImages([...referenceImages, ...newImages].slice(0, 3))
-                      }}
-                      className="hidden"
-                      id="reference-upload"
-                      disabled={isGenerating}
-                    />
-                    <label
-                      htmlFor="reference-upload"
-                      className={`flex-1 p-3 border-2 border-dashed rounded-lg text-center cursor-pointer transition-all ${
-                        referenceImages.length >= 3
-                          ? 'border-slate-800 bg-slate-900/30 text-slate-600 cursor-not-allowed'
-                          : 'border-slate-700 hover:border-cyan-500 bg-slate-900/50 text-slate-400 hover:text-cyan-400'
-                      }`}
-                    >
-                      <Upload className="inline mr-2" size={16} />
-                      {referenceImages.length >= 3 ? 'Max 3 images' : 'Upload Reference Images'}
-                    </label>
-                  </div>
-
-                  {/* Preview Uploaded Images */}
-                  {referenceImages.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2">
-                      {referenceImages.map((img, idx) => (
-                        <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-slate-700">
-                          <img src={img} alt={`Reference ${idx + 1}`} className="w-full h-full object-cover" />
-                          <button
-                            onClick={() => setReferenceImages(referenceImages.filter((_, i) => i !== idx))}
-                            className="absolute top-1 right-1 bg-red-500 hover:bg-red-400 text-white rounded-full p-1"
-                            type="button"
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      ))}
+              {/* Reference Images Upload - Only for NanoBanana Pro and SeeDream */}
+              {selectedModel !== 'nano-banana' && (
+                <div className="mb-4">
+                  <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">
+                    Reference Images (Optional)
+                  </label>
+                  <div className="space-y-2">
+                    {/* Upload Button */}
+                    <div className="flex gap-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={async (e) => {
+                          const files = e.target.files
+                          if (!files) return
+                          
+                          const newImages: string[] = []
+                          for (let i = 0; i < Math.min(files.length, 3); i++) {
+                            const file = files[i]
+                            const base64 = await new Promise<string>((resolve) => {
+                              const reader = new FileReader()
+                              reader.onload = () => resolve(reader.result as string)
+                              reader.readAsDataURL(file)
+                            })
+                            newImages.push(base64)
+                          }
+                          setReferenceImages([...referenceImages, ...newImages].slice(0, 3))
+                        }}
+                        className="hidden"
+                        id="reference-upload"
+                        disabled={isGenerating}
+                      />
+                      <label
+                        htmlFor="reference-upload"
+                        className={`flex-1 p-3 border-2 border-dashed rounded-lg text-center cursor-pointer transition-all ${
+                          referenceImages.length >= 3
+                            ? 'border-slate-800 bg-slate-900/30 text-slate-600 cursor-not-allowed'
+                            : 'border-slate-700 hover:border-cyan-500 bg-slate-900/50 text-slate-400 hover:text-cyan-400'
+                        }`}
+                      >
+                        <Upload className="inline mr-2" size={16} />
+                        {referenceImages.length >= 3 ? 'Max 3 images' : 'Upload Reference Images'}
+                      </label>
                     </div>
-                  )}
-                  
-                  <p className="text-xs text-slate-600">
-                    Upload up to 3 reference images to guide the generation
-                  </p>
+
+                    {/* Preview Uploaded Images */}
+                    {referenceImages.length > 0 && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {referenceImages.map((img, idx) => (
+                          <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-slate-700">
+                            <img src={img} alt={`Reference ${idx + 1}`} className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => setReferenceImages(referenceImages.filter((_, i) => i !== idx))}
+                              className="absolute top-1 right-1 bg-red-500 hover:bg-red-400 text-white rounded-full p-1"
+                              type="button"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    <p className="text-xs text-slate-600">
+                      Upload up to 3 reference images to guide the generation
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Model Selector */}
               <div className="mb-4">
@@ -777,27 +786,31 @@ export default function MultiversePortal() {
               </div>
 
               {/* Scan Parameters */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                {/* Quality */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">Resolution</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(['2k', '4k'] as const).map((q) => (
-                      <button
-                        key={q}
-                        onClick={() => setQuality(q)}
-                        disabled={isGenerating}
-                        className={`p-2 rounded-lg font-bold uppercase text-xs transition-all ${
-                          quality === q
-                            ? 'bg-cyan-500 text-black'
-                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                        }`}
-                      >
-                        {q}
-                      </button>
-                    ))}
+              <div className={`grid gap-3 mb-4 ${selectedModel === 'nano-banana' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                {/* Quality - Hide for NanoBanana Cluster */}
+                {selectedModel !== 'nano-banana' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">
+                      Resolution{selectedModel === 'nano-banana-pro' && <span className="text-yellow-400"> (4K = 2 tickets)</span>}
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['2k', '4k'] as const).map((q) => (
+                        <button
+                          key={q}
+                          onClick={() => setQuality(q)}
+                          disabled={isGenerating}
+                          className={`p-2 rounded-lg font-bold uppercase text-xs transition-all ${
+                            quality === q
+                              ? 'bg-cyan-500 text-black'
+                              : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                          }`}
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Aspect Ratio */}
                 <div>
@@ -855,7 +868,7 @@ export default function MultiversePortal() {
                 ) : (
                   <>
                     <Eye className="mr-2" size={20} />
-                    SCAN UNIVERSE ({getTicketCost(selectedModel)} ticket{getTicketCost(selectedModel) > 1 ? 's' : ''})
+                    SCAN UNIVERSE ({getTicketCost(selectedModel, quality)} ticket{getTicketCost(selectedModel, quality) > 1 ? 's' : ''})
                   </>
                 )}
               </Button>
