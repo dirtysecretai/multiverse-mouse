@@ -139,9 +139,16 @@ export async function POST(request: Request) {
 
       try {
         let modelEndpoint = selectedModel.name
+        
+        // Model-specific safety checker settings
+        // NanoBanana models: Use safety checker (Google's built-in filtering works better)
+        // SeeDream: Disable safety checker (allows NSFW content)
+        const enableSafetyChecker = model === 'nano-banana' || model === 'nano-banana-pro'
+        console.log(`Safety checker: ${enableSafetyChecker ? 'ENABLED' : 'DISABLED'} for ${selectedModel.displayName}`)
+        
         const inputParams: any = {
           prompt: prompt.trim(),
-          enable_safety_checker: false  // DISABLED - Allows NSFW content
+          enable_safety_checker: enableSafetyChecker
         }
 
         // Check if regular NanoBanana is trying to use reference images (not supported)
