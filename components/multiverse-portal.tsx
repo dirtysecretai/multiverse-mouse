@@ -37,8 +37,9 @@ interface AdminState {
   galleriesMaintenance: boolean
   promptPacksMaintenance: boolean
   aiGenerationMaintenance: boolean
-  geminiProMaintenance: boolean
-  geminiFlashMaintenance: boolean
+  nanoBananaMaintenance: boolean
+  nanoBananaProMaintenance: boolean
+  seedreamMaintenance: boolean
 }
 
 interface UserData {
@@ -257,8 +258,9 @@ export default function MultiversePortal() {
     galleriesMaintenance: false,
     promptPacksMaintenance: false,
     aiGenerationMaintenance: false,
-    geminiProMaintenance: false,
-    geminiFlashMaintenance: false,
+    nanoBananaMaintenance: false,
+    nanoBananaProMaintenance: false,
+    seedreamMaintenance: false,
   })
 
   // User session state
@@ -372,8 +374,9 @@ export default function MultiversePortal() {
           galleriesMaintenance: !!data.galleriesMaintenance,
           promptPacksMaintenance: !!data.promptPacksMaintenance,
           aiGenerationMaintenance: !!data.aiGenerationMaintenance || false,
-          geminiProMaintenance: !!data.geminiProMaintenance || false,
-          geminiFlashMaintenance: !!data.geminiFlashMaintenance || false,
+          nanoBananaMaintenance: !!data.nanoBananaMaintenance || false,
+          nanoBananaProMaintenance: !!data.nanoBananaProMaintenance || false,
+          seedreamMaintenance: !!data.seedreamMaintenance || false,
         })
       }
     } catch (err) {
@@ -767,8 +770,9 @@ export default function MultiversePortal() {
                   selectedModel={selectedModel}
                   onModelSelect={setSelectedModel}
                   userTickets={user?.ticketBalance || 0}
-                  geminiProMaintenance={adminState.geminiProMaintenance}
-                  geminiFlashMaintenance={adminState.geminiFlashMaintenance}
+                  nanoBananaMaintenance={adminState.nanoBananaMaintenance}
+                  nanoBananaProMaintenance={adminState.nanoBananaProMaintenance}
+                  seedreamMaintenance={adminState.seedreamMaintenance}
                 />
               </div>
 
