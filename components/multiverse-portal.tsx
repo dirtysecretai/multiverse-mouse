@@ -12,6 +12,7 @@ import { PromptPackSlot } from "@/components/prompt-pack-slot"
 import { PromptPackModal } from "@/components/prompt-pack-modal"
 import { useRouter } from "next/navigation"
 import { ModelSelector } from "@/components/ModelSelector"
+import { NotificationBanner } from "@/components/NotificationBanner"
 import { getTicketCost } from "@/config/ai-models.config"
 
 // --- ICONS ---
@@ -496,13 +497,34 @@ export default function MultiversePortal() {
     setSubmitSuccess(false)
 
     try {
-      const formData = new FormData()
-      formData.append('message', echoMessage)
-      formData.append('visibleName', String(visibleName))
-      if (visibleName && userName) formData.append('name', userName)
-      uploadedImages.forEach((img) => formData.append('images', img))
-
-      await fetch('/api/echo', { method: 'POST', body: formData })
+      // Convert images to base64
+      const imagePromises = uploadedImages.map(file => {
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.readAsDataURL(file)
+        })
+      })
+      
+      const base64Images = await Promise.all(imagePromises)
+      
+      const response = await fetch('/api/echo', { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: echoMessage,
+          visibleName: visibleName,
+          name: visibleName && userName ? userName : undefined,
+          images: base64Images
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to send message')
+      }
+      
       setEchoMessage("")
       setUserName("")
       setUploadedImages([])
@@ -674,6 +696,9 @@ export default function MultiversePortal() {
             </a>
           </div>
 
+          {/* NOTIFICATIONS */}
+          <NotificationBanner />
+
           {/* MULTIVERSE SCANNER - NEW! */}
           {adminState.aiGenerationMaintenance ? (
             <MaintenanceIndicator label="MULTIVERSE_SCANNER" />
@@ -795,7 +820,7 @@ export default function MultiversePortal() {
                 {selectedModel !== 'nano-banana' && (
                   <div>
                     <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">
-                      Resolution{selectedModel === 'nano-banana-pro' && <span className="text-yellow-400"> (4K = 2 tickets)</span>}
+                      Resolution{(selectedModel === 'nano-banana-pro' || selectedModel === 'gemini-3-pro-image') && <span className="text-yellow-400"> (4K = 2 tickets)</span>}
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       {(['2k', '4k'] as const).map((q) => (
@@ -998,7 +1023,14 @@ export default function MultiversePortal() {
             <MaintenanceIndicator label="ECHO_CHAMBER" />
           ) : (
             <div className="w-full bg-slate-900/30 p-4 rounded-xl border border-slate-800/50 backdrop-blur-sm mb-4">
-              <div className="flex items-center gap-2 mb-3 text-cyan-400 font-mono text-xs"><Terminal size={12} /> echo_chamber.exe</div>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2 text-cyan-400 font-mono text-xs">
+                  <Terminal size={12} /> echo_chamber.exe
+                </div>
+                <div className="text-xs px-3 py-1 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/30 text-fuchsia-400 font-medium">
+                  Requests & Feedback
+                </div>
+              </div>
               {visibleName && (
                 <Input value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Alias..." className="bg-slate-950 border-slate-800 mb-2 text-white placeholder-slate-600 h-8 text-sm" />
               )}

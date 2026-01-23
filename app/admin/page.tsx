@@ -37,6 +37,7 @@ interface EchoMessage {
   message: string
   visibleName: boolean
   name?: string
+  imageUrls?: string[]
   createdAt: string
 }
 
@@ -138,7 +139,11 @@ export default function AdminPage() {
       const msgRes = await fetch('/api/echo')
       if (msgRes.ok) {
         const msgData = await msgRes.json()
+        console.log('📨 Echo messages fetched:', msgData.length, 'messages')
+        console.log('Messages:', msgData)
         setEchoMessages(Array.isArray(msgData) ? msgData : [])
+      } else {
+        console.error('Echo fetch failed:', msgRes.status, msgRes.statusText)
       }
 
       const configRes = await fetch('/api/admin/config')
@@ -512,9 +517,17 @@ export default function AdminPage() {
             </h1>
             <p className="text-slate-500 text-sm mt-1">System control panel</p>
           </div>
-          <Button onClick={fetchCloudData} disabled={isLoading} className="bg-cyan-500 hover:bg-cyan-400 text-black">
-            <RefreshCw className={isLoading ? 'animate-spin' : ''} size={16} />
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              onClick={() => window.location.href = '/admin/images'}
+              className="bg-fuchsia-500 hover:bg-fuchsia-400 text-white"
+            >
+              <ImageIcon size={16} className="mr-2" /> Admin Images
+            </Button>
+            <Button onClick={fetchCloudData} disabled={isLoading} className="bg-cyan-500 hover:bg-cyan-400 text-black">
+              <RefreshCw className={isLoading ? 'animate-spin' : ''} size={16} />
+            </Button>
+          </div>
         </div>
 
         {/* Master Controls */}
@@ -1625,15 +1638,34 @@ export default function AdminPage() {
           <Activity size={20} /> LIVE_ECHO_STREAM
         </h2>
         <div className="space-y-4">
-          {echoMessages.slice(0, 10).map((msg) => (
-            <div key={msg.id} className="p-4 rounded-xl border border-slate-800 bg-slate-900/60">
-              <div className="flex justify-between text-xs mb-2">
-                <span className="text-cyan-400 font-bold">{msg.name || "ANONYMOUS"}</span>
-                <span className="text-slate-600 flex items-center gap-1"><Clock size={10} /> {new Date(msg.createdAt).toLocaleString()}</span>
-              </div>
-              <p className="text-sm text-slate-300">{msg.message}</p>
+          {echoMessages.length === 0 ? (
+            <div className="p-8 rounded-xl border border-slate-800 bg-slate-900/60 text-center">
+              <p className="text-slate-500 text-sm">No messages yet. Waiting for echoes...</p>
             </div>
-          ))}
+          ) : (
+            echoMessages.slice(0, 10).map((msg) => (
+              <div key={msg.id} className="p-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-cyan-500/30 transition-colors">
+                <div className="flex justify-between text-xs mb-2">
+                  <span className="text-cyan-400 font-bold">{msg.name || "ANONYMOUS"}</span>
+                  <span className="text-slate-500 flex items-center gap-1"><Clock size={10} /> {new Date(msg.createdAt).toLocaleString()}</span>
+                </div>
+                <p className="text-sm text-white mb-3">{msg.message}</p>
+                {msg.imageUrls && Array.isArray(msg.imageUrls) && msg.imageUrls.length > 0 && (
+                  <div className="flex gap-2 flex-wrap mt-3">
+                    {msg.imageUrls.map((url: string, idx: number) => (
+                      <img
+                        key={idx}
+                        src={url}
+                        alt={`Reference ${idx + 1}`}
+                        className="h-24 w-24 object-cover rounded-lg border border-cyan-500/30 hover:scale-105 transition-transform cursor-pointer"
+                        onClick={() => window.open(url, '_blank')}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

@@ -122,6 +122,7 @@ model EchoMessage {
   message     String   @db.Text
   visibleName Boolean  @default(false)
   name        String?
+  imageUrls   String[] // ← Change this line!
   createdAt   DateTime @default(now())
 }
 
