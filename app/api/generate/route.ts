@@ -163,12 +163,35 @@ export async function POST(request: Request) {
 
         // Configure quality/resolution based on model
         if (model === 'seedream-4.5') {
-          // SeeDream uses image_size object
-          inputParams.image_size = quality === '4k' 
-            ? { width: 2048, height: 2048 }  // 4MP max
-            : { width: 1024, height: 1024 }  // 2K
+          // SeeDream uses FAL.ai's image_size enums or custom dimensions
+          // Map quality + aspect ratio to proper dimensions
+          
+          const qualityMultiplier = quality === '4k' ? 2 : 1
+          const baseSizes: Record<string, { width: number, height: number }> = {
+            '1:1': { width: 1024, height: 1024 },
+            '4:5': { width: 896, height: 1152 },
+            '3:4': { width: 896, height: 1152 },
+            '2:3': { width: 896, height: 1344 },
+            '9:16': { width: 768, height: 1344 },
+            '16:9': { width: 1344, height: 768 },
+            '3:2': { width: 1344, height: 896 },
+            '4:3': { width: 1152, height: 896 },
+            '21:9': { width: 1536, height: 640 },
+          }
+          
+          const dimensions = baseSizes[aspectRatio] || baseSizes['1:1']
+          inputParams.image_size = {
+            width: dimensions.width * qualityMultiplier,
+            height: dimensions.height * qualityMultiplier
+          }
+          
           inputParams.max_images = 1
           inputParams.num_images = 1
+          
+          console.log(`🎨 SeeDream 4.5 Parameters:`)
+          console.log(`   quality: ${quality}`)
+          console.log(`   aspect_ratio: ${aspectRatio}`)
+          console.log(`   image_size: ${inputParams.image_size.width}x${inputParams.image_size.height}`)
         } else {
           // NanoBanana models - Use EXACT official FAL.ai parameters
           // Docs: https://fal.ai/models/fal-ai/nano-banana-pro
@@ -558,7 +581,7 @@ export async function POST(request: Request) {
         if (isSensitiveRefusal) {
           return NextResponse.json(
             { 
-              error: 'Sensitive content detected. Ticket not charged. Try another prompt or use SeeDream 4.5 for less restrictive generation.',
+              error: 'Sensitive content detected. Ticket not charged. Try another prompt or use SeeDream 4.5 / NanoBanana Pro for less restrictive generation.',
               blocked: true
             },
             { status: 400 }

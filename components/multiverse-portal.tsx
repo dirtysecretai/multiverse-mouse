@@ -750,12 +750,42 @@ export default function MultiversePortal() {
                           const newImages: string[] = []
                           for (let i = 0; i < Math.min(files.length, 3); i++) {
                             const file = files[i]
-                            const base64 = await new Promise<string>((resolve) => {
+                            
+                            // Compress image before converting to base64 (prevents network errors)
+                            const compressedBase64 = await new Promise<string>((resolve) => {
                               const reader = new FileReader()
-                              reader.onload = () => resolve(reader.result as string)
+                              reader.onload = (e) => {
+                                const img = new Image()
+                                img.onload = () => {
+                                  // Max dimensions: 1920x1920 (reduces file size significantly)
+                                  const MAX_SIZE = 1920
+                                  let width = img.width
+                                  let height = img.height
+                                  
+                                  if (width > MAX_SIZE || height > MAX_SIZE) {
+                                    if (width > height) {
+                                      height = (height / width) * MAX_SIZE
+                                      width = MAX_SIZE
+                                    } else {
+                                      width = (width / height) * MAX_SIZE
+                                      height = MAX_SIZE
+                                    }
+                                  }
+                                  
+                                  const canvas = document.createElement('canvas')
+                                  canvas.width = width
+                                  canvas.height = height
+                                  const ctx = canvas.getContext('2d')
+                                  ctx?.drawImage(img, 0, 0, width, height)
+                                  
+                                  // Convert to JPEG with 85% quality (much smaller than PNG)
+                                  resolve(canvas.toDataURL('image/jpeg', 0.85))
+                                }
+                                img.src = e.target?.result as string
+                              }
                               reader.readAsDataURL(file)
                             })
-                            newImages.push(base64)
+                            newImages.push(compressedBase64)
                           }
                           setReferenceImages([...referenceImages, ...newImages].slice(0, 3))
                         }}
