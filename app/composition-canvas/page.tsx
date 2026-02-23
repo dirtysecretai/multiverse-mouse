@@ -1944,7 +1944,7 @@ export default function CompositionCanvas() {
             {/* Manual Save button (editor only) */}
             {viewState === 'editor' && (
               <button
-                onClick={saveCanvas}
+                onClick={() => saveCanvas()}
                 disabled={isSavingCanvas}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-600/20 hover:bg-green-600/40 text-green-400 transition-all text-sm font-semibold disabled:opacity-50"
                 title="Save Canvas"
