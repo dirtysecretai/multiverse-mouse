@@ -1596,6 +1596,14 @@ export default function CompositionCanvas() {
     localStorage.setItem('compositionSessions', JSON.stringify(updatedSessions));
   };
 
+  const loadSession = (session: SavedSession) => {
+    setSelectedSize(session.canvasSize);
+    setLayers(session.layers);
+    setGridRows(session.gridRows);
+    setGridCols(session.gridCols);
+    setShowSessionsPanel(false);
+  };
+
   // Canvas management functions
   const loadCanvases = async () => {
     try {
