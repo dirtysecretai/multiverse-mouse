@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let imageUrl: string;
+    let imageUrl = '';
     let images: any[] = [];
 
     // Map quality to resolution
