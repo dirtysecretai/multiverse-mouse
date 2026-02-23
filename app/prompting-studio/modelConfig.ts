@@ -30,7 +30,7 @@ export const MODEL_CONFIG: Record<string, ModelConfig> = {
     cost: { '2k': 2, '4k': 2 },
     note: 'Fast, artistic generation - 2 tickets for 2 images!',
     color: 'fuchsia',
-    dailyLimit: null,
+    dailyLimit: undefined,
   },
   'nano-banana-pro': {
     id: 'nano-banana-pro',
@@ -43,7 +43,7 @@ export const MODEL_CONFIG: Record<string, ModelConfig> = {
     note: 'Premium quality - 5 tickets (2K) or 10 tickets (4K)',
     warning: '⚠️ Tip: Keep prompts SFW (safe for work) for best results. Sensitive content may trigger quality reduction.',
     color: 'purple',
-    dailyLimit: null,
+    dailyLimit: undefined,
   },
   'seedream-4.5': {
     id: 'seedream-4.5',
@@ -55,7 +55,7 @@ export const MODEL_CONFIG: Record<string, ModelConfig> = {
     cost: { '2k': 1, '4k': 2 },
     note: 'Premium quality with excellent text rendering - 1 ticket (2K) or 2 tickets (4K)',
     color: 'green',
-    dailyLimit: null,
+    dailyLimit: undefined,
   },
   'pro-scanner-v3': {
     id: 'pro-scanner-v3',
@@ -95,7 +95,7 @@ export const MODEL_CONFIG: Record<string, ModelConfig> = {
     cost: { '2k': 1, '4k': 1 },
     note: 'Enhanced realism, crisp text, native editing - 1 ticket',
     color: 'blue',
-    dailyLimit: null,
+    dailyLimit: undefined,
   },
 };
 
