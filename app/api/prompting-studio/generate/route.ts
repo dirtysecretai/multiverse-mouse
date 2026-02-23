@@ -17,7 +17,7 @@ fal.config({
 
 export async function POST(req: NextRequest) {
   // Declare outside try so they're accessible in the catch block for cleanup
-  let userId: number | undefined
+  let userId = 0
   let ticketCost = 0
   let jobId: number | null = null
 
@@ -36,6 +36,10 @@ export async function POST(req: NextRequest) {
       slotId,    // Which scanner slot submitted this generation
     } = body;
     userId = _userId;
+
+    if (!userId) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
 
     console.log('=== PROMPTING STUDIO GENERATION STARTED ===');
     console.log('User ID:', userId);
