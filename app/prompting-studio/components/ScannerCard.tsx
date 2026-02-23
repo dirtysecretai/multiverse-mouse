@@ -22,7 +22,7 @@ interface ScannerCardProps {
   onGeneratePrompt: () => void;
   onGenerate: () => void;
   onTest: () => void;
-  onReferenceUpload: (files: File[]) => Promise<void>;
+  onReferenceUpload?: (files: File[]) => Promise<void>;
   generateDisabled?: boolean;
   promptCooldown?: number;
   promptModel?: 'gemini-3-flash' | 'gemini-2.0-flash-exp' | 'gemini-3-pro' | 'gemini-exp-1206';
@@ -174,7 +174,7 @@ export default function ScannerCard({
     if (files.length === 0) return;
 
     // Upload to shared reference panel
-    await onReferenceUpload(files);
+    if (onReferenceUpload) await onReferenceUpload(files);
 
     // Reset the input
     e.target.value = '';
