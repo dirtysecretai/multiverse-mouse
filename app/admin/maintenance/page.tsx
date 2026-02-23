@@ -103,7 +103,7 @@ export default function MaintenancePage() {
   }
 
   const updateAdminState = async (updates: Partial<AdminState>) => {
-    const newState = { ...adminState, ...updates }
+    const newState = { ...adminState, ...updates } as AdminState
     setAdminState(newState)
 
     try {
