@@ -265,7 +265,6 @@ export async function POST(req: NextRequest) {
           prompt,
           num_images: 2,
           aspect_ratio: aspectRatio || '1:1',
-          resolution: resolution,
         },
         logs: false,
       });
