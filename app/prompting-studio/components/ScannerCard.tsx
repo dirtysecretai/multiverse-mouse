@@ -186,7 +186,6 @@ export default function ScannerCard({
     setShowModelSelector(false);
     // Clear reference images if switching to a model that doesn't support them
     if (NO_REFERENCE_MODELS.includes(modelId)) {
-      setReferenceImagePreviews([]);
       onUpdate('referenceImages', []);
       onUpdate('referenceImageUrls', []); // Also clear URL-based references
     }
