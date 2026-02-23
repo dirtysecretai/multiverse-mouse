@@ -1590,6 +1590,12 @@ export default function CompositionCanvas() {
     alert('Session saved successfully!');
   };
 
+  const deleteSession = (id: string) => {
+    const updatedSessions = sessions.filter(s => s.id !== id);
+    setSessions(updatedSessions);
+    localStorage.setItem('compositionSessions', JSON.stringify(updatedSessions));
+  };
+
   // Canvas management functions
   const loadCanvases = async () => {
     try {
