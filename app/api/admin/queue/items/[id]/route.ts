@@ -4,10 +4,11 @@ import prisma from '@/lib/prisma';
 // DELETE - Cancel a queue item
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id);
+    const { id: idStr } = await params;
+    const id = parseInt(idStr);
 
     const item = await prisma.generationQueue.findUnique({
       where: { id }
