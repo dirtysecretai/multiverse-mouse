@@ -1,5 +1,5 @@
 {
-  "name": "multiverse-mouse",
+  "name": "ai-design-studio",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -12,6 +12,7 @@
   "dependencies": {
     "@fal-ai/client": "^1.8.3",
     "@google-cloud/vertexai": "^1.10.0",
+    "@google/generative-ai": "^0.24.1",
     "@paypal/react-paypal-js": "^8.9.2",
     "@prisma/client": "^6.2.1",
     "@radix-ui/react-select": "^2.2.6",

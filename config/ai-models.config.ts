@@ -23,8 +23,8 @@ export const AI_MODELS: AIModel[] = [
     id: 'nano-banana',
     name: 'fal-ai/nano-banana',
     displayName: 'NanoBanana Cluster',
-    description: 'Fast, artistic generation - 1 ticket for 2 images!',
-    ticketCost: 1,
+    description: 'Fast, artistic generation - 2 tickets for 2 images!',
+    ticketCost: 2,
     category: 'standard',
     rateLimit: {
       rpm: 0, // No rate limit on FAL.ai
@@ -40,9 +40,9 @@ export const AI_MODELS: AIModel[] = [
     id: 'nano-banana-pro',
     name: 'fal-ai/nano-banana-pro',
     displayName: 'NanoBanana Pro',
-    description: 'Premium quality - 1 ticket (2K) or 2 tickets (4K)',
-    ticketCost: 1,
-    category: 'standard',
+    description: 'Premium quality - 5 tickets (2K) or 10 tickets (4K)',
+    ticketCost: 5,
+    category: 'premium',
     rateLimit: {
       rpm: 0, // No rate limit on FAL.ai
       rpd: 0  // Unlimited with credits
@@ -58,6 +58,23 @@ export const AI_MODELS: AIModel[] = [
     name: 'fal-ai/bytedance/seedream/v4.5/text-to-image',
     displayName: 'SeeDream 4.5',
     description: 'Premium quality with excellent text rendering',
+    ticketCost: 2,
+    category: 'standard',
+    rateLimit: {
+      rpm: 0, // No rate limit on FAL.ai
+      rpd: 0  // Unlimited with credits
+    },
+    quality: 'high',
+    isAvailable: true,
+    provider: 'fal'
+  },
+
+  // FLUX 2 - FAL.ai (Black Forest Labs)
+  {
+    id: 'flux-2',
+    name: 'fal-ai/flux-2',
+    displayName: 'FLUX 2',
+    description: 'Enhanced realism, crisp text, native editing - 1 ticket',
     ticketCost: 1,
     category: 'standard',
     rateLimit: {
@@ -76,9 +93,9 @@ export const AI_MODELS: AIModel[] = [
     id: 'gemini-3-pro-image',
     name: 'gemini-3-pro-image-preview',  // Correct model from Google AI Studio
     displayName: 'Pro Scanner v3',
-    description: 'Direct Gemini API - No filtering! 1 ticket (2K) or 2 tickets (4K)',
-    ticketCost: 1,
-    category: 'standard',
+    description: 'Direct Gemini API - No filtering! 5 tickets (2K) or 10 tickets (4K)',
+    ticketCost: 5,
+    category: 'premium',
     rateLimit: {
       rpm: 10,
       rpd: 250  // Was 250/day based on Tier 2
@@ -204,12 +221,17 @@ export function getModelsByCategory(category: 'standard' | 'premium' | 'ultra'):
 export function getTicketCost(modelId: string, quality?: '2k' | '4k'): number {
   const model = getModelById(modelId)
   if (!model) return 1
-  
-  // NanoBanana Pro & Pro Scanner v3: 1 ticket for 2K, 2 tickets for 4K
+
+  // NanoBanana Pro & Pro Scanner v3: 5 tickets for 2K, 10 tickets for 4K
   if ((modelId === 'nano-banana-pro' || modelId === 'gemini-3-pro-image') && quality === '4k') {
-    return 2
+    return 10
   }
-  
+
+  // SeeDream 4.5: 1 ticket for 2K, 2 tickets for 4K
+  if (modelId === 'seedream-4.5') {
+    return quality === '4k' ? 2 : 1
+  }
+
   // All other models use base ticket cost
   return model.ticketCost
 }

@@ -26,7 +26,23 @@ export async function GET(request: Request) {
       )
     }
 
-    // Fetch user's generated images (not expired, ordered by newest first)
+    // Parse pagination parameters
+    const { searchParams } = new URL(request.url)
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '50')
+    const skip = (page - 1) * limit
+
+    // Get total count for pagination
+    const total = await prisma.generatedImage.count({
+      where: {
+        userId: user.id,
+        expiresAt: {
+          gt: new Date()
+        }
+      }
+    })
+
+    // Fetch paginated user's generated images (not expired, ordered by newest first)
     const images = await prisma.generatedImage.findMany({
       where: {
         userId: user.id,
@@ -37,7 +53,8 @@ export async function GET(request: Request) {
       orderBy: {
         createdAt: 'desc'
       },
-      take: 50 // Limit to 50 most recent
+      skip,
+      take: limit
     })
 
     return NextResponse.json({
@@ -46,9 +63,18 @@ export async function GET(request: Request) {
         id: img.id,
         prompt: img.prompt,
         imageUrl: img.imageUrl,
+        model: img.model,
+        referenceImageUrls: img.referenceImageUrls || [], // Reference images used for this generation
         createdAt: img.createdAt,
         expiresAt: img.expiresAt,
-      }))
+        videoMetadata: img.videoMetadata || null, // Video metadata for video items
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
     })
 
   } catch (error: any) {

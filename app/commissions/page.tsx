@@ -344,7 +344,7 @@ export default function CommissionsPage() {
 
       {/* Footer */}
       <footer className="relative py-6 text-center text-slate-600 text-xs font-mono border-t border-slate-800/50">
-        <span className="text-cyan-500/50">&gt;</span> © 2026 MULTIVERSE MOUSE LAB <span className="text-fuchsia-500/50">//</span> ALL_RIGHTS_RESERVED
+        <span className="text-cyan-500/50">&gt;</span> © 2026 AI DESIGN STUDIO <span className="text-fuchsia-500/50">//</span> ALL_RIGHTS_RESERVED
       </footer>
     </div>
   )

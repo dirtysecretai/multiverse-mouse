@@ -8,21 +8,51 @@ interface ModelSelectorProps {
   selectedModel: string
   onModelSelect: (modelId: string) => void
   userTickets: number
+  // OLD maintenance (kept for backward compatibility)
   nanoBananaProMaintenance?: boolean
   nanoBananaMaintenance?: boolean
   seedreamMaintenance?: boolean
+  // NEW per-scanner, per-model maintenance
+  mainScanner_nanoBanana?: boolean
+  mainScanner_nanoBananaPro?: boolean
+  mainScanner_seedream?: boolean
+  mainScanner_flux2?: boolean
+  mainScanner_proScannerV3?: boolean
+  mainScanner_flashScannerV25?: boolean
 }
 
-export function ModelSelector({ selectedModel, onModelSelect, userTickets, nanoBananaProMaintenance, nanoBananaMaintenance, seedreamMaintenance }: ModelSelectorProps) {
+export function ModelSelector({
+  selectedModel,
+  onModelSelect,
+  userTickets,
+  nanoBananaProMaintenance,
+  nanoBananaMaintenance,
+  seedreamMaintenance,
+  mainScanner_nanoBanana,
+  mainScanner_nanoBananaPro,
+  mainScanner_seedream,
+  mainScanner_flux2,
+  mainScanner_proScannerV3,
+  mainScanner_flashScannerV25
+}: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const availableModels = getAvailableModels()
   const currentModel = AI_MODELS.find(m => m.id === selectedModel) || availableModels[0]
 
-  // Check if a model is in maintenance
+  // Check if a model is in maintenance (NEW per-scanner system takes priority)
   const isInMaintenance = (modelId: string) => {
-    if (modelId === 'nano-banana-pro') return nanoBananaProMaintenance
-    if (modelId === 'nano-banana') return nanoBananaMaintenance
-    if (modelId === 'seedream-4.5') return seedreamMaintenance
+    // Check NEW per-scanner, per-model maintenance first
+    if (modelId === 'nano-banana' && mainScanner_nanoBanana !== undefined) return mainScanner_nanoBanana
+    if (modelId === 'nano-banana-pro' && mainScanner_nanoBananaPro !== undefined) return mainScanner_nanoBananaPro
+    if (modelId === 'seedream-4.5' && mainScanner_seedream !== undefined) return mainScanner_seedream
+    if (modelId === 'flux-2' && mainScanner_flux2 !== undefined) return mainScanner_flux2
+    if (modelId === 'gemini-3-pro-image' && mainScanner_proScannerV3 !== undefined) return mainScanner_proScannerV3
+    if (modelId === 'gemini-2.5-flash-image' && mainScanner_flashScannerV25 !== undefined) return mainScanner_flashScannerV25
+
+    // Fallback to OLD maintenance fields
+    if (modelId === 'nano-banana-pro') return nanoBananaProMaintenance || false
+    if (modelId === 'nano-banana') return nanoBananaMaintenance || false
+    if (modelId === 'seedream-4.5') return seedreamMaintenance || false
     return false
   }
 
@@ -38,33 +68,27 @@ export function ModelSelector({ selectedModel, onModelSelect, userTickets, nanoB
   const canAfford = (ticketCost: number) => userTickets >= ticketCost
 
   const currentModelInMaintenance = isInMaintenance(currentModel.id)
-  
-  // Color distinction for selected button
-  const isCurrentGemini = currentModel.provider === 'gemini'
-  const currentBorderColor = isCurrentGemini ? 'border-cyan-500' : 'border-fuchsia-500'
-  const currentBgColor = isCurrentGemini ? 'bg-cyan-500/10' : 'bg-fuchsia-500/10'
-  const currentTextColor = isCurrentGemini ? 'text-cyan-400' : 'text-fuchsia-400'
-  const currentGlow = isCurrentGemini ? 'hover:shadow-cyan-500/50' : 'hover:shadow-fuchsia-500/50'
 
   return (
     <>
       {/* Selected Model Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className={`w-full p-4 rounded-xl border-2 
-                    ${currentModelInMaintenance 
-                      ? 'border-yellow-500/50 bg-yellow-500/10 hover:shadow-yellow-500/20' 
-                      : `${currentBorderColor} ${currentBgColor} ${currentGlow}`
+        className={`w-full p-4 rounded-xl border transition-all duration-200
+                    ${currentModelInMaintenance
+                      ? 'border-yellow-500/50 bg-yellow-500/10'
+                      : 'border-slate-700 bg-slate-900/60 hover:border-slate-500 hover:bg-slate-800/60'
                     }
-                    hover:shadow-lg transition-all duration-300
                     flex items-center justify-between`}
       >
         <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg ${currentModelInMaintenance ? 'bg-yellow-500/20' : currentBgColor}`}>
-            {getCategoryIcon(currentModel.category)}
+          <div className={`p-2 rounded-lg ${currentModelInMaintenance ? 'bg-yellow-500/20' : 'bg-slate-800'}`}>
+            <span className={currentModelInMaintenance ? 'text-yellow-400' : 'text-white'}>
+              {getCategoryIcon(currentModel.category)}
+            </span>
           </div>
           <div className="text-left">
-            <div className={`font-bold text-sm ${currentModelInMaintenance ? 'text-yellow-500' : currentTextColor}`}>
+            <div className={`font-bold text-sm ${currentModelInMaintenance ? 'text-yellow-500' : 'text-white'}`}>
               {currentModel.displayName}
               {currentModelInMaintenance && (
                 <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">
@@ -72,26 +96,26 @@ export function ModelSelector({ selectedModel, onModelSelect, userTickets, nanoB
                 </span>
               )}
             </div>
-            <div className="text-xs text-slate-400">
-              {currentModelInMaintenance 
+            <div className="text-xs text-slate-500">
+              {currentModelInMaintenance
                 ? 'Model temporarily offline'
                 : `${currentModel.ticketCost} ticket${currentModel.ticketCost > 1 ? 's' : ''} per scan`
               }
             </div>
           </div>
         </div>
-        <ChevronDown size={18} className="text-slate-400" />
+        <ChevronDown size={18} className="text-slate-500" />
       </button>
 
       {/* Modal Overlay */}
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
           onClick={() => setIsOpen(false)}
         >
           {/* Modal Content */}
-          <div 
-            className="bg-slate-900 rounded-2xl border-2 border-slate-700 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+          <div
+            className="bg-slate-900 rounded-2xl border border-slate-700 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -105,8 +129,8 @@ export function ModelSelector({ selectedModel, onModelSelect, userTickets, nanoB
               </button>
             </div>
 
-            {/* Models Grid - Scrollable with custom scrollbar */}
-            <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2 
+            {/* Models Grid */}
+            <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2
                            [&::-webkit-scrollbar]:w-2
                            [&::-webkit-scrollbar-track]:bg-slate-800
                            [&::-webkit-scrollbar-track]:rounded-full
@@ -116,28 +140,14 @@ export function ModelSelector({ selectedModel, onModelSelect, userTickets, nanoB
               {availableModels.map((model) => {
                 const affordable = canAfford(model.ticketCost)
                 const maintenance = isInMaintenance(model.id)
-                
-                // Color distinction: Gemini API = Blue (cyan), FAL.ai = Purple (fuchsia)
-                const isGeminiModel = model.provider === 'gemini'
-                const borderColor = isGeminiModel ? 'border-cyan-500' : 'border-fuchsia-500'
-                const bgColor = isGeminiModel ? 'bg-cyan-500/10' : 'bg-fuchsia-500/10'
-                const textColor = isGeminiModel ? 'text-cyan-400' : 'text-fuchsia-400'
-                const hoverGlow = isGeminiModel ? 'hover:shadow-cyan-500/50' : 'hover:shadow-fuchsia-500/50'
-                
-                // Best quality badges for Pro Scanner v3 and NanoBanana Pro
+
                 const isBestQuality = model.id === 'gemini-3-pro-image' || model.id === 'nano-banana-pro'
-                
-                // Unstable warning for NanoBanana Pro (FAL.ai filtering issues)
                 const isUnstable = model.id === 'nano-banana-pro'
-                
-                // Limited use warning for Gemini models (have daily quotas)
                 const hasLimitedUse = model.provider === 'gemini' && model.rateLimit.rpd > 0
-                
-                // Model-specific feature badges
                 const isMultiImage = model.id === 'nano-banana'
                 const isUncensored = model.id === 'seedream-4.5'
                 const isFast = model.id === 'gemini-2.5-flash-image'
-                
+                const isRealism = model.id === 'flux-2'
                 const isSelected = model.id === selectedModel
 
                 return (
@@ -150,92 +160,100 @@ export function ModelSelector({ selectedModel, onModelSelect, userTickets, nanoB
                       }
                     }}
                     disabled={!affordable || maintenance}
-                    className={`w-full p-4 rounded-xl border-2 
-                              ${maintenance 
-                                ? 'border-yellow-500/50 bg-yellow-500/10' 
-                                : `${borderColor} ${bgColor}`
+                    className={`w-full p-4 rounded-xl border
+                              ${maintenance
+                                ? 'border-yellow-500/50 bg-yellow-500/10'
+                                : isSelected
+                                  ? 'border-slate-500 bg-slate-800/60 ring-2 ring-white/10'
+                                  : 'border-slate-800 bg-slate-900/40 hover:border-slate-600 hover:bg-slate-800/40'
                               }
-                              ${affordable && !maintenance ? `hover:shadow-lg ${hoverGlow} hover:scale-[1.02] cursor-pointer` : 'opacity-40 cursor-not-allowed'}
-                              ${isSelected ? 'ring-4 ring-white/50' : ''}
-                              transition-all duration-300 text-left`}
+                              ${affordable && !maintenance ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'}
+                              transition-all duration-200 text-left`}
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2 flex-wrap">
-                        {getCategoryIcon(model.category)}
-                        <span className={`font-bold text-base ${maintenance ? 'text-yellow-500' : textColor}`}>
+                        <span className={maintenance ? 'text-yellow-400' : 'text-white'}>
+                          {getCategoryIcon(model.category)}
+                        </span>
+                        <span className={`font-bold text-base ${maintenance ? 'text-yellow-500' : 'text-white'}`}>
                           {model.displayName}
                         </span>
                         {isBestQuality && !maintenance && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-gradient-to-r from-yellow-500 to-orange-500 text-black font-bold">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-white text-black font-bold">
                             BEST QUALITY
                           </span>
                         )}
                         {isMultiImage && !maintenance && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-purple-500 text-white font-bold">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 border border-slate-600 text-slate-200 font-bold">
                             MULTIPLE IMAGES
                           </span>
                         )}
                         {isUncensored && !maintenance && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-green-500 text-white font-bold">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 border border-slate-600 text-slate-200 font-bold">
                             UNCENSORED
                           </span>
                         )}
                         {isFast && !maintenance && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-cyan-500 text-black font-bold">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 border border-slate-600 text-slate-200 font-bold">
                             FAST
                           </span>
                         )}
+                        {isRealism && !maintenance && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 border border-slate-600 text-slate-200 font-bold">
+                            REALISM
+                          </span>
+                        )}
                         {hasLimitedUse && !maintenance && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-blue-500/80 text-white font-bold">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 border border-slate-600 text-slate-400 font-bold">
                             LIMITED USE
                           </span>
                         )}
                         {isUnstable && !maintenance && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-orange-500/80 text-white font-bold">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 font-bold">
                             UNSTABLE
                           </span>
                         )}
                         {maintenance && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-yellow-500 text-black font-bold">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">
                             MAINTENANCE
                           </span>
                         )}
                         {isSelected && !maintenance && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-white text-black font-bold">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-white text-black font-bold">
                             SELECTED
                           </span>
                         )}
                       </div>
-                      <span className={`text-sm font-bold px-3 py-1 rounded-lg ${maintenance ? 'bg-yellow-500/20 text-yellow-500' : `${bgColor} ${textColor}`}`}>
+                      <span className={`text-sm font-bold px-3 py-1 rounded-lg flex-shrink-0 ${
+                        maintenance
+                          ? 'bg-yellow-500/20 text-yellow-500'
+                          : 'bg-slate-800 border border-slate-700 text-slate-300'
+                      }`}>
                         {model.ticketCost} 🎫
                       </span>
                     </div>
 
-                    <p className="text-sm text-slate-300 mb-3">{model.description}</p>
-                    
+                    <p className="text-sm text-slate-400 mb-3">{model.description}</p>
+
                     {isUnstable && !maintenance && (
-                      <div className="mb-3 p-2 rounded-lg bg-orange-500/10 border border-orange-500/30">
-                        <p className="text-xs text-orange-300">
-                          ⚠️ <strong>Tip:</strong> Keep prompts SFW (safe for work) for best results. Sensitive content may trigger quality reduction.
-                        </p>
-                      </div>
-                    )}
-                    
-                    {hasLimitedUse && !maintenance && (
-                      <div className="mb-3 p-2 rounded-lg bg-blue-500/10 border border-blue-500/30">
-                        <p className="text-xs text-blue-300">
-                          ⚠️ <strong>Daily Limit:</strong> {model.rateLimit.rpd} generations per day. Resets at midnight PST.
+                      <div className="mb-3 p-2 rounded-lg bg-slate-800/60 border border-slate-700">
+                        <p className="text-xs text-slate-400">
+                          ⚠️ <strong className="text-slate-300">Tip:</strong> Keep prompts SFW (safe for work) for best results. Sensitive content may trigger quality reduction.
                         </p>
                       </div>
                     )}
 
-                    <div className="flex items-center gap-6 text-xs text-slate-400">
+                    {hasLimitedUse && !maintenance && (
+                      <div className="mb-3 p-2 rounded-lg bg-slate-800/60 border border-slate-700">
+                        <p className="text-xs text-slate-400">
+                          ⚠️ <strong className="text-slate-300">Daily Limit:</strong> {model.rateLimit.rpd} generations per day. Resets at midnight PST.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-6 text-xs text-slate-500">
                       <span>Quality: <span className="text-white font-semibold">{model.quality.toUpperCase()}</span></span>
-                      <span className={hasLimitedUse ? 'text-blue-400 font-bold' : ''}>
-                        Daily Limit: <span className={`font-semibold ${hasLimitedUse ? 'text-blue-300' : 'text-white'}`}>
-                          {model.rateLimit.rpd === 0 ? '∞' : model.rateLimit.rpd}
-                        </span>
-                      </span>
+                      <span>Daily Limit: <span className="text-white font-semibold">{model.rateLimit.rpd === 0 ? '∞' : model.rateLimit.rpd}</span></span>
                     </div>
 
                     {maintenance && (
@@ -256,7 +274,7 @@ export function ModelSelector({ selectedModel, onModelSelect, userTickets, nanoB
             {/* Footer Info */}
             <div className="mt-6 p-4 rounded-lg bg-slate-800/50 border border-slate-700">
               <p className="text-xs text-slate-400">
-                💡 <strong className="text-white">Tip:</strong> Higher tier models provide better quality but cost more tickets. 
+                💡 <strong className="text-white">Tip:</strong> Higher tier models provide better quality but cost more tickets.
                 Standard models are great for everyday use, while Ultra models deliver maximum fidelity.
               </p>
             </div>

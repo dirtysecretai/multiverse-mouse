@@ -4,7 +4,7 @@ import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
 import { put } from '@vercel/blob'
 import { getTicketCost, getModelById } from '@/config/ai-models.config'
-import { fal } from "@fal-ai/client"  // NEW: FAL.ai import
+import { fal } from "@fal-ai/client"
 
 const prisma = new PrismaClient()
 
@@ -53,13 +53,23 @@ export async function POST(request: Request) {
 
     // Parse request body
     const body = await request.json()
-    const { 
-      prompt, 
-      quality = '2k', 
-      aspectRatio = '16:9', 
+    const {
+      prompt,
+      quality = '2k',
+      aspectRatio = '16:9',
       referenceImages = [],
-      model = 'gemini-2.5-flash-image'  // Default to Flash Scanner v2.5
+      model = 'gemini-2.5-flash-image',  // Default to Flash Scanner v2.5
+      adminMode = false,  // Admin mode - no ticket deduction
+      syncMode = false,   // If true: wait for FAL.ai and return imageUrl directly (used by composition canvas)
     } = body
+
+    // Check if admin mode is requested and user is actually admin
+    const isAdminUser = user.email === 'dirtysecretai@gmail.com'
+    const skipTickets = adminMode && isAdminUser
+
+    if (skipTickets) {
+      console.log('🔓 ADMIN MODE: Skipping ticket check/deduction for', user.email)
+    }
 
     if (!prompt || prompt.trim().length === 0) {
       return NextResponse.json(
@@ -102,12 +112,12 @@ export async function POST(request: Request) {
     const ticketCost = getTicketCost(model, quality)
     console.log('Selected model:', selectedModel.displayName, '- Quality:', quality, '- Cost:', ticketCost, 'ticket(s)')
 
-    // Check ticket balance
+    // Check ticket balance (skip for admin mode)
     const ticketRecord = await prisma.ticket.findUnique({
       where: { userId: user.id }
     })
 
-    if (!ticketRecord || ticketRecord.balance < ticketCost) {
+    if (!skipTickets && (!ticketRecord || ticketRecord.balance < ticketCost)) {
       return NextResponse.json(
         { error: `Insufficient tickets. Need ${ticketCost} ticket(s), but you have ${ticketRecord?.balance || 0}.` },
         { status: 402 }
@@ -128,30 +138,26 @@ export async function POST(request: Request) {
     const generateStart = Date.now()
 
     let buffer: Buffer
-    let imageBuffers: Buffer[] = []  // For multi-image models like NanoBanana
+    let imageBuffers: Buffer[] = []  // For multi-image models (Gemini only now)
 
-    // NEW: Route to correct provider based on model
+    // Route to correct provider based on model
     if (selectedModel.provider === 'fal') {
       // ============================================
-      // FAL.AI PROVIDER (SeeDream, NanoBanana, etc.)
+      // FAL.AI PROVIDER — ASYNC via fal.queue.submit
+      // Images arrive via webhook at /api/webhooks/fal
       // ============================================
-      console.log('Using FAL.ai provider...')
+      console.log('Using FAL.ai async queue...')
 
       try {
         let modelEndpoint = selectedModel.name
-        
-        // Model-specific safety checker settings
-        // NOTE: enable_safety_checker is ONLY for SeeDream, NOT NanoBanana models
-        // (checked FAL.ai official docs - nano-banana-pro doesn't support this param)
-        const enableSafetyChecker = model === 'seedream-4.5'
-        
+
         const inputParams: any = {
           prompt: prompt.trim()
         }
-        
+
         // Only add enable_safety_checker for models that support it (SeeDream)
         if (model === 'seedream-4.5') {
-          inputParams.enable_safety_checker = false  // Disabled for NSFW content
+          inputParams.enable_safety_checker = false
         }
 
         // Check if regular NanoBanana is trying to use reference images (not supported)
@@ -163,9 +169,6 @@ export async function POST(request: Request) {
 
         // Configure quality/resolution based on model
         if (model === 'seedream-4.5') {
-          // SeeDream uses FAL.ai's image_size enums or custom dimensions
-          // Map quality + aspect ratio to proper dimensions
-          
           const qualityMultiplier = quality === '4k' ? 2 : 1
           const baseSizes: Record<string, { width: number, height: number }> = {
             '1:1': { width: 1024, height: 1024 },
@@ -178,221 +181,226 @@ export async function POST(request: Request) {
             '4:3': { width: 1152, height: 896 },
             '21:9': { width: 1536, height: 640 },
           }
-          
           const dimensions = baseSizes[aspectRatio] || baseSizes['1:1']
           inputParams.image_size = {
             width: dimensions.width * qualityMultiplier,
             height: dimensions.height * qualityMultiplier
           }
-          
           inputParams.max_images = 1
           inputParams.num_images = 1
-          
-          console.log(`🎨 SeeDream 4.5 Parameters:`)
-          console.log(`   quality: ${quality}`)
-          console.log(`   aspect_ratio: ${aspectRatio}`)
-          console.log(`   image_size: ${inputParams.image_size.width}x${inputParams.image_size.height}`)
+          console.log(`SeeDream 4.5: ${inputParams.image_size.width}x${inputParams.image_size.height}`)
+
+        } else if (model === 'flux-2') {
+          const fluxSizeMap: Record<string, string> = {
+            '1:1': 'square_hd',
+            '4:3': 'landscape_4_3',
+            '3:4': 'portrait_4_3',
+            '16:9': 'landscape_16_9',
+            '9:16': 'portrait_16_9',
+          }
+          if (quality === '4k') {
+            const baseSizes: Record<string, { width: number, height: number }> = {
+              '1:1': { width: 1536, height: 1536 },
+              '4:5': { width: 1344, height: 1680 },
+              '3:4': { width: 1344, height: 1792 },
+              '9:16': { width: 1080, height: 1920 },
+              '16:9': { width: 1920, height: 1080 },
+              '4:3': { width: 1792, height: 1344 },
+              '3:2': { width: 1920, height: 1280 },
+            }
+            const dimensions = baseSizes[aspectRatio] || baseSizes['1:1']
+            inputParams.image_size = { width: dimensions.width, height: dimensions.height }
+          } else {
+            inputParams.image_size = fluxSizeMap[aspectRatio] || 'square_hd'
+          }
+          inputParams.num_images = 1
+          inputParams.output_format = 'png'
+          inputParams.enable_safety_checker = false
+          inputParams.guidance_scale = 2.5
+          inputParams.num_inference_steps = 28
+          console.log(`FLUX 2: ${JSON.stringify(inputParams.image_size)}`)
+
         } else {
-          // NanoBanana models - Use EXACT official FAL.ai parameters
-          // Docs: https://fal.ai/models/fal-ai/nano-banana-pro
-          
-          // CRITICAL: Must send exact enum values from docs
-          inputParams.resolution = quality === '4k' ? '4K' : '2K'  // Enum: "1K" | "2K" | "4K"
-          inputParams.aspect_ratio = aspectRatio  // Enum: "21:9" | "16:9" | "3:2" | "4:3" | "5:4" | "1:1" | "4:5" | "3:4" | "2:3" | "9:16"
-          inputParams.output_format = 'png'  // Enum: "jpeg" | "png" | "webp"
-          inputParams.num_images = 1  // Default: 1
-          
-          // EXPERIMENTS to bypass FAL.ai filtering:
-          inputParams.limit_generations = true  // Didn't work alone, but keep it
-          inputParams.sync_mode = true  // Return as data URI, bypass FAL.ai's history/processing
-          
-          // Try JPEG to see if PNG processing has filtering
-          // inputParams.output_format = 'jpeg'
-          
-          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-          console.log(`📋 NanoBanana Pro Parameters (Official Schema):`)
-          console.log(`   resolution: "${inputParams.resolution}"`)
-          console.log(`   aspect_ratio: "${inputParams.aspect_ratio}"`)
-          console.log(`   output_format: "${inputParams.output_format}"`)
-          console.log(`   num_images: ${inputParams.num_images}`)
-          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+          // NanoBanana / NanoBanana Pro
+          inputParams.resolution = quality === '4k' ? '4K' : '2K'
+          inputParams.aspect_ratio = aspectRatio
+          inputParams.output_format = 'png'
+          // NanoBanana generates 2 images in one async job
+          inputParams.num_images = model === 'nano-banana' ? 2 : 1
+          inputParams.limit_generations = true
+          console.log(`NanoBanana: resolution=${inputParams.resolution} aspect=${aspectRatio} num_images=${inputParams.num_images}`)
         }
 
-        // Handle reference images for models that support editing
-        // Only SeeDream 4.5 and NanoBanana Pro support up to 10 reference images
+        // Handle reference images (upload to FAL storage first)
+        const permanentReferenceUrls: string[] = []
         if (referenceImages && referenceImages.length > 0) {
           console.log(`Processing ${referenceImages.length} reference images for ${selectedModel.displayName} edit mode`)
-          
-          // Switch to edit endpoint based on model
+
           if (model === 'seedream-4.5') {
             modelEndpoint = 'fal-ai/bytedance/seedream/v4.5/edit'
-            // SeeDream edit keeps image_size (already set above)
           } else if (model === 'nano-banana-pro') {
             modelEndpoint = 'fal-ai/nano-banana-pro/edit'
-            // NanoBanana Pro edit keeps resolution (already set above)
+          } else if (model === 'flux-2') {
+            modelEndpoint = 'fal-ai/flux-2/edit'
           }
-          
-          // Upload reference images to FAL storage
+
+          const maxImages = model === 'flux-2' ? 4 : referenceImages.length
+          const imagesToUpload = referenceImages.slice(0, maxImages)
+
           const imageUrls: string[] = []
-          for (const imageBase64 of referenceImages) {
+          for (const imageBase64 of imagesToUpload) {
             try {
-              // Convert base64 to buffer
               const base64Data = imageBase64.split(',')[1] || imageBase64
               const imageBuffer = Buffer.from(base64Data, 'base64')
-              
-              // Create a Blob from the buffer (Node.js v18+ has native Blob)
               const blob = new Blob([imageBuffer], { type: 'image/jpeg' })
-              
-              // Upload to FAL storage
               const uploadedUrl = await fal.storage.upload(blob)
-              
               imageUrls.push(uploadedUrl)
-              console.log(`Uploaded reference image: ${uploadedUrl}`)
+
+              // Also save to permanent Vercel Blob storage for the DB record
+              const refFilename = `reference-${user.id}-${Date.now()}-${imageUrls.length}.jpg`
+              const refBlob = await put(refFilename, imageBuffer, {
+                access: 'public',
+                contentType: 'image/jpeg',
+              })
+              permanentReferenceUrls.push(refBlob.url)
             } catch (uploadError) {
               console.error('Failed to upload reference image:', uploadError)
             }
           }
-          
+
           if (imageUrls.length > 0) {
             inputParams.image_urls = imageUrls
-            console.log(`Using ${selectedModel.displayName} edit mode with ${imageUrls.length} reference images at ${inputParams.resolution || 'custom'} resolution`)
-          } else {
-            console.warn('No reference images uploaded successfully, falling back to text-to-image')
+            console.log(`Edit mode: ${imageUrls.length} reference images uploaded`)
           }
         }
 
-        // Special handling for NanoBanana: Generate 2 images with 2 separate API calls
-        const imagesToGenerate = model === 'nano-banana' ? 2 : 1
-        const allResults: any[] = []
-        
-        // Log quality enforcement for NanoBanana Pro
-        if (model === 'nano-banana-pro') {
-          const minSize = quality === '4k' ? '1.5 MB' : '800 KB'
-          console.log(`🛡️ Quality enforcement enabled: Images below ${minSize} will be rejected (content filtering detected)`)
-        }
-        
-        for (let i = 0; i < imagesToGenerate; i++) {
-          console.log(`Generating image ${i + 1}/${imagesToGenerate}...`)
-          
-          // VERIFY: Log exact endpoint being called
-          console.log(`🎯 Calling FAL.ai endpoint: ${modelEndpoint}`)
-          console.log(`📝 Model from config: ${selectedModel.name}`)
-          console.log(`🔍 Model ID: ${model}`)
-          
-          // Log the EXACT parameters being sent to FAL.ai
-          console.log(`FAL.ai call #${i + 1} - Endpoint: ${modelEndpoint}`)
-          console.log(`FAL.ai call #${i + 1} - Parameters:`, JSON.stringify(inputParams, null, 2))
-          
-          const result = await fal.subscribe(modelEndpoint, {
-            input: inputParams,
-            logs: false
+        if (syncMode) {
+          // ─── SYNCHRONOUS PATH (composition canvas) ────────────────────
+          // Wait for FAL.ai to finish and return imageUrl immediately.
+          console.log(`Calling FAL.ai synchronously: ${modelEndpoint}`)
+          const result = await fal.subscribe(modelEndpoint, { input: inputParams, logs: false })
+          const falImageUrl = result.data.images?.[0]?.url
+          if (!falImageUrl) throw new Error('FAL.ai did not return an image')
+
+          // Download from FAL temporary storage and re-host on Vercel Blob
+          const falRes = await fetch(falImageUrl)
+          const imageBuffer = Buffer.from(await falRes.arrayBuffer())
+          const filename = `universe-scan-${user.id}-${Date.now()}.png`
+          const blob = await put(filename, imageBuffer, { access: 'public', contentType: 'image/png' })
+          console.log(`Sync image uploaded to Blob: ${blob.url}`)
+
+          // Save to database
+          const expiresAt = new Date()
+          expiresAt.setDate(expiresAt.getDate() + 30)
+          await prisma.generatedImage.create({
+            data: {
+              userId: user.id,
+              prompt: prompt.trim(),
+              imageUrl: blob.url,
+              model,
+              ticketCost: skipTickets ? 0 : ticketCost,
+              referenceImageUrls: permanentReferenceUrls,
+              expiresAt,
+            },
           })
-          
-          allResults.push(result)
-          console.log(`Image ${i + 1}/${imagesToGenerate} generated successfully`)
-          
-          // Log only essential metadata (not full response with base64!)
-          if (model === 'nano-banana-pro') {
-            if (result.data && result.data.images && result.data.images[0]) {
-              const img = result.data.images[0]
-              console.log(`✅ Image metadata from FAL.ai:`)
-              console.log(`   URL: ${img.url}`)
-              console.log(`   Dimensions: ${img.width || '?'} x ${img.height || '?'}`)
-              console.log(`   File size: ${img.file_size || '?'} bytes`)
-              
-              // Check if resolution matches what we requested
-              const expectedWidth = quality === '4k' ? 3840 : 1920  // Approximate
-              if (img.width && img.width < expectedWidth * 0.5) {
-                console.warn(`⚠️ WARNING: Image width (${img.width}px) is much smaller than expected for ${quality.toUpperCase()} (expected ~${expectedWidth}px)`)
-                console.warn(`⚠️ This suggests the 'resolution' parameter was NOT received by FAL.ai`)
+
+          // Deduct tickets
+          let syncUpdatedTicket = ticketRecord
+          if (!skipTickets) {
+            syncUpdatedTicket = await prisma.ticket.update({
+              where: { userId: user.id },
+              data: { balance: { decrement: ticketCost }, totalUsed: { increment: ticketCost } },
+            })
+          }
+
+          const newBalance = skipTickets
+            ? (ticketRecord?.balance || 0)
+            : (syncUpdatedTicket?.balance || 0)
+
+          console.log('=== FAL.AI SYNC GENERATION COMPLETE ===')
+          return NextResponse.json({ imageUrl: blob.url, newBalance, modelUsed: selectedModel.displayName })
+
+        } else {
+          // ─── ASYNC SUBMIT TO FAL.AI (main portal queue flow) ─────────
+          const appUrl = process.env.APP_URL || `https://${process.env.VERCEL_URL}`
+          const webhookUrl = `${appUrl}/api/webhooks/fal`
+
+          console.log(`Submitting to FAL.ai queue: ${modelEndpoint}`)
+          console.log(`Webhook URL: ${webhookUrl}`)
+
+          const { request_id } = await fal.queue.submit(modelEndpoint, {
+            input: inputParams,
+            webhookUrl,
+          })
+
+          console.log(`FAL.ai accepted job, request_id: ${request_id}`)
+
+          // Reserve tickets immediately
+          if (!skipTickets) {
+            await prisma.ticket.update({
+              where: { userId: user.id },
+              data: {
+                balance: { decrement: ticketCost },
+                reserved: { increment: ticketCost }
               }
+            })
+          }
+
+          // Get new balance for immediate UI update
+          const updatedTicket = await prisma.ticket.findUnique({
+            where: { userId: user.id }
+          })
+
+          // Create queue entry
+          const queueEntry = await prisma.generationQueue.create({
+            data: {
+              userId: user.id,
+              modelId: model,
+              modelType: 'image',
+              prompt: prompt.trim(),
+              parameters: {
+                quality,
+                aspectRatio,
+                model,
+                adminMode: skipTickets,
+                referenceImageUrls: permanentReferenceUrls,
+              },
+              status: 'processing',
+              ticketCost: skipTickets ? 0 : ticketCost,
+              falRequestId: request_id,
+              startedAt: new Date(),
             }
-          }
+          })
+
+          // Increment active count for this model
+          await prisma.modelConcurrencyLimit.updateMany({
+            where: { modelId: model },
+            data: { currentActive: { increment: 1 } }
+          })
+
+          console.log(`Queue entry created: #${queueEntry.id}`)
+          console.log('=== FAL.AI JOB SUBMITTED — AWAITING WEBHOOK ===')
+
+          const newBalance = skipTickets
+            ? (ticketRecord?.balance || 0)
+            : (updatedTicket?.balance || 0)
+
+          return NextResponse.json({
+            queueId: queueEntry.id,
+            status: 'processing',
+            newBalance,
+            message: skipTickets
+              ? `Admin scan queued! (FREE) — image will appear shortly.`
+              : `Universe scan queued! ${ticketCost} ticket(s) reserved.`,
+            modelUsed: selectedModel.displayName,
+            ticketsUsed: skipTickets ? 0 : ticketCost,
+          })
         }
-
-        // Combine all results
-        const combinedImages: any[] = []
-        for (const result of allResults) {
-          if (result.data && result.data.images && result.data.images.length > 0) {
-            combinedImages.push(...result.data.images)
-          }
-        }
-
-        if (combinedImages.length === 0) {
-          throw new Error('No images returned from FAL.ai')
-        }
-
-        console.log(`FAL.ai returned ${combinedImages.length} total image(s)`)
-
-        // Process all images - use the outer imageBuffers array
-        for (let i = 0; i < combinedImages.length; i++) {
-          const imageUrl = combinedImages[i].url
-          console.log(`Processing image ${i + 1}/${combinedImages.length}: ${imageUrl}`)
-
-          // Download image from FAL.ai
-          const imageResponse = await fetch(imageUrl)
-          if (!imageResponse.ok) {
-            console.error(`Failed to download image ${i + 1}`)
-            continue
-          }
-
-          const imgBuffer = Buffer.from(await imageResponse.arrayBuffer())
-          console.log(`Downloaded image ${i + 1}, size: ${imgBuffer.length} bytes (${(imgBuffer.length / 1024 / 1024).toFixed(2)} MB)`)
-          
-          // DIAGNOSTIC: Check for quality degradation in NanoBanana Pro
-          if (model === 'nano-banana-pro') {
-            const minExpectedSize = quality === '4k' ? 1500000 : 800000 // 1.5MB for 4K, 800KB for 2K
-            const sizeMB = (imgBuffer.length / 1024 / 1024).toFixed(2)
-            const expectedMB = (minExpectedSize / 1024 / 1024).toFixed(2)
-            
-            if (imgBuffer.length < minExpectedSize) {
-              console.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-              console.error(`🚨 QUALITY DEGRADATION DETECTED`)
-              console.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-              console.error(`Image size: ${sizeMB} MB`)
-              console.error(`Expected: >${expectedMB} MB`)
-              console.error(`Quality: ${quality.toUpperCase()}`)
-              console.error(`Shortfall: ${((1 - imgBuffer.length / minExpectedSize) * 100).toFixed(0)}% below threshold`)
-              console.error(``)
-              console.error(`🔍 TROUBLESHOOTING INFO:`)
-              console.error(`- Check FAL.ai response above for safety/filter fields`)
-              console.error(`- Check if 'resolution' parameter was received`)
-              console.error(`- Look for: description field (might indicate filtering)`)
-              console.error(`- Prompt: "${prompt.substring(0, 100)}..."`)
-              console.error(`- Aspect ratio: ${aspectRatio}`)
-              console.error(`- Resolution sent: ${quality === '4k' ? '4K' : '2K'}`)
-              console.error(``)
-              console.error(`💡 POSSIBLE CAUSES:`)
-              console.error(`1. Resolution parameter not received by FAL.ai (check width/height above)`)
-              console.error(`2. Google's content filtering triggered (check description field)`)
-              console.error(`3. Prompt contains sensitive keywords`)
-              console.error(`4. Default resolution (1K) being used instead of requested`)
-              console.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-              
-              // CONTINUE generation but log the issue for debugging
-              // We'll figure out the root cause and prevent it
-            }
-          }
-          
-          imageBuffers.push(imgBuffer)
-        }
-
-        if (imageBuffers.length === 0) {
-          throw new Error('Failed to download any images from FAL.ai')
-        }
-
-        // For single image models, use the first buffer
-        // For multi-image models (NanoBanana), we'll handle all buffers below
-        buffer = imageBuffers[0]
 
       } catch (error: any) {
-        console.error('FAL.ai generation error:', error)
-        console.error('FAL.ai error body:', error.body)
-        console.error('FAL.ai error status:', error.status)
-        console.error('FAL.ai request ID:', error.requestId)
-        
+        console.error('FAL.ai queue submit error:', error)
         return NextResponse.json(
-          { error: `FAL.ai generation failed: ${error.message}` },
+          { error: `FAL.ai submission failed: ${error.message}` },
           { status: 500 }
         )
       }
@@ -602,16 +610,39 @@ export async function POST(request: Request) {
 
     // Upload to Vercel Blob
     console.log('Uploading to storage...')
-    
+
+    // First, upload reference images to permanent storage (if any)
+    const permanentReferenceUrls: string[] = []
+    if (referenceImages && referenceImages.length > 0) {
+      console.log(`Uploading ${referenceImages.length} reference image(s) to permanent storage...`)
+      for (let i = 0; i < referenceImages.length; i++) {
+        try {
+          const base64Data = referenceImages[i].split(',')[1] || referenceImages[i]
+          const refBuffer = Buffer.from(base64Data, 'base64')
+          const refFilename = `reference-${user.id}-${Date.now()}-${i}.jpg`
+
+          const refBlob = await put(refFilename, refBuffer, {
+            access: 'public',
+            contentType: 'image/jpeg',
+          })
+
+          permanentReferenceUrls.push(refBlob.url)
+          console.log(`Reference image ${i + 1} uploaded: ${refBlob.url}`)
+        } catch (refErr) {
+          console.error(`Failed to upload reference image ${i + 1}:`, refErr)
+        }
+      }
+    }
+
     // For NanoBanana (multiple images), upload all
     // For other models (single image), upload one
     const uploadedImages: { url: string, id: string }[] = []
-    
+
     // Determine if this is a multi-image generation
     const isMultiImage = model === 'nano-banana' && imageBuffers && imageBuffers.length > 1
     const buffersToUpload = isMultiImage ? imageBuffers : [buffer]
-    
-    console.log(`Uploading ${buffersToUpload.length} image(s)...`)
+
+    console.log(`Uploading ${buffersToUpload.length} generated image(s)...`)
     
     for (let i = 0; i < buffersToUpload.length; i++) {
       const filename = `universe-scan-${user.id}-${Date.now()}-${i}.png`
@@ -633,7 +664,8 @@ export async function POST(request: Request) {
           prompt: prompt.trim(),
           imageUrl: blob.url,
           model,
-          ticketCost: isMultiImage ? 0 : ticketCost, // Only charge for first image in multi-gen
+          ticketCost: skipTickets ? 0 : (isMultiImage ? 0 : ticketCost), // 0 for admin mode, only charge for first image in multi-gen
+          referenceImageUrls: permanentReferenceUrls, // Save reference images used
           expiresAt,
         },
       })
@@ -642,44 +674,52 @@ export async function POST(request: Request) {
       console.log(`Image ${i + 1} saved to database: ${savedImage.id}`)
     }
 
-    // Consume tickets (only once, even for multi-image)
-    console.log(`Consuming ${ticketCost} ticket(s)...`)
-    const updatedTicket = await prisma.ticket.update({
-      where: { userId: user.id },
-      data: {
-        balance: { decrement: ticketCost },
-        totalUsed: { increment: ticketCost },
-      },
-    })
-    console.log('Tickets consumed. New balance:', updatedTicket.balance)
+    // Consume tickets (only once, even for multi-image) - skip for admin mode
+    let updatedTicket = ticketRecord
+    if (!skipTickets) {
+      console.log(`Consuming ${ticketCost} ticket(s)...`)
+      updatedTicket = await prisma.ticket.update({
+        where: { userId: user.id },
+        data: {
+          balance: { decrement: ticketCost },
+          totalUsed: { increment: ticketCost },
+        },
+      })
+      console.log('Tickets consumed. New balance:', updatedTicket?.balance)
+    } else {
+      console.log('🔓 ADMIN MODE: Skipping ticket deduction')
+    }
 
     console.log('=== UNIVERSE SCAN COMPLETE ===')
 
     const generateTime = Date.now() - generateStart
 
     // Return appropriate response based on single or multi-image
+    const finalBalance = skipTickets ? (ticketRecord?.balance || 0) : (updatedTicket?.balance || 0)
+    const ticketsActuallyUsed = skipTickets ? 0 : ticketCost
+
     if (isMultiImage) {
       return NextResponse.json({
         success: true,
         images: uploadedImages, // Array of {url, id}
         imageUrl: uploadedImages[0].url, // Backwards compat
         imageId: uploadedImages[0].id, // Backwards compat
-        newBalance: updatedTicket.balance,
-        message: `Universe scan complete! Generated ${uploadedImages.length} images.`,
+        newBalance: finalBalance,
+        message: skipTickets ? `Admin scan complete! Generated ${uploadedImages.length} images (FREE).` : `Universe scan complete! Generated ${uploadedImages.length} images.`,
         generationTime: generateTime,
         modelUsed: selectedModel.displayName,
-        ticketsUsed: ticketCost,
+        ticketsUsed: ticketsActuallyUsed,
       })
     } else {
       return NextResponse.json({
         success: true,
         imageUrl: uploadedImages[0].url,
         imageId: uploadedImages[0].id,
-        newBalance: updatedTicket.balance,
-        message: 'Universe scan complete!',
+        newBalance: finalBalance,
+        message: skipTickets ? 'Admin scan complete! (FREE)' : 'Universe scan complete!',
         generationTime: generateTime,
         modelUsed: selectedModel.displayName,
-        ticketsUsed: ticketCost,
+        ticketsUsed: ticketsActuallyUsed,
       })
     }
 

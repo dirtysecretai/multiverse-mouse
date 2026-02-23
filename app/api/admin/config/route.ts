@@ -7,26 +7,15 @@ const prisma = new PrismaClient()
 export async function GET() {
   try {
     const config = await prisma.systemState.findFirst()
-    
+
     if (!config) {
-      // Create default config if none exists
+      // Create default config if none exists with all default values
       const newConfig = await prisma.systemState.create({
-        data: {
-          isShopOpen: false,
-          isMaintenanceMode: false,
-          runesMaintenance: false,
-          echoChamberMaintenance: false,
-          galleriesMaintenance: false,
-          promptPacksMaintenance: false,
-          aiGenerationMaintenance: false,
-          nanoBananaMaintenance: false,
-          nanoBananaProMaintenance: false,
-          seedreamMaintenance: false,
-        }
+        data: {}
       })
       return NextResponse.json(newConfig)
     }
-    
+
     return NextResponse.json(config)
   } catch (error) {
     console.error('Error fetching config:', error)
@@ -41,45 +30,26 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    
+
     // Find or create the system state
     let config = await prisma.systemState.findFirst()
-    
+
+    // Remove id, createdAt, updatedAt fields from body before updating
+    const { id, createdAt, updatedAt, ...updateData } = body
+
     if (!config) {
       // Create if doesn't exist
       config = await prisma.systemState.create({
-        data: {
-          isShopOpen: body.isShopOpen ?? false,
-          isMaintenanceMode: body.isMaintenanceMode ?? false,
-          runesMaintenance: body.runesMaintenance ?? false,
-          echoChamberMaintenance: body.echoChamberMaintenance ?? false,
-          galleriesMaintenance: body.galleriesMaintenance ?? false,
-          promptPacksMaintenance: body.promptPacksMaintenance ?? false,
-          aiGenerationMaintenance: body.aiGenerationMaintenance ?? false,
-          nanoBananaMaintenance: body.nanoBananaMaintenance ?? false,
-          nanoBananaProMaintenance: body.nanoBananaProMaintenance ?? false,
-          seedreamMaintenance: body.seedreamMaintenance ?? false,
-        }
+        data: updateData
       })
     } else {
-      // Update existing
+      // Update existing - dynamically update all fields from body
       config = await prisma.systemState.update({
         where: { id: config.id },
-        data: {
-          isShopOpen: body.isShopOpen ?? config.isShopOpen,
-          isMaintenanceMode: body.isMaintenanceMode ?? config.isMaintenanceMode,
-          runesMaintenance: body.runesMaintenance ?? config.runesMaintenance,
-          echoChamberMaintenance: body.echoChamberMaintenance ?? config.echoChamberMaintenance,
-          galleriesMaintenance: body.galleriesMaintenance ?? config.galleriesMaintenance,
-          promptPacksMaintenance: body.promptPacksMaintenance ?? config.promptPacksMaintenance,
-          aiGenerationMaintenance: body.aiGenerationMaintenance ?? config.aiGenerationMaintenance,
-          nanoBananaMaintenance: body.nanoBananaMaintenance ?? config.nanoBananaMaintenance,
-          nanoBananaProMaintenance: body.nanoBananaProMaintenance ?? config.nanoBananaProMaintenance,
-          seedreamMaintenance: body.seedreamMaintenance ?? config.seedreamMaintenance,
-        }
+        data: updateData
       })
     }
-    
+
     console.log('Config updated:', config)
     return NextResponse.json(config)
   } catch (error) {

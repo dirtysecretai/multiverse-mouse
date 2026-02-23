@@ -4,8 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("PRISMA_DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("PRISMA_DATABASE_URL")
+  directUrl = env("DATABASE_URL")
 }
 
 // ============================================
@@ -28,6 +29,31 @@ model User {
   galleryAccesses   GalleryAccess[]
   purchases         Purchase[]
   discountUsages    DiscountUsage[]
+  
+  // NEW: Prompt Intelligence relations
+  userConsent       UserConsent?
+  imageRatings      ImageRating[]
+  
+  // NEW: Training data collection
+  generationTrainingData GenerationTrainingData[]
+  
+  // NEW: Session saving for prompting studio
+  savedSessions     SavedSession[]
+
+  // Subscriptions
+  subscriptions     Subscription[]
+
+  // Feedback
+  feedbacks         Feedback[]
+
+  // User carousel images
+  carouselImages    CarouselImage[]
+
+  // Custom user models (reference image collections)
+  userModels        UserModel[]
+
+  // Composition canvas sessions
+  compositionCanvases CompositionCanvas[]
 }
 
 model Session {
@@ -44,6 +70,32 @@ model Session {
 }
 
 // ============================================
+// COMPOSITION CANVAS
+// ============================================
+
+model CompositionCanvas {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  name          String?
+  aspectRatio   String   // e.g., "1:1", "16:9", "4:5", "9:16"
+  canvasWidth   Int
+  canvasHeight  Int
+  layers        Json     // Store layer data as JSON array
+  panOffset     Json     // { x, y } for pan position
+  zoom          Float    @default(1)
+  rotation      Float    @default(0)
+  gridRows      Int      @default(3)
+  gridCols      Int      @default(3)
+  thumbnail     String?  // Base64 or URL to thumbnail/preview
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ============================================
 // TICKET SYSTEM (for AI generation)
 // ============================================
 
@@ -51,26 +103,47 @@ model Ticket {
   id          Int      @id @default(autoincrement())
   userId      Int      @unique
   balance     Int      @default(0) // Current available tickets
+  reserved    Int      @default(0) // Tickets reserved for in-progress generations
   totalBought Int      @default(0) // Lifetime purchased
   totalUsed   Int      @default(0) // Lifetime consumed
   updatedAt   DateTime @updatedAt
-  
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model TicketPurchase {
-  id              Int      @id @default(autoincrement())
-  userId          Int
-  ticketsCount    Int      // Number of tickets purchased
-  amount          Float    // Price paid
-  paypalOrderId   String   @unique
-  paypalPayerId   String?
-  paymentStatus   String   @default("completed")
-  createdAt       DateTime @default(now())
-  
+  id                    Int      @id @default(autoincrement())
+  userId                Int
+  ticketsCount          Int      // Number of tickets purchased
+  amount                Float    // Price paid (gross amount)
+  paypalOrderId         String   @unique
+  paypalCaptureId       String?  // PayPal capture/transaction ID
+  paypalPayerId         String?
+  payerEmail            String?  // Customer's PayPal email
+  payerName             String?  // Customer's name from PayPal
+  paymentStatus         String   @default("completed")
+
+  // Financial breakdown
+  paypalFee             Float?   // PayPal transaction fee
+  netAmount             Float?   // Amount after PayPal fees
+  currency              String   @default("USD")
+
+  // Billing information
+  billingAddress        Json?    // Full billing address from PayPal
+
+  // Transaction details
+  description           String?  // Purchase description
+  discountCodeUsed      String?  // Discount code if any was used
+  originalAmount        Float?   // Amount before discount
+  discountAmount        Float?   // Amount discounted
+
+  createdAt             DateTime @default(now())
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@index([userId])
+  @@index([paypalCaptureId])
+  @@index([createdAt])
 }
 
 // ============================================
@@ -78,18 +151,29 @@ model TicketPurchase {
 // ============================================
 
 model GeneratedImage {
-  id         Int      @id @default(autoincrement())
-  userId     Int
-  prompt     String   @db.Text
-  imageUrl   String   // Blob/R2 URL
-  model      String   @default("gemini-3-pro-image") // Track which AI model was used
-  ticketCost Int      @default(1) // How many tickets this generation cost
-  createdAt  DateTime @default(now())
-  expiresAt  DateTime // 30 days from creation
-  isDeleted  Boolean  @default(false)
-  
+  id                 Int      @id @default(autoincrement())
+  userId             Int
+  prompt             String   @db.Text
+  imageUrl           String   // Blob/R2 URL (or video URL for video generations)
+  model              String   @default("gemini-3-pro-image") // Track which AI model was used
+  ticketCost         Int      @default(1) // How many tickets this generation cost
+  referenceImageUrls String[] // Reference images used for this generation (Blob URLs)
+  createdAt          DateTime @default(now())
+  expiresAt          DateTime // 30 days from creation
+  isDeleted          Boolean  @default(false)
+
+  // NEW: Video support fields
+  quality            String?  // Quality/resolution (e.g., "2k", "4k", "480p", "720p", "1080p")
+  aspectRatio        String?  // Aspect ratio (e.g., "16:9", "1:1", "4:5")
+  videoMetadata      Json?    // Video-specific metadata (duration, thumbnailUrl, isVideo, etc.)
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
+  // NEW: Prompt Intelligence relations
+  promptAnalysis  PromptAnalysis?
+  redactedPrompt  RedactedPrompt?
+  imageRating     ImageRating?
+
   @@index([userId])
   @@index([expiresAt])
   @@index([model]) // Index for analytics
@@ -100,20 +184,58 @@ model GeneratedImage {
 // ============================================
 
 model SystemState {
-  id                      Int      @id @default(autoincrement())
-  isShopOpen              Boolean  @default(true)
-  isMaintenanceMode       Boolean  @default(false)
-  runesMaintenance        Boolean  @default(false)
-  echoChamberMaintenance  Boolean  @default(false)
-  galleriesMaintenance    Boolean  @default(false)
-  promptPacksMaintenance  Boolean  @default(false)
-  aiGenerationMaintenance Boolean  @default(false) // Global AI generation toggle
-  
-  // Per-model maintenance toggles
-  nanoBananaMaintenance    Boolean  @default(false) // NanoBanana (Gemini 2.5 Flash)
-  nanoBananaProMaintenance Boolean  @default(false) // NanoBanana Pro (Gemini 3 Pro)
-  seedreamMaintenance      Boolean  @default(false) // SeeDream 4.5
-  
+  id                       Int      @id @default(autoincrement())
+  isShopOpen               Boolean  @default(true)
+  isMaintenanceMode        Boolean  @default(false)
+  runesMaintenance         Boolean  @default(false)
+  echoChamberMaintenance   Boolean  @default(false)
+  galleriesMaintenance     Boolean  @default(false)
+  promptPacksMaintenance   Boolean  @default(false)
+  aiGenerationMaintenance  Boolean  @default(false)
+
+  // Scanner maintenance toggles (entire scanner on/off)
+  mainScannerMaintenance   Boolean  @default(false) // Main scanner (multiverse-portal.tsx)
+  legacyScannerMaintenance Boolean  @default(false) // Legacy scanner
+  adminScannerMaintenance  Boolean  @default(false) // Admin scanner
+  canvasScannerMaintenance Boolean  @default(false) // Canvas scanner
+
+  // MAIN SCANNER - Per-model maintenance
+  mainScanner_nanoBanana       Boolean  @default(false)
+  mainScanner_nanoBananaPro    Boolean  @default(false)
+  mainScanner_seedream         Boolean  @default(false)
+  mainScanner_flux2            Boolean  @default(false)
+  mainScanner_proScannerV3     Boolean  @default(false)
+  mainScanner_flashScannerV25  Boolean  @default(false)
+
+  // LEGACY SCANNER - Per-model maintenance
+  legacyScanner_nanoBanana       Boolean  @default(false)
+  legacyScanner_nanoBananaPro    Boolean  @default(false)
+  legacyScanner_seedream         Boolean  @default(false)
+  legacyScanner_flux2            Boolean  @default(false)
+  legacyScanner_proScannerV3     Boolean  @default(false)
+  legacyScanner_flashScannerV25  Boolean  @default(false)
+
+  // ADMIN SCANNER - Per-model maintenance
+  adminScanner_nanoBanana       Boolean  @default(false)
+  adminScanner_nanoBananaPro    Boolean  @default(false)
+  adminScanner_seedream         Boolean  @default(false)
+  adminScanner_flux2            Boolean  @default(false)
+  adminScanner_proScannerV3     Boolean  @default(false)
+  adminScanner_flashScannerV25  Boolean  @default(false)
+
+  // CANVAS SCANNER - Per-model maintenance
+  canvasScanner_nanoBanana       Boolean  @default(false)
+  canvasScanner_nanoBananaPro    Boolean  @default(false)
+  canvasScanner_seedream         Boolean  @default(false)
+  canvasScanner_flux2            Boolean  @default(false)
+  canvasScanner_proScannerV3     Boolean  @default(false)
+  canvasScanner_flashScannerV25  Boolean  @default(false)
+
+  // OLD per-model maintenance (for backward compatibility with deployed code)
+  nanoBananaMaintenance    Boolean  @default(false)
+  nanoBananaProMaintenance Boolean  @default(false)
+  seedreamMaintenance      Boolean  @default(false)
+
   updatedAt                DateTime @updatedAt
 }
 
@@ -122,8 +244,22 @@ model EchoMessage {
   message     String   @db.Text
   visibleName Boolean  @default(false)
   name        String?
-  imageUrls   String[] // ← Change this line!
+  imageUrls   String[]
   createdAt   DateTime @default(now())
+}
+
+model Feedback {
+  id          Int      @id @default(autoincrement())
+  userId      Int?
+  user        User?    @relation(fields: [userId], references: [id])
+  userEmail   String
+  type        String   // "feedback" | "request" | "bug"
+  subject     String
+  message     String   @db.Text
+  status      String   @default("pending") // "pending" | "reviewed" | "resolved"
+  adminNotes  String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Product {
@@ -191,30 +327,55 @@ model GalleryAccess {
 }
 
 model Purchase {
-  id              Int      @id @default(autoincrement())
-  userId          Int
-  itemType        String   // "gallery", "ticket", etc.
-  itemId          Int?
-  amount          Float
-  currency        String   @default("USD")
-  paypalOrderId   String   @unique
-  paypalPayerId   String
-  paymentStatus   String
-  createdAt       DateTime @default(now())
-  
+  id                    Int      @id @default(autoincrement())
+  userId                Int
+  itemType              String   // "gallery", "tickets", etc.
+  itemId                Int?
+  amount                Float    // Gross amount
+  currency              String   @default("USD")
+  paypalOrderId         String   @unique
+  paypalCaptureId       String?  // PayPal capture/transaction ID
+  paypalPayerId         String
+  payerEmail            String?  // Customer's PayPal email
+  payerName             String?  // Customer's name from PayPal
+  paymentStatus         String
+
+  // Financial breakdown
+  paypalFee             Float?   // PayPal transaction fee
+  netAmount             Float?   // Amount after PayPal fees
+
+  // Billing information
+  billingAddress        Json?    // Full billing address from PayPal
+
+  // Transaction details
+  description           String?  // Purchase description
+  discountCodeUsed      String?  // Discount code if any was used
+  originalAmount        Float?   // Amount before discount
+  discountAmount        Float?   // Amount discounted
+
+  createdAt             DateTime @default(now())
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@index([userId])
+  @@index([paypalCaptureId])
+  @@index([createdAt])
 }
 
 model CarouselImage {
   id        Int      @id @default(autoincrement())
+  userId    Int?     // null = global/admin carousel, otherwise user-specific
   imageUrl  String
   side      String   // 'left' or 'right'
   position  Int      // 0, 1, 2, etc. for ordering
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([side])
 }
 
 model DiscountCode {
@@ -252,4 +413,399 @@ model Notification {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// PROMPT INTELLIGENCE SYSTEM
+// ============================================
+
+model UserConsent {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @unique
+  optInTraining   Boolean  @default(false)
+  optInAnalytics  Boolean  @default(true)
+  consentVersion  String   @default("1.0")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+model PromptAnalysis {
+  id                Int      @id @default(autoincrement())
+  generatedImageId  Int      @unique
+  
+  subjects          String[]
+  wardrobe          String[]
+  lighting          String[]
+  cameraSettings    String[]
+  styleTokens       String[]
+  
+  totalTokens       Int
+  sfwTokens         Int
+  descriptiveTokens Int
+  sfwRatio          Float
+  
+  clarityScore      Float?
+  complexityScore   Float?
+  failureRiskScore  Float?
+  
+  analyzedAt        DateTime @default(now())
+  analyzerVersion   String   @default("v1")
+  
+  generatedImage    GeneratedImage @relation(fields: [generatedImageId], references: [id], onDelete: Cascade)
+  
+  @@index([generatedImageId])
+  @@index([sfwRatio])
+  @@index([failureRiskScore])
+}
+
+model RedactedPrompt {
+  id                Int      @id @default(autoincrement())
+  generatedImageId  Int      @unique
+  cleanText         String   @db.Text
+  originalLength    Int
+  redactedLength    Int
+  redactionFlags    Json
+  createdAt         DateTime @default(now())
+  
+  generatedImage    GeneratedImage @relation(fields: [generatedImageId], references: [id], onDelete: Cascade)
+  
+  @@index([generatedImageId])
+}
+
+model ImageRating {
+  id                Int      @id @default(autoincrement())
+  generatedImageId  Int      @unique
+  userId            Int
+  score             Int
+  wasBlocked        Boolean  @default(false)
+  wasAccurate       Boolean?
+  feedbackText      String?  @db.Text
+  tags              String[]
+  createdAt         DateTime @default(now())
+  
+  generatedImage    GeneratedImage @relation(fields: [generatedImageId], references: [id], onDelete: Cascade)
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([generatedImageId])
+  @@index([userId])
+  @@index([score])
+}
+
+model PromptRecipe {
+  id              Int      @id @default(autoincrement())
+  userId          Int?
+  title           String
+  description     String?  @db.Text
+  prompt          String   @db.Text
+  model           String
+  settings        Json
+  tags            String[]
+  successRate     Float?
+  usageCount      Int      @default(0)
+  avgRating       Float?
+  isPublic        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([model])
+  @@index([isPublic])
+}
+
+model SeedTask {
+  id              Int      @id @default(autoincrement())
+  title           String
+  description     String   @db.Text
+  status          String   @default("pending")
+  priority        Int      @default(5)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  completedAt     DateTime?
+  
+  subTasks        SubTask[]
+  
+  @@index([status])
+  @@index([priority])
+}
+
+model SubTask {
+  id              Int      @id @default(autoincrement())
+  seedTaskId      Int
+  taskType        String
+  parameters      Json
+  status          String   @default("queued")
+  attempts        Int      @default(0)
+  maxAttempts     Int      @default(3)
+  result          Json?
+  errorLog        String?  @db.Text
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+  
+  seedTask        SeedTask @relation(fields: [seedTaskId], references: [id], onDelete: Cascade)
+  
+  @@index([seedTaskId])
+  @@index([status])
+  @@index([taskType])
+}
+
+model DatasetSnapshot {
+  id              Int      @id @default(autoincrement())
+  version         String   @unique
+  recordCount     Int
+  modelBreakdown  Json
+  metrics         Json
+  s3Path          String?
+  description     String?  @db.Text
+  createdAt       DateTime @default(now())
+  
+  @@index([createdAt])
+}
+
+// ============================================
+// PROMPTING STUDIO - AUTO TEST STORAGE
+// ============================================
+
+model PromptTest {
+  id            Int      @id @default(autoincrement())
+  celebrityName String
+  baseStyle     String
+  model         String
+  userId        Int?
+  createdAt     DateTime @default(now())
+  
+  results       PromptTestResult[]
+  
+  @@index([celebrityName])
+  @@index([model])
+  @@index([createdAt])
+}
+
+model PromptTestResult {
+  id           Int      @id @default(autoincrement())
+  promptTestId Int
+  level        Int      // Safety level 1-5
+  prompt       String   @db.Text
+  status       String   // 'passed' or 'blocked'
+  imageUrl     String?  // If passed
+  errorMessage String?  @db.Text // If blocked
+  testedAt     DateTime @default(now())
+  
+  promptTest   PromptTest @relation(fields: [promptTestId], references: [id], onDelete: Cascade)
+  
+  @@index([promptTestId])
+  @@index([status])
+  @@index([level])
+}
+
+// ============================================
+// AI TRAINING DATA COLLECTION - UPDATED!
+// ============================================
+
+// Stores all user generations for training the prompt AI
+model GenerationTrainingData {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  
+  // SEPARATE FIELDS FOR INPUT COMPONENTS
+  celebrityName String?  @db.Text // NEW: Name/subject input
+  enhancement   String?  @db.Text // NEW: Enhancement keywords input
+  prompt        String   @db.Text // Full AI-generated prompt
+  
+  // GENERATION SETTINGS
+  model         String
+  quality       String
+  aspectRatio   String
+  imageUrl      String
+  
+  // SUCCESS TRACKING
+  success       Boolean
+  errorMessage  String?  @db.Text
+  promptTokens  Int?
+  userRating    Int?
+  
+  // QUALITY LABELS FOR AI TRAINING
+  isDeleted     Boolean  @default(false)
+  isDiluted     Boolean  @default(false) // For diluted/censored images
+  isGem         Boolean  @default(false) // NEW: For high-quality gems
+  
+  createdAt     DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([model])
+  @@index([success])
+  @@index([isDiluted])
+  @@index([isGem]) // NEW: Index for gem queries
+  @@index([createdAt])
+  @@index([celebrityName]) // NEW: Index for name queries
+}
+
+// ============================================
+// SESSION SAVING (for prompting studio)
+// ============================================
+
+// Stores saved sessions for prompting studio workbench
+model SavedSession {
+  id                     Int      @id @default(autoincrement())
+  userId                 Int
+  name                   String   // User-defined session name
+  images                 Json     // Array of SessionImage objects with all metadata
+  imageCount             Int      // Quick count for display
+  sharedReferenceImages  Json?    // Array of SharedReferenceImage objects
+  savedPrompts           Json?    // Array of 10 saved prompt strings
+  scannerPanels          Json?    // Array of ScannerPanel objects (up to 6)
+  studioScanner          Json?    // Studio scanner state object
+  canvasMode             String?  // Current mode: 'canvas' | 'fullscreen' | 'studio'
+  promptModel            String?  // AI prompt generation model selection
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ============================================
+// SUBSCRIPTIONS
+// ============================================
+
+model Subscription {
+  id                   Int       @id @default(autoincrement())
+  userId               Int
+  tier                 String    // 'prompt-studio-dev' for now
+  status               String    @default("active") // 'active', 'cancelled', 'expired'
+  startDate            DateTime  @default(now())
+  endDate              DateTime? // When the subscription access ends
+  nextBillingDate      DateTime? // When next payment is due
+  billingAmount        Float?    // Amount charged per cycle
+  billingCycle         String?   // 'biweekly', 'monthly', 'yearly'
+  autoRenew            Boolean   @default(true)
+  cancelledAt          DateTime? // When user cancelled (access continues until endDate)
+  paypalSubscriptionId String?   @unique
+  paypalOrderId        String?   // PayPal order ID for initial payment
+  paypalCaptureId      String?   // PayPal capture ID for initial payment
+  metadata             Json?     // Plan info (plan name, ticketsPerCycle, etc.)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tier])
+  @@index([status])
+
+  // Relations
+  transactions SubscriptionTransaction[]
+}
+
+// Track all subscription-related transactions (payments and ticket distributions)
+model SubscriptionTransaction {
+  id               Int      @id @default(autoincrement())
+  subscriptionId   Int
+  userId           Int
+  type             String   // 'payment' | 'ticket_distribution'
+
+  // For payments
+  amount           Float?   // Payment amount
+  paypalTransactionId String? // PayPal transaction/capture ID
+
+  // For ticket distributions
+  ticketsAdded     Int?     // Number of tickets added
+  previousBalance  Int?     // Ticket balance before transaction
+  newBalance       Int?     // Ticket balance after transaction
+
+  // Common fields
+  description      String?  // Description of transaction
+  metadata         Json?    // Additional data (plan info, billing cycle, etc.)
+  createdAt        DateTime @default(now())
+
+  subscription     Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ============================================
+// CUSTOM USER MODELS (Reference Image Collections)
+// ============================================
+
+model UserModel {
+  id                 Int      @id @default(autoincrement())
+  userId             Int
+  name               String   // User-defined model name
+  referenceImageUrls String[] // Array of reference image URLs (up to 8)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ============================================
+// GENERATION QUEUE & CONCURRENCY MANAGEMENT
+// ============================================
+
+// Model concurrency limits (per-model generation limits)
+model ModelConcurrencyLimit {
+  id              Int      @id @default(autoincrement())
+  modelId         String   @unique // e.g., 'nano-banana-pro', 'seedream-4.5', 'minimax-video-01'
+  modelType       String   // 'image' or 'video'
+  maxConcurrent   Int      @default(5) // Max simultaneous generations
+  currentActive   Int      @default(0) // Currently processing
+  updatedAt       DateTime @updatedAt
+
+  @@index([modelId])
+  @@index([modelType])
+}
+
+// Queue for pending generations (FIFO)
+model GenerationQueue {
+  id               Int      @id @default(autoincrement())
+  userId           Int
+  modelId          String   // Which model to use
+  modelType        String   // 'image' or 'video'
+
+  // Generation parameters (stored as JSON)
+  prompt           String   @db.Text
+  parameters       Json     // All generation params (referenceImages, quality, aspectRatio, etc.)
+
+  // Queue metadata
+  status           String   @default("queued") // 'queued', 'processing', 'completed', 'failed', 'cancelled'
+  priority         Int      @default(0) // Higher = processed first (0 = normal FIFO)
+  ticketCost       Int      // Tickets reserved for this generation
+
+  // Timing
+  queuedAt         DateTime @default(now())
+  startedAt        DateTime? // When processing started
+  completedAt      DateTime? // When finished (success or failure)
+
+  // Result
+  resultUrl        String?  // Generated image/video URL
+  resultImageId    Int?     // GeneratedImage DB id (set by webhook on completion)
+  errorMessage     String?  @db.Text
+
+  // FAL.ai async tracking
+  falRequestId     String?  // FAL.ai request_id returned by fal.queue.submit()
+
+  // Position tracking
+  queuePosition    Int?     // Current position in queue (updated periodically)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId])
+  @@index([modelId])
+  @@index([status])
+  @@index([queuedAt])
+  @@index([priority])
+  @@index([falRequestId])
 }

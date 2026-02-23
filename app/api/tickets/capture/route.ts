@@ -110,13 +110,38 @@ export async function POST(request: Request) {
     }
 
     const amount = parseFloat(capture.amount.value)
+    const captureId = capture.id // PayPal capture/transaction ID
     const payerId = captureData.payer.payer_id
     const description = captureData.purchase_units[0].description || ''
     const referenceId = captureData.purchase_units[0].reference_id || ''
 
+    // Extract detailed payer information
+    const payerEmail = captureData.payer.email_address || null
+    const payerName = captureData.payer.name
+      ? `${captureData.payer.name.given_name || ''} ${captureData.payer.name.surname || ''}`.trim()
+      : null
+
+    // Extract PayPal fees and net amount
+    const paypalFee = capture.seller_receivable_breakdown?.paypal_fee?.value
+      ? parseFloat(capture.seller_receivable_breakdown.paypal_fee.value)
+      : null
+    const netAmount = capture.seller_receivable_breakdown?.net_amount?.value
+      ? parseFloat(capture.seller_receivable_breakdown.net_amount.value)
+      : null
+
+    // Extract billing address
+    const billingAddress = captureData.payer.address || captureData.purchase_units[0].shipping?.address || null
+
+    console.log('=== PAYMENT DETAILS ===')
     console.log('Description:', description)
     console.log('Reference ID:', referenceId)
+    console.log('Capture ID:', captureId)
     console.log('Amount:', amount)
+    console.log('PayPal Fee:', paypalFee)
+    console.log('Net Amount:', netAmount)
+    console.log('Payer Email:', payerEmail)
+    console.log('Payer Name:', payerName)
+    console.log('Billing Address:', billingAddress)
 
     // BEST: Extract ticket count from reference_id (TICKETS_50)
     let ticketsCount = 0
@@ -175,7 +200,7 @@ export async function POST(request: Request) {
 
     console.log('FINAL ticket count:', ticketsCount)
 
-    // Create ticket purchase record
+    // Create ticket purchase record with complete details
     console.log('Creating ticket purchase record...')
     const purchase = await prisma.ticketPurchase.create({
       data: {
@@ -183,8 +208,18 @@ export async function POST(request: Request) {
         ticketsCount,
         amount,
         paypalOrderId: orderId,
+        paypalCaptureId: captureId,
         paypalPayerId: payerId,
+        payerEmail,
+        payerName,
         paymentStatus: 'completed',
+        paypalFee,
+        netAmount,
+        currency: 'USD',
+        billingAddress,
+        description,
+        discountCodeUsed: discountCode || null,
+        // Note: originalAmount and discountAmount would need to be passed from frontend
       }
     })
     console.log('Ticket purchase record created:', purchase.id)
@@ -198,8 +233,16 @@ export async function POST(request: Request) {
         amount,
         currency: 'USD',
         paypalOrderId: orderId,
+        paypalCaptureId: captureId,
         paypalPayerId: payerId,
+        payerEmail,
+        payerName,
         paymentStatus: 'completed',
+        paypalFee,
+        netAmount,
+        billingAddress,
+        description,
+        discountCodeUsed: discountCode || null,
       }
     })
     console.log('Purchase history record created')

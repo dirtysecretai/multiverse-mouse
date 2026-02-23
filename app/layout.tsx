@@ -14,8 +14,20 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Multiverse Mouse | Custom AI Content",
+  title: "AI Design Studio | Custom AI Content",
   description: "Exclusive AI-generated galleries, commissions, and custom content",
+  openGraph: {
+    title: "AI Design Studio | Custom AI Content",
+    description: "Exclusive AI-generated galleries, commissions, and custom content",
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'AI Design Studio',
+      },
+    ],
+  },
 };
 
 export default function RootLayout({

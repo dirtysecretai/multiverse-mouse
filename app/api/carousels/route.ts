@@ -1,13 +1,38 @@
 import { NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
+import { getUserFromSession } from '@/lib/auth'
+import { cookies } from 'next/headers'
 
 const prisma = new PrismaClient()
 
 export async function GET() {
   try {
-    // Get all active carousel images, ordered by position
+    // Get user from session
+    const cookieStore = await cookies()
+    const token = cookieStore.get('session')?.value
+
+    let userId: number | null = null
+
+    if (token) {
+      const user = await getUserFromSession(token)
+      if (user) {
+        userId = user.id
+      }
+    }
+
+    // If user is logged in, fetch their carousel images
+    // Otherwise return empty arrays
+    if (!userId) {
+      return NextResponse.json({
+        left: [],
+        right: []
+      })
+    }
+
+    // Get user's carousel images
     const leftImages = await prisma.carouselImage.findMany({
       where: {
+        userId: userId,
         side: 'left',
         isActive: true
       },
@@ -18,6 +43,7 @@ export async function GET() {
 
     const rightImages = await prisma.carouselImage.findMany({
       where: {
+        userId: userId,
         side: 'right',
         isActive: true
       },
@@ -39,5 +65,3 @@ export async function GET() {
     })
   }
 }
-
-

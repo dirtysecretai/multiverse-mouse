@@ -26,9 +26,9 @@ export async function GET(request: Request) {
       )
     }
 
-    console.log('Fetching purchase history for user:', user.id)
+    console.log('Fetching purchase history for user:', user.id, 'email:', user.email)
 
-    // Fetch all ticket purchases for this user
+    // Fetch all ticket purchases for this specific user only
     const ticketPurchases = await prisma.ticketPurchase.findMany({
       where: {
         userId: user.id,
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
       }
     })
 
-    console.log('Found', ticketPurchases.length, 'ticket purchases')
+    console.log('Found', ticketPurchases.length, 'ticket purchases for user ID:', user.id)
 
     // Format for display
     const formattedPurchases = ticketPurchases.map(purchase => ({
