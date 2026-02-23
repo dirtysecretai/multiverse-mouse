@@ -51,7 +51,7 @@ export default function VideoScanner() {
 
   // Scanner state
   const [prompt, setPrompt] = useState('');
-  const [duration, setDuration] = useState<'5' | '10'>('5');
+  const [duration, setDuration] = useState<'3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12' | '13' | '14' | '15'>('5');
   const [resolution, setResolution] = useState<'480p' | '720p' | '1080p'>('1080p');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string>('');
