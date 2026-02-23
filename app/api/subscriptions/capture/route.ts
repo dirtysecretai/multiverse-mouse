@@ -2,8 +2,9 @@
 // Captures PayPal payment and creates subscription in database
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getUserFromSession } from '@/lib/auth';
 import { PrismaClient } from '@prisma/client';
+import { cookies } from 'next/headers';
 
 const prisma = new PrismaClient();
 
@@ -29,8 +30,10 @@ async function getPayPalAccessToken() {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getSession(req);
-    if (!session) {
+    const cookieStore = await cookies();
+    const token = cookieStore.get('session')?.value;
+    const user = token ? await getUserFromSession(token) : null;
+    if (!user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
@@ -102,7 +105,7 @@ export async function POST(req: NextRequest) {
     // Create subscription in database
     const subscription = await prisma.subscription.create({
       data: {
-        userId: session.userId,
+        userId: user.id,
         tier: 'prompt-studio-dev',
         status: 'active',
         billingAmount: amount,
@@ -121,12 +124,12 @@ export async function POST(req: NextRequest) {
     // Add tickets to user's account if included in plan
     if (tickets > 0) {
       const userTicket = await prisma.ticket.findUnique({
-        where: { userId: session.userId },
+        where: { userId: user.id },
       });
 
       if (userTicket) {
         await prisma.ticket.update({
-          where: { userId: session.userId },
+          where: { userId: user.id },
           data: {
             balance: userTicket.balance + tickets,
             totalBought: userTicket.totalBought + tickets,
@@ -136,7 +139,7 @@ export async function POST(req: NextRequest) {
         // Create ticket record if it doesn't exist
         await prisma.ticket.create({
           data: {
-            userId: session.userId,
+            userId: user.id,
             balance: tickets,
             totalBought: tickets,
             totalUsed: 0,
@@ -144,13 +147,13 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      console.log(`✅ Added ${tickets} tickets to user ${session.userId}`);
+      console.log(`✅ Added ${tickets} tickets to user ${user.id}`);
     }
 
     // Log the purchase
     await prisma.purchase.create({
       data: {
-        userId: session.userId,
+        userId: user.id,
         itemType: 'subscription',
         amount: amount,
         currency: 'USD',
@@ -162,7 +165,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`✅ Subscription created for user ${session.userId}: ${subscription.id} (${interval}, ${tickets} tickets)`);
+    console.log(`✅ Subscription created for user ${user.id}: ${subscription.id} (${interval}, ${tickets} tickets)`);
 
     return NextResponse.json({
       success: true,

@@ -3,7 +3,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { getSession } from '@/lib/auth';
+import { getUserFromSession } from '@/lib/auth';
+import { cookies } from 'next/headers';
 
 const prisma = new PrismaClient();
 
@@ -29,8 +30,10 @@ async function getPayPalAccessToken() {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getSession(req);
-    if (!session) {
+    const cookieStore = await cookies();
+    const token = cookieStore.get('session')?.value;
+    const user = token ? await getUserFromSession(token) : null;
+    if (!user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
@@ -50,7 +53,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Verify ownership
-    if (subscription.userId !== session.userId) {
+    if (subscription.userId !== user.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 

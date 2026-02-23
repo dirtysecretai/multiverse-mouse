@@ -2,7 +2,8 @@
 // This uses PayPal's Subscriptions API, not one-time checkout
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getUserFromSession } from '@/lib/auth';
+import { cookies } from 'next/headers';
 
 const PAYPAL_API = process.env.PAYPAL_API_URL || 'https://api-m.sandbox.paypal.com';
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
@@ -26,8 +27,10 @@ async function getPayPalAccessToken() {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getSession(req);
-    if (!session) {
+    const cookieStore = await cookies();
+    const token = cookieStore.get('session')?.value;
+    const user = token ? await getUserFromSession(token) : null;
+    if (!user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
@@ -52,7 +55,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         plan_id: planId,
         custom_id: JSON.stringify({
-          userId: session.userId,
+          userId: user.id,
           tier: 'prompt-studio-dev',
           timestamp: Date.now(),
         }),
