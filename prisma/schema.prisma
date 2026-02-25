@@ -198,7 +198,8 @@ model SystemState {
   legacyScannerMaintenance Boolean  @default(false) // Legacy scanner
   adminScannerMaintenance  Boolean  @default(false) // Admin scanner
   canvasScannerMaintenance Boolean  @default(false) // Canvas scanner
-  videoScannerMaintenance  Boolean  @default(false) // Video scanner
+  videoScannerMaintenance      Boolean  @default(false) // Video scanner
+  compositionCanvasMaintenance Boolean  @default(false) // Composition Canvas
 
   // VIDEO SCANNER - Per-model maintenance
   klingV3Maintenance       Boolean  @default(false)

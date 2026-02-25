@@ -38,6 +38,7 @@ interface AdminState {
   // Video scanner model maintenance
   klingV3Maintenance: boolean
   wan25Maintenance: boolean
+  compositionCanvasMaintenance: boolean
 
   // Per-scanner, per-model maintenance
   [key: string]: boolean
@@ -57,6 +58,7 @@ export default function MaintenancePage() {
     videoScannerMaintenance: false,
     klingV3Maintenance: false,
     wan25Maintenance: false,
+    compositionCanvasMaintenance: false,
   })
 
   const fetchCloudData = useCallback(async () => {
@@ -337,6 +339,66 @@ export default function MaintenancePage() {
                   </button>
                 )
               })}
+            </div>
+          </div>
+        </div>
+
+        {/* Canvas Scanner Controls */}
+        <div className="mb-8">
+          <h2 className="text-xl font-bold text-purple-400 mb-4 font-mono flex items-center gap-2">
+            <Wrench size={20} /> CANVAS_SCANNER_CONTROLS
+          </h2>
+          <div className="p-6 rounded-xl bg-slate-900/60 backdrop-blur-sm border border-slate-800">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-white">Canvas Scanner</h3>
+                <p className="text-xs text-slate-500">app/prompting-studio/canvas</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`text-xs font-bold ${adminState.canvasScannerMaintenance ? 'text-red-400' : 'text-green-400'}`}>
+                  {adminState.canvasScannerMaintenance ? 'OFFLINE' : 'ONLINE'}
+                </span>
+                <button
+                  onClick={() => updateAdminState({ canvasScannerMaintenance: !adminState.canvasScannerMaintenance })}
+                  className={`relative w-14 h-7 rounded-full transition-all ${
+                    adminState.canvasScannerMaintenance ? 'bg-red-500' : 'bg-green-500'
+                  }`}
+                >
+                  <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
+                    adminState.canvasScannerMaintenance ? 'left-8' : 'left-1'
+                  }`} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Composition Canvas Controls */}
+        <div className="mb-8">
+          <h2 className="text-xl font-bold text-emerald-400 mb-4 font-mono flex items-center gap-2">
+            <Wrench size={20} /> COMPOSITION_CANVAS_CONTROLS
+          </h2>
+          <div className="p-6 rounded-xl bg-slate-900/60 backdrop-blur-sm border border-slate-800">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-white">Composition Canvas</h3>
+                <p className="text-xs text-slate-500">app/composition-canvas</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`text-xs font-bold ${adminState.compositionCanvasMaintenance ? 'text-red-400' : 'text-green-400'}`}>
+                  {adminState.compositionCanvasMaintenance ? 'OFFLINE' : 'ONLINE'}
+                </span>
+                <button
+                  onClick={() => updateAdminState({ compositionCanvasMaintenance: !adminState.compositionCanvasMaintenance })}
+                  className={`relative w-14 h-7 rounded-full transition-all ${
+                    adminState.compositionCanvasMaintenance ? 'bg-red-500' : 'bg-green-500'
+                  }`}
+                >
+                  <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
+                    adminState.compositionCanvasMaintenance ? 'left-8' : 'left-1'
+                  }`} />
+                </button>
+              </div>
             </div>
           </div>
         </div>

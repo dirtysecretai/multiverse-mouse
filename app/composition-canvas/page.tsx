@@ -74,6 +74,7 @@ interface SavedSession {
 
 interface AdminState {
   isMaintenanceMode: boolean;
+  compositionCanvasMaintenance: boolean;
 }
 
 interface CanvasData {
@@ -105,6 +106,7 @@ export default function CompositionCanvas() {
   const [hasPromptStudioDev, setHasPromptStudioDev] = useState(false);
   const [adminState, setAdminState] = useState<AdminState>({
     isMaintenanceMode: false,
+    compositionCanvasMaintenance: false,
   });
 
   // View state management
@@ -245,6 +247,7 @@ export default function CompositionCanvas() {
         if (adminRes.ok) {
           setAdminState({
             isMaintenanceMode: !!adminData.isMaintenanceMode,
+            compositionCanvasMaintenance: !!adminData.compositionCanvasMaintenance,
           });
         }
 
@@ -1892,14 +1895,16 @@ export default function CompositionCanvas() {
 
   const isAdmin = user?.email === "dirtysecretai@gmail.com";
 
-  if (adminState.isMaintenanceMode && !isAdmin) {
+  if ((adminState.isMaintenanceMode || adminState.compositionCanvasMaintenance) && !isAdmin) {
     return (
       <div className="min-h-screen bg-[#050810] flex items-center justify-center p-6">
         <div className="text-center p-12 rounded-2xl border-2 border-yellow-500/30 bg-yellow-500/5 backdrop-blur-sm max-w-md">
           <AlertTriangle className="mx-auto text-yellow-500 mb-4 animate-pulse" size={64} />
           <h1 className="text-2xl font-black text-yellow-400 mb-3">MAINTENANCE MODE</h1>
           <p className="text-slate-400 text-sm">
-            AI Design Studio is temporarily offline for maintenance. We'll be back soon!
+            {adminState.isMaintenanceMode
+              ? 'AI Design Studio is temporarily offline for maintenance. We\'ll be back soon!'
+              : 'The Composition Canvas is temporarily offline for maintenance. Please check back later.'}
           </p>
         </div>
       </div>
