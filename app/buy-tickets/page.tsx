@@ -24,7 +24,7 @@ const BENEFITS = [
   {
     icon: <Zap size={15} />,
     title: "Every model, every scanner",
-    desc: "Works across all scanners — NanoBanana Pro, SeeDream 4.5, FLUX 2, Pro Scanner v3, and more.",
+    desc: "Works across all scanners — NanoBanana Pro, SeeDream 4.5, FLUX 2, Kling 3.0, and more.",
   },
   {
     icon: <Sparkles size={15} />,
