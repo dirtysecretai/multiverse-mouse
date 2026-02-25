@@ -20,6 +20,12 @@ interface GeneratedImage {
   model: string
   createdAt: string
   expiresAt: string
+  videoMetadata?: {
+    isVideo?: boolean
+    thumbnailUrl?: string
+    duration?: string
+    resolution?: string
+  } | null
 }
 
 interface Purchase {
@@ -534,21 +540,19 @@ export default function DashboardPage() {
                   {/* Large recent image/video */}
                   <div className="col-span-2 row-span-2">
                     <Link href="/my-images">
-                      <div className="aspect-square rounded-lg border-2 border-fuchsia-500/30 overflow-hidden hover:border-fuchsia-400 transition-all cursor-pointer group">
-                        {generatedImages[0]?.model === 'wan-2.5' ? (
-                          <video
-                            src={generatedImages[0]?.imageUrl}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                            muted
-                            loop
-                            playsInline
-                          />
-                        ) : (
-                          <img
-                            src={generatedImages[0]?.imageUrl}
-                            alt="Most recent"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          />
+                      <div className="aspect-square rounded-lg border-2 border-fuchsia-500/30 overflow-hidden hover:border-fuchsia-400 transition-all cursor-pointer group relative">
+                        <img
+                          src={generatedImages[0]?.videoMetadata?.thumbnailUrl || generatedImages[0]?.imageUrl}
+                          alt="Most recent"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                        {generatedImages[0]?.videoMetadata?.isVideo && (
+                          <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/70 rounded px-1.5 py-0.5">
+                            <svg className="w-3 h-3 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                            <span className="text-orange-400 text-[10px] font-mono">VIDEO</span>
+                          </div>
                         )}
                       </div>
                     </Link>
@@ -556,21 +560,18 @@ export default function DashboardPage() {
                   {/* 4 smaller images/videos */}
                   {generatedImages.slice(1, 5).map((img, idx) => (
                     <Link href="/my-images" key={img.id || idx}>
-                      <div className="aspect-square rounded-lg border border-slate-700 overflow-hidden hover:border-fuchsia-400 transition-all cursor-pointer group">
-                        {img.model === 'wan-2.5' ? (
-                          <video
-                            src={img.imageUrl}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                            muted
-                            loop
-                            playsInline
-                          />
-                        ) : (
-                          <img
-                            src={img.imageUrl}
-                            alt={`Recent ${idx + 2}`}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          />
+                      <div className="aspect-square rounded-lg border border-slate-700 overflow-hidden hover:border-fuchsia-400 transition-all cursor-pointer group relative">
+                        <img
+                          src={img.videoMetadata?.thumbnailUrl || img.imageUrl}
+                          alt={`Recent ${idx + 2}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                        {img.videoMetadata?.isVideo && (
+                          <div className="absolute bottom-1 left-1 flex items-center gap-0.5 bg-black/70 rounded px-1 py-0.5">
+                            <svg className="w-2.5 h-2.5 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                          </div>
                         )}
                       </div>
                     </Link>

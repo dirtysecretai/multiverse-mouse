@@ -13,6 +13,12 @@ interface GeneratedImage {
   referenceImageUrls: string[]
   createdAt: string
   expiresAt: string
+  videoMetadata?: {
+    isVideo?: boolean
+    thumbnailUrl?: string
+    duration?: string
+    resolution?: string
+  } | null
 }
 
 interface PaginationInfo {
@@ -196,6 +202,8 @@ export default function MyImagesGalleryPage() {
     if (model === 'nano-banana-pro') return 'NanoBanana Pro'
     if (model === 'seedream-4.5') return 'SeeDream 4.5'
     if (model === 'wan-2.5') return 'WAN 2.5 Video'
+    if (model === 'kling-v3') return 'Kling 3.0 Video'
+    if (model === 'kling-o3') return 'Kling O3 Video'
     if (model.includes('gemini') && model.includes('pro')) return 'Gemini Pro'
     if (model.includes('gemini') && model.includes('flash')) return 'Gemini Flash'
     return model
@@ -318,14 +326,20 @@ export default function MyImagesGalleryPage() {
               >
                 {/* Image or Video */}
                 <div className="aspect-square bg-slate-950 relative overflow-hidden">
-                  {image.model === 'wan-2.5' ? (
-                    <video
-                      src={image.imageUrl}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      muted
-                      loop
-                      playsInline
-                    />
+                  {image.videoMetadata?.isVideo ? (
+                    <>
+                      <img
+                        src={image.videoMetadata.thumbnailUrl || image.imageUrl}
+                        alt={image.prompt}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/70 rounded px-1.5 py-0.5">
+                        <svg className="w-3 h-3 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
+                          <polygon points="5 3 19 12 5 21 5 3" />
+                        </svg>
+                        <span className="text-orange-400 text-[10px] font-mono">VIDEO</span>
+                      </div>
+                    </>
                   ) : (
                     <img
                       src={image.imageUrl}
@@ -383,7 +397,7 @@ export default function MyImagesGalleryPage() {
             className="flex-1 flex items-center justify-center p-4 min-h-0"
             onClick={(e) => e.stopPropagation()}
           >
-            {selectedImage.model === 'wan-2.5' ? (
+            {selectedImage.videoMetadata?.isVideo ? (
               <video
                 src={selectedImage.imageUrl}
                 controls
