@@ -290,6 +290,30 @@ export default function VideoScanner() {
     setAudioFileName(file.name);
   };
 
+  const compressImage = (file: File, maxDimension = 1920, quality = 0.85): Promise<File> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) { height = Math.round(height * maxDimension / width); width = maxDimension; }
+          else { width = Math.round(width * maxDimension / height); height = maxDimension; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          resolve(blob ? new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }) : file);
+        }, 'image/jpeg', quality);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
+  };
+
   const handleGenerate = async () => {
     if (!prompt.trim()) {
       setGenerationError('Please enter a motion prompt');
@@ -331,9 +355,10 @@ export default function VideoScanner() {
     setGeneratedVideos(prev => [loadingPlaceholder, ...prev].slice(0, MAX_FEED_SIZE));
 
     try {
-      // Upload image
+      // Upload image (compress first to stay under Vercel's 4.5MB payload limit)
+      const compressedImageFile = await compressImage(imageFile);
       const imageFormData = new FormData();
-      imageFormData.append('file', imageFile);
+      imageFormData.append('file', compressedImageFile);
       const imageUploadRes = await fetch('/api/upload-reference', {
         method: 'POST',
         body: imageFormData
@@ -354,8 +379,9 @@ export default function VideoScanner() {
 
       let endImageUrl = undefined;
       if (endImageFile && videoModel === 'kling-v3') {
+        const compressedEndImageFile = await compressImage(endImageFile);
         const endImageFormData = new FormData();
-        endImageFormData.append('file', endImageFile);
+        endImageFormData.append('file', compressedEndImageFile);
         const endImageUploadRes = await fetch('/api/upload-reference', {
           method: 'POST',
           body: endImageFormData
