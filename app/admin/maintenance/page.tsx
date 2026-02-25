@@ -33,6 +33,11 @@ interface AdminState {
   legacyScannerMaintenance: boolean
   adminScannerMaintenance: boolean
   canvasScannerMaintenance: boolean
+  videoScannerMaintenance: boolean
+
+  // Video scanner model maintenance
+  klingV3Maintenance: boolean
+  wan25Maintenance: boolean
 
   // Per-scanner, per-model maintenance
   [key: string]: boolean
@@ -49,6 +54,9 @@ export default function MaintenancePage() {
     legacyScannerMaintenance: false,
     adminScannerMaintenance: false,
     canvasScannerMaintenance: false,
+    videoScannerMaintenance: false,
+    klingV3Maintenance: false,
+    wan25Maintenance: false,
   })
 
   const fetchCloudData = useCallback(async () => {
@@ -268,6 +276,68 @@ export default function MaintenancePage() {
                 </button>
               )
             })}
+          </div>
+        </div>
+
+        {/* Video Scanner Controls */}
+        <div className="mb-8">
+          <h2 className="text-xl font-bold text-orange-400 mb-4 font-mono flex items-center gap-2">
+            <Wrench size={20} /> VIDEO_SCANNER_CONTROLS
+          </h2>
+          <div className="p-6 rounded-xl bg-slate-900/60 backdrop-blur-sm border border-slate-800">
+            {/* Scanner-level toggle */}
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-bold text-white">Video Scanner</h3>
+                <p className="text-xs text-slate-500">app/video-scanner</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`text-xs font-bold ${adminState.videoScannerMaintenance ? 'text-red-400' : 'text-green-400'}`}>
+                  {adminState.videoScannerMaintenance ? 'OFFLINE' : 'ONLINE'}
+                </span>
+                <button
+                  onClick={() => updateAdminState({ videoScannerMaintenance: !adminState.videoScannerMaintenance })}
+                  className={`relative w-14 h-7 rounded-full transition-all ${
+                    adminState.videoScannerMaintenance ? 'bg-red-500' : 'bg-green-500'
+                  }`}
+                >
+                  <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
+                    adminState.videoScannerMaintenance ? 'left-8' : 'left-1'
+                  }`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Per-model toggles */}
+            <p className="text-xs text-slate-500 mb-3 uppercase tracking-wider font-bold">Model Controls</p>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { id: 'klingV3Maintenance', name: 'Kling 3.0', icon: '🎬' },
+                { id: 'wan25Maintenance', name: 'WAN 2.5', icon: '🌊' },
+              ].map((model) => {
+                const isOffline = adminState[model.id]
+                return (
+                  <button
+                    key={model.id}
+                    onClick={() => updateAdminState({ [model.id]: !adminState[model.id] })}
+                    className={`p-4 rounded-xl border-2 transition-all text-left ${
+                      isOffline
+                        ? 'border-red-500 bg-red-500/20'
+                        : 'border-green-500 bg-green-500/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-2xl">{model.icon}</span>
+                      <div className={`w-3 h-3 rounded-full ${isOffline ? 'bg-red-500' : 'bg-green-500'}`} />
+                    </div>
+                    <p className="font-bold text-white text-sm">{model.name}</p>
+                    <p className={`text-xs mt-1 ${isOffline ? 'text-red-400' : 'text-green-400'}`}>
+                      {isOffline ? 'OFFLINE — Maintenance' : 'ONLINE'}
+                    </p>
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
 

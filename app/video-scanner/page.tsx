@@ -22,6 +22,8 @@ interface GeneratedVideo {
 interface AdminState {
   isMaintenanceMode: boolean;
   videoScannerMaintenance: boolean;
+  klingV3Maintenance: boolean;
+  wan25Maintenance: boolean;
 }
 
 function MaintenanceIndicator({ label }: { label: string }) {
@@ -47,6 +49,8 @@ export default function VideoScanner() {
   const [adminState, setAdminState] = useState<AdminState>({
     isMaintenanceMode: false,
     videoScannerMaintenance: false,
+    klingV3Maintenance: false,
+    wan25Maintenance: false,
   });
 
   // Scanner state
@@ -127,6 +131,8 @@ export default function VideoScanner() {
           setAdminState({
             isMaintenanceMode: !!adminData.isMaintenanceMode,
             videoScannerMaintenance: !!adminData.videoScannerMaintenance || false,
+            klingV3Maintenance: !!adminData.klingV3Maintenance || false,
+            wan25Maintenance: !!adminData.wan25Maintenance || false,
           });
         }
 
@@ -326,6 +332,11 @@ export default function VideoScanner() {
       return;
     }
 
+    if ((videoModel === 'kling-v3' && adminState.klingV3Maintenance) || (videoModel === 'wan-2.5' && adminState.wan25Maintenance)) {
+      setGenerationError('This model is currently under maintenance. Please try the other model.');
+      return;
+    }
+
     if (generationQueue >= MAX_QUEUE_SIZE) {
       setGenerationError(`Generation queue full (max ${MAX_QUEUE_SIZE}). Please wait for current generations to complete.`);
       return;
@@ -519,21 +530,36 @@ export default function VideoScanner() {
               <label className="text-xs font-bold text-orange-400 mb-2 block uppercase tracking-wider">Model</label>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setVideoModel('wan-2.5'); setDuration('5'); setEndImageFile(null); setEndImagePreviewUrl(''); }}
-                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold border transition-all ${videoModel === 'wan-2.5' ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-orange-500/50'}`}
+                  onClick={() => { if (!adminState.wan25Maintenance) { setVideoModel('wan-2.5'); setDuration('5'); setEndImageFile(null); setEndImagePreviewUrl(''); } }}
+                  disabled={adminState.wan25Maintenance}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold border transition-all ${adminState.wan25Maintenance ? 'bg-slate-900 border-yellow-500/40 text-yellow-500/60 cursor-not-allowed' : videoModel === 'wan-2.5' ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-orange-500/50'}`}
                 >
                   <div>WAN 2.5</div>
-                  <div className="text-[10px] opacity-70 mt-0.5">480p / 720p / 1080p</div>
+                  <div className="text-[10px] opacity-70 mt-0.5">{adminState.wan25Maintenance ? '⚠ Maintenance' : '480p / 720p / 1080p'}</div>
                 </button>
                 <button
-                  onClick={() => { setVideoModel('kling-v3'); setDuration('5'); setGenerateAudio(false); setKlingAspectRatio('16:9'); }}
-                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold border transition-all ${videoModel === 'kling-v3' ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-orange-500/50'}`}
+                  onClick={() => { if (!adminState.klingV3Maintenance) { setVideoModel('kling-v3'); setDuration('5'); setGenerateAudio(false); setKlingAspectRatio('16:9'); } }}
+                  disabled={adminState.klingV3Maintenance}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold border transition-all ${adminState.klingV3Maintenance ? 'bg-slate-900 border-yellow-500/40 text-yellow-500/60 cursor-not-allowed' : videoModel === 'kling-v3' ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-orange-500/50'}`}
                 >
                   <div>Kling 3.0</div>
-                  <div className="text-[10px] opacity-70 mt-0.5">3–15s • Start/End Frame</div>
+                  <div className="text-[10px] opacity-70 mt-0.5">{adminState.klingV3Maintenance ? '⚠ Maintenance' : '3–15s • Start/End Frame'}</div>
                 </button>
               </div>
             </div>
+
+            {/* Model maintenance warning */}
+            {((videoModel === 'kling-v3' && adminState.klingV3Maintenance) || (videoModel === 'wan-2.5' && adminState.wan25Maintenance)) && (
+              <div className="mb-4 p-4 rounded-xl border border-yellow-500/40 bg-yellow-500/10">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className="text-yellow-400" size={18} />
+                  <span className="text-yellow-400 font-bold text-sm">MAINTENANCE MODE</span>
+                </div>
+                <p className="text-slate-400 text-xs">
+                  {videoModel === 'kling-v3' ? 'Kling 3.0' : 'WAN 2.5'} is temporarily offline for maintenance. Please try the other model or check back later.
+                </p>
+              </div>
+            )}
 
             {/* Image Upload — side-by-side for Kling V3, full-width otherwise */}
             <div className="mb-4">
