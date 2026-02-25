@@ -80,8 +80,8 @@ export default function VideoScanner() {
       // Reference: popular 50-ticket pack — free $0.18/t, dev $0.12/t
       // Dev tier saves ~35% matching buy-tickets-page discount
       const ratePerSec = hasPromptStudioDev
-        ? (generateAudio ? 3 : 2)   // dev tier
-        : (generateAudio ? 4 : 3);  // free tier
+        ? (generateAudio ? 7 : 5)   // dev tier
+        : (generateAudio ? 8 : 6);  // free tier
       return parseInt(duration) * ratePerSec;
     }
     // WAN 2.5 pricing

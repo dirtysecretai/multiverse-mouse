@@ -40,8 +40,8 @@ export async function POST(request: NextRequest) {
       // API cost: $0.224/s (audio off) · $0.336/s (audio on)
       // Ref: popular 50-ticket pack — free $0.18/t, dev $0.12/t
       const ratePerSec = hasDevTier
-        ? (generateAudio ? 3 : 2)   // dev tier
-        : (generateAudio ? 4 : 3);  // free tier
+        ? (generateAudio ? 7 : 5)   // dev tier
+        : (generateAudio ? 8 : 6);  // free tier
       ticketCost = parseInt(duration) * ratePerSec;
     } else {
       // WAN 2.5 pricing
