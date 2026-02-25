@@ -181,7 +181,8 @@ export default function VideoScanner() {
             if (sessionData.prompt !== undefined) setPrompt(sessionData.prompt);
             if (sessionData.duration) setDuration(sessionData.duration);
             if (sessionData.resolution) setResolution(sessionData.resolution);
-            if (sessionData.imagePreviewUrl) setImagePreviewUrl(sessionData.imagePreviewUrl);
+            // Don't restore imagePreviewUrl — blob URLs are invalid after a page reload
+            // and restoring them leaves imageFile null, permanently disabling the generate button
 
             // Restore videos including loading placeholders
             const restoredVideos = sessionData.generatedVideos || [];
@@ -435,6 +436,7 @@ export default function VideoScanner() {
     } catch (err) {
       console.error('Generation error:', err);
       setGeneratedVideos(prev => prev.filter(vid => vid.id !== generationId));
+      setGenerationError('Generation failed. Please try again.');
     } finally {
       setGenerationQueue(prev => Math.max(0, prev - 1));
     }
