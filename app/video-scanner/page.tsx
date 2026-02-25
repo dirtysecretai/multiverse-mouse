@@ -66,7 +66,7 @@ export default function VideoScanner() {
 
   const [videoModel, setVideoModel] = useState<'wan-2.5' | 'kling-v3'>('wan-2.5');
   const [generateAudio, setGenerateAudio] = useState(false);
-  const [klingAspectRatio, setKlingAspectRatio] = useState<'16:9' | '9:16' | '1:1' | '4:5' | '4:3'>('16:9');
+  const [klingAspectRatio, setKlingAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9');
   const [endImageFile, setEndImageFile] = useState<File | null>(null);
   const [endImagePreviewUrl, setEndImagePreviewUrl] = useState<string>('');
 
@@ -656,7 +656,7 @@ export default function VideoScanner() {
               <div className="mb-4">
                 <label className="text-xs text-slate-400 mb-1 block">Aspect Ratio</label>
                 <div className="flex gap-2">
-                  {(['16:9', '9:16', '1:1', '4:5', '4:3'] as const).map((ratio) => (
+                  {(['16:9', '9:16', '1:1'] as const).map((ratio) => (
                     <button
                       key={ratio}
                       onClick={() => setKlingAspectRatio(ratio)}
