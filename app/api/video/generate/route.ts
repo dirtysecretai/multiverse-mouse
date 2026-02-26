@@ -37,12 +37,8 @@ export async function POST(request: NextRequest) {
       };
       ticketCost = klingO3Pricing[duration] || 20;
     } else if (model === 'kling-v3') {
-      // API cost: $0.224/s (audio off) · $0.336/s (audio on)
-      // Ref: popular 50-ticket pack — free $0.18/t, dev $0.12/t
-      const ratePerSec = hasDevTier
-        ? (generateAudio ? 7 : 5)   // dev tier
-        : (generateAudio ? 8 : 6);  // free tier
-      ticketCost = parseInt(duration) * ratePerSec;
+      // 6 tickets/sec (audio off) · 8 tickets/sec (audio on) — same for all users
+      ticketCost = parseInt(duration) * (generateAudio ? 8 : 6);
     } else {
       // WAN 2.5 pricing
       const pricing: Record<string, Record<string, number>> = {

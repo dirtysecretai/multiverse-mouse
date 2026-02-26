@@ -2819,8 +2819,8 @@ export default function PromptingStudio() {
                         >
                           <option value="nano-banana-pro">⚡ NanoBanana Pro</option>
                           <option value="seedream-4.5">⚡ SeeDream 4.5</option>
-                          <option value="gemini-3-pro-image">⚡ Pro Scanner v3</option>
-                          <option value="gemini-2.5-flash-image">⚡ Flash Scanner v2.5</option>
+                          <option value="pro-scanner-v3">⚡ Pro Scanner v3</option>
+                          <option value="flash-scanner-v2.5">⚡ Flash Scanner v2.5</option>
                           <option value="flux-2">🌊 FLUX 2</option>
                           <option value="nano-banana-cluster">⚡ NanoBanana Cluster</option>
                         </select>

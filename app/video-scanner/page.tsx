@@ -80,13 +80,8 @@ export default function VideoScanner() {
   // Calculate ticket cost based on model, duration, and resolution
   const getTicketCost = () => {
     if (videoModel === 'kling-v3') {
-      // Priced from real API cost: $0.224/s (audio off) · $0.336/s (audio on)
-      // Reference: popular 50-ticket pack — free $0.18/t, dev $0.12/t
-      // Dev tier saves ~35% matching buy-tickets-page discount
-      const ratePerSec = hasPromptStudioDev
-        ? (generateAudio ? 7 : 5)   // dev tier
-        : (generateAudio ? 8 : 6);  // free tier
-      return parseInt(duration) * ratePerSec;
+      // 6 tickets/sec (audio off) · 8 tickets/sec (audio on) — same for all users
+      return parseInt(duration) * (generateAudio ? 8 : 6);
     }
     // WAN 2.5 pricing
     const pricing: Record<string, Record<string, number>> = {
@@ -507,11 +502,9 @@ export default function VideoScanner() {
               <Ticket size={18} />
               {ticketBalance} tickets
             </div>
-            <Link href="/dashboard">
-              <Button className="bg-slate-700 hover:bg-slate-600 h-9 text-sm">
-                Dashboard
-              </Button>
-            </Link>
+            <Button onClick={() => router.push('/dashboard')} className="bg-slate-700 hover:bg-slate-600 h-9 text-sm">
+              Dashboard
+            </Button>
           </div>
         </div>
       </div>
@@ -771,7 +764,7 @@ export default function VideoScanner() {
               </div>
               <p className="text-xs text-slate-500 mt-1">
                 {videoModel === 'kling-v3'
-                  ? `Kling 3.0 • ${duration}s • ${klingAspectRatio} • audio ${generateAudio ? 'on' : 'off'}${hasPromptStudioDev ? ' • dev rate' : ''}`
+                  ? `Kling 3.0 • ${duration}s • ${klingAspectRatio} • audio ${generateAudio ? 'on' : 'off'}`
                   : `${resolution} • ${duration}s`}
               </p>
             </div>
