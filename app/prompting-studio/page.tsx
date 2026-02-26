@@ -128,7 +128,7 @@ export default function StudioSelection() {
                   ))}
                 </div>
               </div>
-              <Link href="/prompting-studio/canvas">
+              <Link href="/">
                 <Button className="w-full bg-cyan-700 hover:bg-cyan-600 font-bold group-hover:shadow-lg group-hover:shadow-cyan-500/20 transition-all">
                   Open Main Scanner
                   <ArrowRight className="ml-2" size={15} />
@@ -297,7 +297,7 @@ export default function StudioSelection() {
                   ))}
                 </div>
               </div>
-              <Link href="/ai-canvas">
+              <Link href="/prompting-studio/canvas">
                 <Button className="w-full bg-purple-700 hover:bg-purple-600 font-bold group-hover:shadow-lg group-hover:shadow-purple-500/20 transition-all">
                   Open Scanner Canvas
                   <ArrowRight className="ml-2" size={15} />
