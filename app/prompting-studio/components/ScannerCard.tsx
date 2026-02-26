@@ -159,8 +159,12 @@ export default function ScannerCard({
     if (scanner.model === 'nano-banana-pro' || scanner.model === 'pro-scanner-v3') {
       return scanner.quality === '4k' ? 10 : 5;
     }
-    // NanoBanana Cluster & SeeDream: 2 tickets
-    if (scanner.model === 'nano-banana-cluster' || scanner.model === 'seedream-4.5') {
+    // SeeDream 4.5: 1 ticket for 2K, 2 tickets for 4K
+    if (scanner.model === 'seedream-4.5') {
+      return scanner.quality === '4k' ? 2 : 1;
+    }
+    // NanoBanana Cluster: 2 tickets (generates 2 images)
+    if (scanner.model === 'nano-banana-cluster') {
       return 2;
     }
     // Flash Scanner v2.5 & FLUX 2: 1 ticket
@@ -442,7 +446,7 @@ export default function ScannerCard({
           className="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed font-bold text-4xl h-28 flex items-center justify-center gap-4"
           title={generateDisabled ? 'Generation queue full (max 5)' : ''}
         >
-          {generateDisabled ? '⏳ Queue Full' : `🔍 Scan (${ticketCost} 🎫)`}
+          {generateDisabled ? '⏳ Queue Full' : `🔍 Scan (${ticketCost} 🎫${scanner.model === 'nano-banana-cluster' ? ' ×2' : ''})`}
         </Button>
       </div>
     </div>

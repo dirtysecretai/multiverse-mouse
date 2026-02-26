@@ -1184,32 +1184,33 @@ export default function PromptingStudio() {
     setGeneratingPanels(prev => new Set(prev).add(panelId));
 
     // Declare outside try so the catch/finally blocks can reference them
+    const isClusterPanel = scanner.model === 'nano-banana-cluster' && canvasMode !== 'fullscreen';
     const position = canvasMode === 'fullscreen' ? { x: 0, y: 0 } : getNextPosition();
+    const position2 = isClusterPanel ? getNextPosition() : null;
     const placeholderId = `placeholder-${Date.now()}-${panelId}`;
+    const placeholderId2 = isClusterPanel ? `placeholder-${Date.now()}-${panelId}-2` : null;
 
     try {
       // Use shared reference images (only enabled ones)
       const referenceUrls = getEnabledReferenceUrls();
 
-      // Remove any failed placeholders from this slot OR at this position before adding new one,
-      // then add the new placeholder. Release the pending position inside the updater so that
-      // the slot is correctly tracked in loadingPlaceholders going forward.
+      // Add placeholder(s). For nano-banana-cluster add 2. Release pending positions inside updater.
       setLoadingPlaceholders(prev => {
         pendingPositionsRef.current.delete(`${position.x},${position.y}`);
-        return [
-          ...prev.filter(p => {
-            // Remove failed placeholders from same panel
-            if (p.slotId === `panel-${panelId}` && p.failed) return false;
-            // Remove failed placeholders at the same position (so we can reuse the spot)
-            if (p.failed && p.position.x === position.x && p.position.y === position.y) return false;
-            return true;
-          }),
-          {
-            id: placeholderId,
-            slotId: `panel-${panelId}`,
-            position,
-          }
+        if (position2) pendingPositionsRef.current.delete(`${position2.x},${position2.y}`);
+        const filtered = prev.filter(p => {
+          if (p.slotId === `panel-${panelId}` && p.failed) return false;
+          if (p.failed && p.position.x === position.x && p.position.y === position.y) return false;
+          if (position2 && p.failed && p.position.x === position2.x && p.position.y === position2.y) return false;
+          return true;
+        });
+        const newPlaceholders: LoadingPlaceholder[] = [
+          { id: placeholderId, slotId: `panel-${panelId}`, position },
+          ...(isClusterPanel && position2 && placeholderId2
+            ? [{ id: placeholderId2, slotId: `panel-${panelId}`, position: position2 }]
+            : []),
         ];
+        return [...filtered, ...newPlaceholders];
       });
 
       const requestBody: any = {
@@ -1252,20 +1253,12 @@ export default function PromptingStudio() {
       }
 
       if (data.success && data.imageUrl) {
-        // Mark the server job as resolved so the polling loop doesn't add a duplicate image
         if (data.jobId) {
           knownJobIdsRef.current.add(data.jobId);
           resolvedJobIdsRef.current.add(data.jobId);
         }
 
-        // Remove placeholder — cover both the original placeholder-{ts} id AND the
-        // job-{id} that syncJobs may have re-ID'd it to during the API round-trip.
-        setLoadingPlaceholders(prev => prev.filter(p =>
-          p.id !== placeholderId && p.id !== `job-${data.jobId}`
-        ));
-
-        const newImage: SessionImage = {
-          id: `img-${Date.now()}`,
+        const baseProps = {
           slotId: `panel-${panelId}`,
           celebrityName: scanner.celebrityName || '',
           enhancement: scanner.enhancement || '',
@@ -1273,30 +1266,49 @@ export default function PromptingStudio() {
           model: scanner.model,
           quality: scanner.quality,
           aspectRatio: scanner.aspectRatio,
-          imageUrl: data.imageUrl,
-          referenceImageUrls: referenceUrls, // Store the shared reference images used
+          referenceImageUrls: referenceUrls,
           timestamp: Date.now(),
-          position,
+          isDiluted: false,
+          isGem: false,
         };
 
-        setSessionImages(prev => [...prev, newImage]);
+        const newImages: SessionImage[] = [
+          { ...baseProps, id: `img-${Date.now()}-p${panelId}`, imageUrl: data.imageUrl, position },
+        ];
+
+        // Second image for nano-banana-cluster
+        if (isClusterPanel && data.images?.length > 1 && position2) {
+          newImages.push({ ...baseProps, id: `img-${Date.now()}-p${panelId}-2`, imageUrl: data.images[1].url, position: position2 });
+        }
+
+        // Remove placeholders: primary + job-id alias. Second placeholder removed only if image arrived.
+        setLoadingPlaceholders(prev => {
+          let updated = prev.filter(p => p.id !== placeholderId && p.id !== `job-${data.jobId}`);
+          if (isClusterPanel && data.images?.length > 1 && placeholderId2) {
+            updated = updated.filter(p => p.id !== placeholderId2);
+          } else if (isClusterPanel && placeholderId2) {
+            // Second image didn't arrive — mark its placeholder red
+            updated = updated.map(p => p.id === placeholderId2 ? { ...p, failed: true } : p);
+          }
+          return updated;
+        });
+
+        setSessionImages(prev => [...prev, ...newImages]);
 
         const ticketRes = await fetch(`/api/user/tickets?userId=${user.id}`);
         const ticketData = await ticketRes.json();
-        if (ticketData.success) {
-          setTicketBalance(ticketData.balance);
-        }
+        if (ticketData.success) setTicketBalance(ticketData.balance);
       } else {
-        // Mark the server job as resolved so polling doesn't re-process it
         if (data.jobId) {
           knownJobIdsRef.current.add(data.jobId);
           resolvedJobIdsRef.current.add(data.jobId);
         }
 
-        // Mark placeholder as failed — cover both placeholder-{ts} and job-{id}.
-        setLoadingPlaceholders(prev => prev.map(p =>
-          (p.id === placeholderId || p.id === `job-${data.jobId}`) ? { ...p, failed: true } : p
-        ));
+        setLoadingPlaceholders(prev => prev.map(p => {
+          if (p.id === placeholderId || p.id === `job-${data.jobId}`) return { ...p, failed: true };
+          if (isClusterPanel && p.id === placeholderId2) return { ...p, failed: true };
+          return p;
+        }));
 
         if (data.isSensitiveContent) {
           alert('Sensitive Content Detected\n\nYour request was blocked by content filters. Your tickets have been refunded.');
@@ -1306,11 +1318,13 @@ export default function PromptingStudio() {
       }
     } catch (err) {
       console.error('Generation error:', err);
-      // Mark only this specific placeholder as failed (not all from the same panel)
       pendingPositionsRef.current.delete(`${position.x},${position.y}`);
-      setLoadingPlaceholders(prev => prev.map(p =>
-        p.id === placeholderId ? { ...p, failed: true } : p
-      ));
+      if (position2) pendingPositionsRef.current.delete(`${position2.x},${position2.y}`);
+      setLoadingPlaceholders(prev => prev.map(p => {
+        if (p.id === placeholderId) return { ...p, failed: true };
+        if (isClusterPanel && p.id === placeholderId2) return { ...p, failed: true };
+        return p;
+      }));
     } finally {
       setGeneratingPanels(prev => {
         const next = new Set(prev);
@@ -1492,30 +1506,31 @@ export default function PromptingStudio() {
     setIsStudioGenerating(true);
 
     // Declare outside try so the catch/finally blocks can reference them
+    const isClusterStudio = studioScanner.model === 'nano-banana-cluster';
     const position = getNextPosition();
+    const position2 = isClusterStudio ? getNextPosition() : null;
     const placeholderId = `placeholder-${Date.now()}-studio`;
+    const placeholderId2 = isClusterStudio ? `placeholder-${Date.now()}-studio-2` : null;
 
     try {
       const referenceUrls = getEnabledReferenceUrls();
 
-      // Remove any failed placeholders from studio scanner OR at this position before adding new one,
-      // then add the new placeholder. Release the pending position inside the updater.
+      // Add placeholder(s). For nano-banana-cluster add 2. Release pending positions inside updater.
       setLoadingPlaceholders(prev => {
         pendingPositionsRef.current.delete(`${position.x},${position.y}`);
-        return [
-          ...prev.filter(p => {
-            // Remove failed placeholders from studio scanner at this specific position
-            if (p.slotId === 'studio-scanner' && p.failed && p.position.x === position.x && p.position.y === position.y) return false;
-            // Remove any failed placeholder at the same position
-            if (p.failed && p.position.x === position.x && p.position.y === position.y) return false;
-            return true;
-          }),
-          {
-            id: placeholderId,
-            slotId: 'studio-scanner',
-            position,
-          }
+        if (position2) pendingPositionsRef.current.delete(`${position2.x},${position2.y}`);
+        const filtered = prev.filter(p => {
+          if (p.failed && p.position.x === position.x && p.position.y === position.y) return false;
+          if (position2 && p.failed && p.position.x === position2.x && p.position.y === position2.y) return false;
+          return true;
+        });
+        const newPlaceholders: LoadingPlaceholder[] = [
+          { id: placeholderId, slotId: 'studio-scanner', position },
+          ...(isClusterStudio && position2 && placeholderId2
+            ? [{ id: placeholderId2, slotId: 'studio-scanner', position: position2 }]
+            : []),
         ];
+        return [...filtered, ...newPlaceholders];
       });
 
       const combinedNames = studioScanner.names.filter(n => n.trim()).join(', ');
@@ -1561,20 +1576,12 @@ export default function PromptingStudio() {
       }
 
       if (data.success && data.imageUrl) {
-        // Mark the server job as resolved so the polling loop doesn't add a duplicate image
         if (data.jobId) {
           knownJobIdsRef.current.add(data.jobId);
           resolvedJobIdsRef.current.add(data.jobId);
         }
 
-        // Remove placeholder — cover both the original placeholder-{ts} id AND the
-        // job-{id} that syncJobs may have re-ID'd it to during the API round-trip.
-        setLoadingPlaceholders(prev => prev.filter(p =>
-          p.id !== placeholderId && p.id !== `job-${data.jobId}`
-        ));
-
-        const newImage: SessionImage = {
-          id: `img-${Date.now()}`,
+        const baseProps = {
           slotId: 'studio-scanner',
           celebrityName: combinedNames || '',
           enhancement: combinedEnhancements || '',
@@ -1582,30 +1589,48 @@ export default function PromptingStudio() {
           model: studioScanner.model,
           quality: studioScanner.quality,
           aspectRatio: studioScanner.aspectRatio,
-          imageUrl: data.imageUrl,
           referenceImageUrls: referenceUrls,
           timestamp: Date.now(),
-          position,
+          isDiluted: false,
+          isGem: false,
         };
 
-        setSessionImages(prev => [...prev, newImage]);
+        const newImages: SessionImage[] = [
+          { ...baseProps, id: `img-${Date.now()}-studio`, imageUrl: data.imageUrl, position },
+        ];
+
+        // Second image for nano-banana-cluster
+        if (isClusterStudio && data.images?.length > 1 && position2) {
+          newImages.push({ ...baseProps, id: `img-${Date.now()}-studio-2`, imageUrl: data.images[1].url, position: position2 });
+        }
+
+        // Remove placeholders: primary + job-id alias. Second placeholder removed only if image arrived.
+        setLoadingPlaceholders(prev => {
+          let updated = prev.filter(p => p.id !== placeholderId && p.id !== `job-${data.jobId}`);
+          if (isClusterStudio && data.images?.length > 1 && placeholderId2) {
+            updated = updated.filter(p => p.id !== placeholderId2);
+          } else if (isClusterStudio && placeholderId2) {
+            updated = updated.map(p => p.id === placeholderId2 ? { ...p, failed: true } : p);
+          }
+          return updated;
+        });
+
+        setSessionImages(prev => [...prev, ...newImages]);
 
         const ticketRes = await fetch(`/api/user/tickets?userId=${user.id}`);
         const ticketData = await ticketRes.json();
-        if (ticketData.success) {
-          setTicketBalance(ticketData.balance);
-        }
+        if (ticketData.success) setTicketBalance(ticketData.balance);
       } else {
-        // Mark the server job as resolved so polling doesn't re-process it
         if (data.jobId) {
           knownJobIdsRef.current.add(data.jobId);
           resolvedJobIdsRef.current.add(data.jobId);
         }
 
-        // Mark placeholder as failed — cover both placeholder-{ts} and job-{id}.
-        setLoadingPlaceholders(prev => prev.map(p =>
-          (p.id === placeholderId || p.id === `job-${data.jobId}`) ? { ...p, failed: true } : p
-        ));
+        setLoadingPlaceholders(prev => prev.map(p => {
+          if (p.id === placeholderId || p.id === `job-${data.jobId}`) return { ...p, failed: true };
+          if (isClusterStudio && p.id === placeholderId2) return { ...p, failed: true };
+          return p;
+        }));
 
         if (data.isSensitiveContent) {
           alert('Sensitive Content Detected\n\nYour request was blocked by content filters. Your tickets have been refunded.');
@@ -1615,11 +1640,13 @@ export default function PromptingStudio() {
       }
     } catch (err) {
       console.error('Generation error:', err);
-      // Mark only this specific placeholder as failed (not all studio-scanner ones)
       pendingPositionsRef.current.delete(`${position.x},${position.y}`);
-      setLoadingPlaceholders(prev => prev.map(p =>
-        p.id === placeholderId ? { ...p, failed: true } : p
-      ));
+      if (position2) pendingPositionsRef.current.delete(`${position2.x},${position2.y}`);
+      setLoadingPlaceholders(prev => prev.map(p => {
+        if (p.id === placeholderId) return { ...p, failed: true };
+        if (isClusterStudio && p.id === placeholderId2) return { ...p, failed: true };
+        return p;
+      }));
     } finally {
       setIsStudioGenerating(false);
     }
@@ -2832,9 +2859,15 @@ export default function PromptingStudio() {
                       <Zap size={64} />
                       {loadingPlaceholders.filter(p => !p.failed).length >= MAX_CONCURRENT_GENERATIONS ? (
                         `⏳ QUEUE FULL (${loadingPlaceholders.filter(p => !p.failed).length}/${MAX_CONCURRENT_GENERATIONS})`
-                      ) : (
-                        `🔍 GENERATE IMAGE`
-                      )}
+                      ) : (() => {
+                        const m = studioScanner.model;
+                        const q = studioScanner.quality;
+                        const cost = (m === 'nano-banana-pro' || m === 'pro-scanner-v3') ? (q === '4k' ? 10 : 5)
+                          : m === 'seedream-4.5' ? (q === '4k' ? 2 : 1)
+                          : m === 'nano-banana-cluster' ? 2 : 1;
+                        const suffix = m === 'nano-banana-cluster' ? ' ×2 IMAGES' : '';
+                        return `🔍 GENERATE (${cost} 🎫${suffix})`;
+                      })()}
                     </button>
                   </div>
                 )}
@@ -3377,9 +3410,15 @@ export default function PromptingStudio() {
                 >
                   {loadingPlaceholders.filter(p => !p.failed).length >= MAX_CONCURRENT_GENERATIONS ? (
                     `⏳ Queue Full (${loadingPlaceholders.filter(p => !p.failed).length}/${MAX_CONCURRENT_GENERATIONS})`
-                  ) : (
-                    `🔍 Scan (${(studioScanner.model === 'nano-banana-pro' || studioScanner.model === 'pro-scanner-v3') && studioScanner.quality === '4k' ? 2 : 1}🎫)`
-                  )}
+                  ) : (() => {
+                    const m = studioScanner.model;
+                    const q = studioScanner.quality;
+                    const cost = (m === 'nano-banana-pro' || m === 'pro-scanner-v3') ? (q === '4k' ? 10 : 5)
+                      : m === 'seedream-4.5' ? (q === '4k' ? 2 : 1)
+                      : m === 'nano-banana-cluster' ? 2 : 1;
+                    const suffix = m === 'nano-banana-cluster' ? ' ×2' : '';
+                    return `🔍 Scan (${cost} 🎫${suffix})`;
+                  })()}
                 </Button>
               </div>
             </div>
