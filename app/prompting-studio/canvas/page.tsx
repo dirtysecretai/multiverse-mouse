@@ -114,6 +114,11 @@ export default function PromptingStudio() {
   // syncJobs doesn't re-add them after a page refresh.
   const deletedImageUrlsRef = useRef<Set<string>>(new Set());
 
+  // Positions claimed by in-flight generations but not yet committed to state.
+  // Prevents rapid concurrent calls to getNextPosition() from getting the same
+  // grid slot before React has processed the previous setLoadingPlaceholders call.
+  const pendingPositionsRef = useRef<Set<string>>(new Set());
+
   // Canvas state (pan/zoom)
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
   const [canvasScale, setCanvasScale] = useState(1);
@@ -208,6 +213,7 @@ export default function PromptingStudio() {
   });
   const [showStudioAspectDropdown, setShowStudioAspectDropdown] = useState(false);
   const [showStudioPromptModelDropdown, setShowStudioPromptModelDropdown] = useState(false);
+  const [isStudioGenerating, setIsStudioGenerating] = useState(false);
 
   // AI Prompt Generation Models
   const [promptModel, setPromptModel] = useState<'gemini-3-flash' | 'gemini-2.0-flash-exp' | 'gemini-3-pro' | 'gemini-exp-1206'>('gemini-3-flash');
@@ -1109,12 +1115,18 @@ export default function PromptingStudio() {
       }
     });
 
+    // Also include positions claimed by concurrent in-flight requests that haven't
+    // committed to state yet — prevents multiple rapid fires getting the same slot.
+    pendingPositionsRef.current.forEach(pos => occupiedPositions.add(pos));
+
     // Try positions in order
     for (let index = 0; index < 25; index++) {
       const position = generatePositionByIndex(index);
       const posKey = `${position.x},${position.y}`;
 
       if (!occupiedPositions.has(posKey)) {
+        // Reserve this slot immediately so the next concurrent call skips it
+        pendingPositionsRef.current.add(posKey);
         return position;
       }
     }
@@ -1124,7 +1136,7 @@ export default function PromptingStudio() {
   };
 
   // Dynamic concurrent generation limit: admin=10, dev tier=6, free=3
-  const MAX_CONCURRENT_GENERATIONS = user?.email === 'dirtysecretai@gmail.com' ? 10 : hasPromptStudioDev ? 6 : 2;
+  const MAX_CONCURRENT_GENERATIONS = user?.email === 'dirtysecretai@gmail.com' ? 10 : hasPromptStudioDev ? 6 : 3;
 
   const handleGenerate = async (panelId: number) => {
     const panel = scannerPanels.find(p => p.id === panelId);
@@ -1171,31 +1183,34 @@ export default function PromptingStudio() {
 
     setGeneratingPanels(prev => new Set(prev).add(panelId));
 
+    // Declare outside try so the catch/finally blocks can reference them
+    const position = canvasMode === 'fullscreen' ? { x: 0, y: 0 } : getNextPosition();
+    const placeholderId = `placeholder-${Date.now()}-${panelId}`;
+
     try {
       // Use shared reference images (only enabled ones)
       const referenceUrls = getEnabledReferenceUrls();
 
-      // Fullscreen: Center position for single preview image
-      // Canvas: Spiral grid positioning
-      const position = canvasMode === 'fullscreen' ? { x: 0, y: 0 } : getNextPosition();
-
-      const placeholderId = `placeholder-${Date.now()}`;
-
-      // Remove any failed placeholders from this slot OR at this position before adding new one
-      setLoadingPlaceholders(prev => [
-        ...prev.filter(p => {
-          // Remove failed placeholders from same panel
-          if (p.slotId === `panel-${panelId}` && p.failed) return false;
-          // Remove failed placeholders at the same position (so we can reuse the spot)
-          if (p.failed && p.position.x === position.x && p.position.y === position.y) return false;
-          return true;
-        }),
-        {
-          id: placeholderId,
-          slotId: `panel-${panelId}`,
-          position,
-        }
-      ]);
+      // Remove any failed placeholders from this slot OR at this position before adding new one,
+      // then add the new placeholder. Release the pending position inside the updater so that
+      // the slot is correctly tracked in loadingPlaceholders going forward.
+      setLoadingPlaceholders(prev => {
+        pendingPositionsRef.current.delete(`${position.x},${position.y}`);
+        return [
+          ...prev.filter(p => {
+            // Remove failed placeholders from same panel
+            if (p.slotId === `panel-${panelId}` && p.failed) return false;
+            // Remove failed placeholders at the same position (so we can reuse the spot)
+            if (p.failed && p.position.x === position.x && p.position.y === position.y) return false;
+            return true;
+          }),
+          {
+            id: placeholderId,
+            slotId: `panel-${panelId}`,
+            position,
+          }
+        ];
+      });
 
       const requestBody: any = {
         userId: user.id,
@@ -1291,10 +1306,10 @@ export default function PromptingStudio() {
       }
     } catch (err) {
       console.error('Generation error:', err);
-      // Don't show alert - could be page refresh interrupting fetch
-      // Mark placeholder as failed (turns red)
+      // Mark only this specific placeholder as failed (not all from the same panel)
+      pendingPositionsRef.current.delete(`${position.x},${position.y}`);
       setLoadingPlaceholders(prev => prev.map(p =>
-        p.slotId === `panel-${panelId}` ? { ...p, failed: true } : p
+        p.id === placeholderId ? { ...p, failed: true } : p
       ));
     } finally {
       setGeneratingPanels(prev => {
@@ -1474,27 +1489,34 @@ export default function PromptingStudio() {
       return;
     }
 
+    setIsStudioGenerating(true);
+
+    // Declare outside try so the catch/finally blocks can reference them
+    const position = getNextPosition();
+    const placeholderId = `placeholder-${Date.now()}-studio`;
+
     try {
       const referenceUrls = getEnabledReferenceUrls();
-      const position = getNextPosition();
 
-      const placeholderId = `placeholder-${Date.now()}`;
-
-      // Remove any failed placeholders from studio scanner OR at this position before adding new one
-      setLoadingPlaceholders(prev => [
-        ...prev.filter(p => {
-          // Remove failed placeholders from studio scanner
-          if (p.slotId === 'studio-scanner' && p.failed) return false;
-          // Remove failed placeholders at the same position (so we can reuse the spot)
-          if (p.failed && p.position.x === position.x && p.position.y === position.y) return false;
-          return true;
-        }),
-        {
-          id: placeholderId,
-          slotId: 'studio-scanner',
-          position,
-        }
-      ]);
+      // Remove any failed placeholders from studio scanner OR at this position before adding new one,
+      // then add the new placeholder. Release the pending position inside the updater.
+      setLoadingPlaceholders(prev => {
+        pendingPositionsRef.current.delete(`${position.x},${position.y}`);
+        return [
+          ...prev.filter(p => {
+            // Remove failed placeholders from studio scanner at this specific position
+            if (p.slotId === 'studio-scanner' && p.failed && p.position.x === position.x && p.position.y === position.y) return false;
+            // Remove any failed placeholder at the same position
+            if (p.failed && p.position.x === position.x && p.position.y === position.y) return false;
+            return true;
+          }),
+          {
+            id: placeholderId,
+            slotId: 'studio-scanner',
+            position,
+          }
+        ];
+      });
 
       const combinedNames = studioScanner.names.filter(n => n.trim()).join(', ');
       const combinedEnhancements = studioScanner.enhancements.filter(e => e.trim()).join(', ');
@@ -1593,11 +1615,13 @@ export default function PromptingStudio() {
       }
     } catch (err) {
       console.error('Generation error:', err);
-      // Don't show alert - could be page refresh interrupting fetch
-      // Mark placeholder as failed (turns red)
+      // Mark only this specific placeholder as failed (not all studio-scanner ones)
+      pendingPositionsRef.current.delete(`${position.x},${position.y}`);
       setLoadingPlaceholders(prev => prev.map(p =>
-        p.slotId === 'studio-scanner' ? { ...p, failed: true } : p
+        p.id === placeholderId ? { ...p, failed: true } : p
       ));
+    } finally {
+      setIsStudioGenerating(false);
     }
   };
 
