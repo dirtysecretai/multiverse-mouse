@@ -385,11 +385,23 @@ export default function PromptingStudio() {
           });
 
         } else if (job.status === 'failed' && !resolvedJobIdsRef.current.has(job.id)) {
-          // Job failed — mark the placeholder red.
+          // Job failed — mark the placeholder red. After a page reload, loadingPlaceholders
+          // starts empty so no placeholder exists yet — create one so the failure is visible.
           resolvedJobIdsRef.current.add(job.id);
-          setLoadingPlaceholders(prev =>
-            prev.map(p => p.id === jobPlaceholderId ? { ...p, failed: true } : p)
-          );
+          const jobPosition = params?.position || { x: 0, y: 0 };
+          setLoadingPlaceholders(prev => {
+            const exists = prev.some(p => p.id === jobPlaceholderId);
+            if (exists) {
+              return prev.map(p => p.id === jobPlaceholderId ? { ...p, failed: true } : p);
+            }
+            // No placeholder exists (page was reloaded) — create a red one at the original position
+            return [...prev, {
+              id: jobPlaceholderId,
+              slotId: params?.slotId || 'studio-scanner',
+              position: jobPosition,
+              failed: true,
+            }];
+          });
         }
       }
     } catch (e) {
@@ -1020,15 +1032,11 @@ export default function PromptingStudio() {
     }
   }, [canvasMode, sessionImages.length, fullscreenImageIndex]);
 
-  // Recalculate image positions when mode changes (canvas vs studio vs hybrid vs expanded)
-  useEffect(() => {
-    if (canvasMode === 'canvas' || canvasMode === 'studio' || canvasMode === 'hybrid' || canvasMode === 'expanded') {
-      setSessionImages(prev => prev.map((img, idx) => ({
-        ...img,
-        position: generatePositionByIndex(idx)
-      })));
-    }
-  }, [canvasMode]);
+  // NOTE: We intentionally do NOT recalculate image positions on mode change.
+  // Images are assigned a canvas position at generation time and keep it permanently.
+  // Recalculating by array index causes position collisions with in-flight async jobs
+  // whose DB-stored positions no longer match the recalculated array-index positions,
+  // leading to stacked images and scrambled layouts.
 
   // Exit select mode when canvas mode changes or when all images are deleted
   useEffect(() => {
@@ -1253,12 +1261,16 @@ export default function PromptingStudio() {
       }
 
       if (data.success && data.queued) {
-        // Async FAL.ai submit — job is processing, syncJobs will resolve the placeholder
-        // when the webhook completes. Don't add to resolvedJobIds so syncJobs can handle it.
+        // Async FAL.ai submit — rename placeholder to job-{id} immediately so syncJobs
+        // can find and remove it when the webhook fires. Without this rename, syncJobs
+        // looks for 'job-{id}' but the placeholder is still 'placeholder-{ts}' and the
+        // spinner is never removed, causing the completed image to stack on top of it.
         if (data.jobId) {
           knownJobIdsRef.current.add(data.jobId);
+          setLoadingPlaceholders(prev => prev.map(p =>
+            p.id === placeholderId ? { ...p, id: `job-${data.jobId}` } : p
+          ));
         }
-        // placeholder stays loading; syncJobs renames it to job-{id} on next poll
       } else if (data.success && data.imageUrl) {
         if (data.jobId) {
           knownJobIdsRef.current.add(data.jobId);
@@ -1583,9 +1595,13 @@ export default function PromptingStudio() {
       }
 
       if (data.success && data.queued) {
-        // Async FAL.ai submit — syncJobs will resolve the placeholder when webhook completes
+        // Async FAL.ai submit — rename placeholder to job-{id} immediately so syncJobs
+        // can find and remove it when the webhook fires.
         if (data.jobId) {
           knownJobIdsRef.current.add(data.jobId);
+          setLoadingPlaceholders(prev => prev.map(p =>
+            p.id === placeholderId ? { ...p, id: `job-${data.jobId}` } : p
+          ));
         }
       } else if (data.success && data.imageUrl) {
         if (data.jobId) {
