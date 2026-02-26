@@ -249,13 +249,26 @@ export async function POST(req: NextRequest) {
 
       console.log(`🎯 Calling endpoint: ${modelEndpoint}`);
 
-      const result = await fal.subscribe(modelEndpoint, {
+      // Submit to FAL.ai async queue — webhook handles completion
+      const appUrl = (process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')).replace(/\/$/, '');
+      const { request_id } = await fal.queue.submit(modelEndpoint, {
         input: inputParams,
-        logs: false,
+        webhookUrl: `${appUrl}/api/webhooks/fal`,
       });
-
-      console.log('✅ NanoBanana Pro generation complete');
-      imageUrl = result.data.images?.[0]?.url;
+      console.log(`✅ NanoBanana Pro submitted to FAL queue: ${request_id}`);
+      const savePrompt = `${celebrityName ? celebrityName + ' - ' : ''}${enhancement ? enhancement + ' - ' : ''}${prompt}`;
+      if (jobId) {
+        try {
+          await prisma.generationQueue.update({
+            where: { id: jobId },
+            data: {
+              falRequestId: request_id,
+              parameters: { slotId: slotId || 'studio-scanner', position: position || { x: 0, y: 0 }, celebrityName: celebrityName || null, enhancement: enhancement || null, model, quality: quality || '2k', aspectRatio: aspectRatio || '1:1', referenceImageUrls: permanentReferenceUrls, savePrompt },
+            },
+          });
+        } catch (e) { console.error('⚠️ Failed to update job with falRequestId (non-fatal):', e); }
+      }
+      return NextResponse.json({ success: true, jobId, queued: true });
 
     } else if (actualModel === 'nano-banana') {
       console.log('🍌🍌 Calling NanoBanana Cluster...');
@@ -336,13 +349,26 @@ export async function POST(req: NextRequest) {
       console.log(`🎯 Calling endpoint: ${modelEndpoint}`);
       console.log(`📐 Image size: ${image_size.width}x${image_size.height}`);
 
-      const result = await fal.subscribe(modelEndpoint, {
+      // Submit to FAL.ai async queue — webhook handles completion
+      const appUrl = (process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')).replace(/\/$/, '');
+      const { request_id } = await fal.queue.submit(modelEndpoint, {
         input: inputParams,
-        logs: false,
+        webhookUrl: `${appUrl}/api/webhooks/fal`,
       });
-
-      console.log('✅ SeeDream 4.5 generation complete');
-      imageUrl = result.data.images?.[0]?.url;
+      console.log(`✅ SeeDream 4.5 submitted to FAL queue: ${request_id}`);
+      const savePrompt = `${celebrityName ? celebrityName + ' - ' : ''}${enhancement ? enhancement + ' - ' : ''}${prompt}`;
+      if (jobId) {
+        try {
+          await prisma.generationQueue.update({
+            where: { id: jobId },
+            data: {
+              falRequestId: request_id,
+              parameters: { slotId: slotId || 'studio-scanner', position: position || { x: 0, y: 0 }, celebrityName: celebrityName || null, enhancement: enhancement || null, model, quality: quality || '2k', aspectRatio: aspectRatio || '1:1', referenceImageUrls: permanentReferenceUrls, savePrompt },
+            },
+          });
+        } catch (e) { console.error('⚠️ Failed to update job with falRequestId (non-fatal):', e); }
+      }
+      return NextResponse.json({ success: true, jobId, queued: true });
 
     } else if (actualModel === 'flux-2') {
       console.log('🌊 Calling FLUX 2...');
@@ -423,13 +449,26 @@ export async function POST(req: NextRequest) {
       console.log(`🎯 Calling endpoint: ${modelEndpoint}`);
       console.log(`📐 Image size: ${JSON.stringify(image_size)}`);
 
-      const result = await fal.subscribe(modelEndpoint, {
+      // Submit to FAL.ai async queue — webhook handles completion
+      const appUrl = (process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')).replace(/\/$/, '');
+      const { request_id } = await fal.queue.submit(modelEndpoint, {
         input: inputParams,
-        logs: false,
+        webhookUrl: `${appUrl}/api/webhooks/fal`,
       });
-
-      console.log('✅ FLUX 2 generation complete');
-      imageUrl = result.data.images?.[0]?.url;
+      console.log(`✅ FLUX 2 submitted to FAL queue: ${request_id}`);
+      const savePrompt = `${celebrityName ? celebrityName + ' - ' : ''}${enhancement ? enhancement + ' - ' : ''}${prompt}`;
+      if (jobId) {
+        try {
+          await prisma.generationQueue.update({
+            where: { id: jobId },
+            data: {
+              falRequestId: request_id,
+              parameters: { slotId: slotId || 'studio-scanner', position: position || { x: 0, y: 0 }, celebrityName: celebrityName || null, enhancement: enhancement || null, model, quality: quality || '2k', aspectRatio: aspectRatio || '1:1', referenceImageUrls: permanentReferenceUrls, savePrompt },
+            },
+          });
+        } catch (e) { console.error('⚠️ Failed to update job with falRequestId (non-fatal):', e); }
+      }
+      return NextResponse.json({ success: true, jobId, queued: true });
 
     } else if (actualModel === 'gemini-3-pro-image-preview') {
       console.log('💎 Calling Gemini 3 Pro Image...');

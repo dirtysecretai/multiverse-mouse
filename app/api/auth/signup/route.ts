@@ -54,11 +54,11 @@ export async function POST(request: Request) {
       },
     })
 
-    // Create ticket record (starts with 5 free tickets)
+    // Create ticket record (starts with 0 tickets — must purchase)
     await prisma.ticket.create({
       data: {
         userId: user.id,
-        balance: 5, // Give new users 5 free tickets to start
+        balance: 0,
         totalBought: 0,
         totalUsed: 0,
       },

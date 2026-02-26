@@ -26,21 +26,35 @@ export async function GET() {
     }
 
     // Auto-fail any processing jobs that have been stuck for more than 10 minutes.
-    // This cleans up jobs where the server errored mid-generation (e.g. ReferenceError
-    // in catch block) and left the DB record in 'processing' forever.
+    // This cleans up jobs where the server errored mid-generation and left the DB
+    // record in 'processing' forever, and releases their reserved tickets.
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000)
-    await prisma.generationQueue.updateMany({
+    const timedOutJobs = await prisma.generationQueue.findMany({
       where: {
         userId: user.id,
         status: { in: ['processing', 'queued'] },
         startedAt: { lt: tenMinutesAgo },
       },
-      data: {
-        status: 'failed',
-        errorMessage: 'Generation timed out — please try again',
-        completedAt: new Date(),
-      },
+      select: { id: true, ticketCost: true },
     })
+    if (timedOutJobs.length > 0) {
+      await prisma.generationQueue.updateMany({
+        where: { id: { in: timedOutJobs.map(j => j.id) } },
+        data: {
+          status: 'failed',
+          errorMessage: 'Generation timed out — please try again',
+          completedAt: new Date(),
+        },
+      })
+      // Release reserved tickets for timed-out jobs
+      const totalReserved = timedOutJobs.reduce((sum, j) => sum + j.ticketCost, 0)
+      if (totalReserved > 0) {
+        await prisma.ticket.update({
+          where: { userId: user.id },
+          data: { reserved: { decrement: totalReserved } },
+        })
+      }
+    }
 
     // Fetch jobs that are still in-flight OR settled within the last 2 hours.
     // The 2-hour window lets the client resolve placeholders that completed

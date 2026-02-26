@@ -29,6 +29,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ received: true })
     }
 
+    // Idempotency: if already settled, acknowledge and skip
+    if (queueItem.status === 'completed' || queueItem.status === 'failed') {
+      console.log(`Queue item #${queueItem.id} already settled (${queueItem.status}), skipping duplicate webhook`)
+      return NextResponse.json({ received: true })
+    }
+
     console.log(`Found queue item #${queueItem.id} for user ${queueItem.userId}`)
 
     const params = queueItem.parameters as any
@@ -137,7 +143,7 @@ export async function POST(request: Request) {
           const savedImage = await prisma.generatedImage.create({
             data: {
               userId: queueItem.userId,
-              prompt: queueItem.prompt,
+              prompt: params?.savePrompt || queueItem.prompt,
               imageUrl: blob.url,
               model: queueItem.modelId,
               ticketCost: isAdminMode ? 0 : ticketCostForThisImage,
@@ -179,11 +185,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ received: true })
       }
 
-      // Finalize tickets (move from reserved → totalUsed)
+      // Finalize tickets (deduct from balance, release reservation, record usage)
       if (!isAdminMode) {
         await prisma.ticket.update({
           where: { userId: queueItem.userId },
           data: {
+            balance: { decrement: queueItem.ticketCost },
             reserved: { decrement: queueItem.ticketCost },
             totalUsed: { increment: queueItem.ticketCost }
           }

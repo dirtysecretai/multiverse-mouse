@@ -1252,7 +1252,14 @@ export default function PromptingStudio() {
         return;
       }
 
-      if (data.success && data.imageUrl) {
+      if (data.success && data.queued) {
+        // Async FAL.ai submit — job is processing, syncJobs will resolve the placeholder
+        // when the webhook completes. Don't add to resolvedJobIds so syncJobs can handle it.
+        if (data.jobId) {
+          knownJobIdsRef.current.add(data.jobId);
+        }
+        // placeholder stays loading; syncJobs renames it to job-{id} on next poll
+      } else if (data.success && data.imageUrl) {
         if (data.jobId) {
           knownJobIdsRef.current.add(data.jobId);
           resolvedJobIdsRef.current.add(data.jobId);
@@ -1575,7 +1582,12 @@ export default function PromptingStudio() {
         return;
       }
 
-      if (data.success && data.imageUrl) {
+      if (data.success && data.queued) {
+        // Async FAL.ai submit — syncJobs will resolve the placeholder when webhook completes
+        if (data.jobId) {
+          knownJobIdsRef.current.add(data.jobId);
+        }
+      } else if (data.success && data.imageUrl) {
         if (data.jobId) {
           knownJobIdsRef.current.add(data.jobId);
           resolvedJobIdsRef.current.add(data.jobId);
