@@ -237,6 +237,9 @@ export default function PromptingStudio() {
         const sessionData = {
           sessionImages,
           loadingPlaceholders, // Save loading placeholders too
+          // Must be included so the debounced save doesn't overwrite the immediately-saved
+          // deleted URLs that removeImageFromCanvas / removeSelectedImages write on deletion.
+          deletedImageUrls: Array.from(deletedImageUrlsRef.current),
           scannerPanels,
           sharedReferenceImages,
           savedPrompts,
@@ -1815,7 +1818,21 @@ export default function PromptingStudio() {
   const removeImageFromCanvas = (imageId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent triggering the image click
     if (confirm('Remove this image from canvas?')) {
-      setSessionImages(prev => prev.filter(img => img.id !== imageId));
+      const target = sessionImages.find(img => img.id === imageId);
+      if (target?.imageUrl) {
+        deletedImageUrlsRef.current.add(target.imageUrl);
+      }
+      const filteredImages = sessionImages.filter(img => img.id !== imageId);
+      // Immediately flush to localStorage so a quick reload sees the correct state.
+      // Also write deletedImageUrls so syncJobs can't re-add the image from the DB.
+      try {
+        const saved = localStorage.getItem('canvas-scanner-autosave');
+        const data = saved ? JSON.parse(saved) : {};
+        data.deletedImageUrls = Array.from(deletedImageUrlsRef.current);
+        data.sessionImages = filteredImages;
+        localStorage.setItem('canvas-scanner-autosave', JSON.stringify(data));
+      } catch {}
+      setSessionImages(filteredImages);
     }
   };
 
@@ -1842,15 +1859,22 @@ export default function PromptingStudio() {
         .filter(img => selectedImageIds.has(img.id) && img.imageUrl)
         .forEach(img => deletedImageUrlsRef.current.add(img.imageUrl));
 
-      // Persist deleted URLs immediately (don't wait for the 1s auto-save debounce).
+      // Compute the filtered list now so we can write it immediately to localStorage.
+      // This prevents a quick reload (within the 1s debounce window) from restoring
+      // the deleted images from a stale sessionImages entry.
+      const filteredImages = sessionImages.filter(img => !selectedImageIds.has(img.id));
+
+      // Immediately flush both deletedImageUrls AND the updated sessionImages so that
+      // the debounced auto-save (which runs 1s later) can't overwrite and lose them.
       try {
         const saved = localStorage.getItem('canvas-scanner-autosave');
         const data = saved ? JSON.parse(saved) : {};
         data.deletedImageUrls = Array.from(deletedImageUrlsRef.current);
+        data.sessionImages = filteredImages;
         localStorage.setItem('canvas-scanner-autosave', JSON.stringify(data));
       } catch {}
 
-      setSessionImages(prev => prev.filter(img => !selectedImageIds.has(img.id)));
+      setSessionImages(filteredImages);
       setSelectedImageIds(new Set());
       setIsSelectMode(false);
     }
