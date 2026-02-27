@@ -798,7 +798,7 @@ export default function MultiversePortal() {
           <h1 className="text-2xl font-black text-yellow-400 mb-3">MAINTENANCE MODE</h1>
           <p className="text-slate-400 text-sm">
             {adminState.isMaintenanceMode
-              ? 'Multiverse Portal is temporarily offline for maintenance. We\'ll be back soon!'
+              ? 'AI Design Studio is temporarily offline for maintenance. We\'ll be back soon!'
               : 'The Reality Scanner is temporarily offline for maintenance. Please try another scanner.'}
           </p>
         </div>

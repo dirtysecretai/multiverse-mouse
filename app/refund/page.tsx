@@ -1,8 +1,8 @@
 import { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Refund Policy | Multiverse Portal',
-  description: 'Refund Policy for Multiverse Portal — Prompt & Protocol LLC',
+  title: 'Refund Policy | AI Design Studio',
+  description: 'Refund Policy for AI Design Studio — Prompt & Protocol LLC',
 }
 
 export default function RefundPage() {
@@ -13,7 +13,7 @@ export default function RefundPage() {
           Refund Policy
         </h1>
         <p className="text-slate-400 mb-2">Last Updated: February 27, 2026 | Version 1.0</p>
-        <p className="text-slate-400 mb-8">Prompt &amp; Protocol LLC — Multiverse Portal</p>
+        <p className="text-slate-400 mb-8">Prompt &amp; Protocol LLC — AI Design Studio</p>
 
         <div className="space-y-8 text-slate-300">
 
@@ -31,7 +31,7 @@ export default function RefundPage() {
           <section>
             <h2 className="text-2xl font-bold mb-4 text-cyan-400">1. Why We Do Not Offer Refunds</h2>
             <p className="mb-4">
-              Multiverse Portal operates on a compute-cost model. Every image generation request dispatches a live call to
+              AI Design Studio operates on a compute-cost model. Every image generation request dispatches a live call to
               third-party AI infrastructure (fal.ai, Google Gemini API) that incurs real-time GPU and API costs the moment
               it is submitted — regardless of whether the output meets your expectations or whether you choose to keep the result.
             </p>
@@ -156,7 +156,7 @@ export default function RefundPage() {
               <li><strong>Permanent termination</strong> of your account if the chargeback is upheld</li>
               <li><strong>Forfeiture</strong> of all remaining ticket balances and subscription benefits</li>
               <li>Potential recovery of disputed amounts through legal means, including applicable chargeback fees</li>
-              <li>Permanent ban from creating new accounts on Multiverse Portal</li>
+              <li>Permanent ban from creating new accounts on AI Design Studio</li>
             </ul>
             <p className="mt-4 text-yellow-400 font-semibold">
               We reserve the right to dispute any chargeback filed for a transaction that complied with this Refund Policy
@@ -234,7 +234,7 @@ export default function RefundPage() {
           </section>
 
           <div className="mt-12 p-6 border-2 border-cyan-500/30 rounded-lg bg-slate-800/50">
-            <p className="font-semibold mb-3 text-lg">By completing any purchase on Multiverse Portal, you acknowledge that:</p>
+            <p className="font-semibold mb-3 text-lg">By completing any purchase on AI Design Studio, you acknowledge that:</p>
             <ul className="list-disc list-inside space-y-2 ml-4 text-sm">
               <li>You have read and understood this Refund Policy in its entirety</li>
               <li>All ticket purchases and subscription payments are final and non-refundable</li>

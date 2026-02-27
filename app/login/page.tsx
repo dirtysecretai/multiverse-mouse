@@ -66,7 +66,7 @@ export default function LoginPage() {
             <div className="flex items-center justify-center gap-2 mb-4">
               <Sparkles className="text-cyan-400" size={32} />
               <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500">
-                Multiverse Portal
+                AI Design Studio
               </h1>
             </div>
             <p className="text-slate-400 text-sm">Welcome back! Login to continue generating</p>

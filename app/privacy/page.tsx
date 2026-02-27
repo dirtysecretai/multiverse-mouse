@@ -1,8 +1,8 @@
 import { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | Multiverse Portal',
-  description: 'Privacy Policy for Multiverse Portal AI image generation platform',
+  title: 'Privacy Policy | AI Design Studio',
+  description: 'Privacy Policy for AI Design Studio AI image generation platform',
 }
 
 export default function PrivacyPage() {
@@ -18,7 +18,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="text-2xl font-bold text-cyan-400 mb-3">1. Introduction</h2>
             <p className="mb-3">
-              Prompt & Protocol LLC ("we," "our," or "us"), operator of Multiverse Portal, is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our AI image generation service ("the Service").
+              Prompt & Protocol LLC ("we," "our," or "us"), operator of AI Design Studio, is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our AI image generation service ("the Service").
             </p>
             <p className="text-sm text-yellow-400 font-semibold">
               By using our Service, you consent to the data practices described in this policy. If you do not agree with this policy, please do not use the Service.
@@ -502,7 +502,7 @@ export default function PrivacyPage() {
                 <strong>Subject line for privacy requests:</strong> "Privacy Request - [Your Request Type]"
               </p>
               <p className="text-sm text-slate-400">
-                Please note that Multiverse Portal is operated by a single individual, so responses may take longer than typical support times. We appreciate your patience.
+                Please note that AI Design Studio is operated by a single individual, so responses may take longer than typical support times. We appreciate your patience.
               </p>
             </div>
           </section>

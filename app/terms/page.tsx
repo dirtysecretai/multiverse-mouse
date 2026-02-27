@@ -1,8 +1,8 @@
 import { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Terms of Service | Multiverse Portal',
-  description: 'Terms of Service for Multiverse Portal AI image generation platform',
+  title: 'Terms of Service | AI Design Studio',
+  description: 'Terms of Service for AI Design Studio AI image generation platform',
 }
 
 export default function TermsPage() {
@@ -18,7 +18,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-2xl font-bold mb-4 text-cyan-400">1. Acceptance of Terms</h2>
             <p className="mb-4">
-              By accessing or using Multiverse Portal ("the Service"), operated by Prompt & Protocol LLC, you agree to be bound by these Terms of Service ("Terms").
+              By accessing or using AI Design Studio ("the Service"), operated by Prompt & Protocol LLC, you agree to be bound by these Terms of Service ("Terms").
               If you do not agree to these Terms, do not use the Service.
             </p>
             <p className="mb-4 font-bold text-yellow-400">
@@ -30,7 +30,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-2xl font-bold mb-4 text-cyan-400">2. Service Description</h2>
             <p className="mb-4">
-              Multiverse Portal provides AI-powered image generation services using third-party artificial intelligence models and APIs.
+              AI Design Studio provides AI-powered image generation services using third-party artificial intelligence models and APIs.
               Our service currently offers multiple AI models accessed through:
             </p>
             <ul className="list-disc list-inside space-y-2 ml-4">
@@ -455,7 +455,7 @@ export default function TermsPage() {
           </section>
 
           <div className="mt-12 p-6 border-2 border-cyan-500/30 rounded-lg bg-slate-800/50">
-            <p className="font-semibold mb-3 text-lg">By using Multiverse Portal, you acknowledge that:</p>
+            <p className="font-semibold mb-3 text-lg">By using AI Design Studio, you acknowledge that:</p>
             <ul className="list-disc list-inside space-y-2 ml-4 text-sm">
               <li>You have read, understood, and agree to be bound by these Terms of Service</li>
               <li>You are at least 18 years of age</li>
