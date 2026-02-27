@@ -359,11 +359,15 @@ export default function SubscribePage() {
                         <a href="/terms" target="_blank" className="text-cyan-400 hover:text-cyan-300 underline">
                           Terms of Service
                         </a>
-                        {' '}and{' '}
+                        {', '}
                         <a href="/privacy" target="_blank" className="text-cyan-400 hover:text-cyan-300 underline">
                           Privacy Policy
                         </a>
-                        . I understand that subscriptions auto-renew {selectedPlan.intervalLabel} and can be cancelled anytime from account settings.
+                        {', and '}
+                        <a href="/refund" target="_blank" className="text-cyan-400 hover:text-cyan-300 underline">
+                          Refund Policy
+                        </a>
+                        . I understand that subscriptions auto-renew {selectedPlan.intervalLabel}, are non-refundable, and can be cancelled anytime from account settings.
                       </span>
                     </label>
                   </div>

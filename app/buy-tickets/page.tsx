@@ -308,9 +308,11 @@ export default function BuyTicketsPage() {
                 <span className="text-xs text-slate-500 leading-relaxed">
                   I agree to the{' '}
                   <a href="/terms" target="_blank" className="text-cyan-400 hover:text-cyan-300 underline">Terms of Service</a>
-                  {' '}and{' '}
-                  <a href="/privacy" target="_blank" className="text-cyan-400 hover:text-cyan-300 underline">Privacy Policy</a>.
-                  {' '}Tickets are non-refundable. Images stored for 30 days.
+                  {', '}
+                  <a href="/privacy" target="_blank" className="text-cyan-400 hover:text-cyan-300 underline">Privacy Policy</a>
+                  {', and '}
+                  <a href="/refund" target="_blank" className="text-cyan-400 hover:text-cyan-300 underline">Refund Policy</a>.
+                  {' '}All ticket purchases are final and non-refundable. Images stored for 30 days.
                 </span>
               </label>
 
