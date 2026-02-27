@@ -129,7 +129,7 @@ export default function TermsPage() {
             <p className="mt-2 text-sm text-yellow-400">Pricing is subject to change. Ticket costs are deducted at the time of generation and are non-refundable once consumed.</p>
 
             <h3 className="text-xl font-semibold mb-3 mt-6 text-purple-400">5.2 Dev Tier Subscriptions</h3>
-            <p className="mb-4">We offer recurring subscription plans ("Dev Tier") with billing through PayPal:</p>
+            <p className="mb-4">We offer recurring subscription plans ("Dev Tier") with billing through Lemon Squeezy:</p>
             <ul className="list-disc list-inside space-y-2 ml-4">
               <li><strong>Biweekly Plan:</strong> $20 USD every 2 weeks - 250 tickets per cycle</li>
               <li><strong>Monthly Plan:</strong> $40 USD per month - 500 tickets per cycle</li>
@@ -328,7 +328,7 @@ export default function TermsPage() {
                 <li>Errors, mistakes, or inaccuracies in Generated Content</li>
                 <li>Loss of data, including generated images after the 30-day retention period</li>
                 <li>Unauthorized access to or alteration of your account or data</li>
-                <li>Third-party service interruptions or failures (fal.ai, Google Gemini, PayPal)</li>
+                <li>Third-party service interruptions or failures (fal.ai, Google Gemini, Lemon Squeezy)</li>
                 <li>Infringement claims related to Generated Content</li>
                 <li>Account suspension or termination</li>
               </ul>
