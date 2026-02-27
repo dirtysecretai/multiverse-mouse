@@ -12,7 +12,7 @@ export default function RefundPage() {
         <h1 className="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">
           Refund Policy
         </h1>
-        <p className="text-slate-400 mb-2">Last Updated: January 30, 2026 | Version 1.0</p>
+        <p className="text-slate-400 mb-2">Last Updated: February 27, 2026 | Version 1.0</p>
         <p className="text-slate-400 mb-8">Prompt &amp; Protocol LLC — Multiverse Portal</p>
 
         <div className="space-y-8 text-slate-300">
@@ -142,7 +142,7 @@ export default function RefundPage() {
           <section>
             <h2 className="text-2xl font-bold mb-4 text-cyan-400">5. Chargebacks and Payment Disputes</h2>
             <p className="mb-4">
-              Before initiating a chargeback or payment dispute with your bank, credit card company, or PayPal, we strongly encourage
+              Before initiating a chargeback or payment dispute with your bank, credit card company, or Lemon Squeezy, we strongly encourage
               you to contact us directly at{' '}
               <a href="mailto:promptandprotocol@gmail.com" className="text-cyan-400 hover:underline">promptandprotocol@gmail.com</a>.
               Most concerns can be resolved quickly without involving third-party payment processors.

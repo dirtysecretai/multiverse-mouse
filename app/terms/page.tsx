@@ -12,7 +12,7 @@ export default function TermsPage() {
         <h1 className="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">
           Terms of Service
         </h1>
-        <p className="text-slate-400 mb-8">Last Updated: January 30, 2026 | Version 3.0</p>
+        <p className="text-slate-400 mb-8">Last Updated: February 27, 2026 | Version 4.0</p>
 
         <div className="space-y-8 text-slate-300">
           <section>
@@ -34,13 +34,25 @@ export default function TermsPage() {
               Our service currently offers multiple AI models accessed through:
             </p>
             <ul className="list-disc list-inside space-y-2 ml-4">
-              <li><strong>fal.ai infrastructure</strong> - Provides access to various AI models including:</li>
+              <li><strong>Image Generation</strong> — AI-powered image models via fal.ai and Google Gemini API:</li>
               <ul className="list-disc list-inside space-y-1 ml-8">
-                <li>NanoBanana Cluster (Google Gemini 2.5 Flash) - Generates 2 images per use</li>
-                <li>NanoBanana Pro (Google Gemini 3 Pro) - Premium quality generation</li>
-                <li>SeeDream 4.5 (ByteDance) - High-quality generation</li>
+                <li>NanoBanana Cluster (Google Gemini 2.5 Flash) — 2 images per use</li>
+                <li>NanoBanana Pro (Google Gemini 3 Pro) — Premium quality image generation</li>
+                <li>SeeDream 4.5 (ByteDance) — High-quality image generation</li>
+                <li>FLUX 2 (Black Forest Labs) — Photorealistic image generation</li>
+                <li>Pro Scanner v3 (Google Gemini 3 Pro) — Direct API, no filtering</li>
+                <li>Flash Scanner v2.5 (Google Gemini 2.5 Flash) — Fast direct API generation</li>
               </ul>
-              <li><strong>Google Gemini API</strong> - Direct access to Google's AI models</li>
+              <li><strong>Video Generation</strong> — AI-powered video models via fal.ai:</li>
+              <ul className="list-disc list-inside space-y-1 ml-8">
+                <li>Kling 3.0 (Kuaishou) — Text-to-video generation with optional audio, 3–15 seconds</li>
+              </ul>
+              <li><strong>AI Design Studio Tools</strong> — Advanced canvas-based creative tools:</li>
+              <ul className="list-disc list-inside space-y-1 ml-8">
+                <li>Canvas Scanner — Infinite pan/zoom canvas with concurrent multi-image generation</li>
+                <li>Composition Canvas — Multi-layer AI composition with inpainting and 4K export</li>
+                <li>Scanner Canvas — AI drawing and painting canvas with brush-based generation</li>
+              </ul>
             </ul>
             <p className="mt-4 font-semibold text-yellow-400">
               IMPORTANT: The Service includes experimental AI technology that may sometimes provide inaccurate, inappropriate, or
@@ -96,16 +108,25 @@ export default function TermsPage() {
               settings used:
             </p>
             <ul className="list-disc list-inside space-y-1 ml-4 text-sm">
-              <li><strong>NanoBanana Cluster:</strong> 2 tickets (generates 2 images)</li>
-              <li><strong>NanoBanana Pro (2K):</strong> 5 tickets per generation</li>
-              <li><strong>NanoBanana Pro (4K):</strong> 10 tickets per generation</li>
-              <li><strong>SeeDream 4.5 (2K/4K):</strong> 2 tickets per generation</li>
-              <li><strong>FLUX 2:</strong> 1 ticket per generation</li>
-              <li><strong>Pro Scanner v3 (2K):</strong> 5 tickets per generation</li>
-              <li><strong>Pro Scanner v3 (4K):</strong> 10 tickets per generation</li>
-              <li><strong>Flash Scanner v2.5:</strong> 1 ticket per generation</li>
+              <li><strong>Image Models:</strong></li>
+              <ul className="list-disc list-inside space-y-1 ml-8">
+                <li><strong>NanoBanana Cluster:</strong> 2 tickets (generates 2 images)</li>
+                <li><strong>NanoBanana Pro (2K):</strong> 5 tickets per generation</li>
+                <li><strong>NanoBanana Pro (4K):</strong> 10 tickets per generation</li>
+                <li><strong>SeeDream 4.5 (2K/4K):</strong> 2 tickets per generation</li>
+                <li><strong>FLUX 2:</strong> 1 ticket per generation</li>
+                <li><strong>Pro Scanner v3 (2K):</strong> 5 tickets per generation</li>
+                <li><strong>Pro Scanner v3 (4K):</strong> 10 tickets per generation</li>
+                <li><strong>Flash Scanner v2.5:</strong> 1 ticket per generation</li>
+              </ul>
+              <li><strong>Video Models (Kling 3.0):</strong> Tickets charged per second of video duration</li>
+              <ul className="list-disc list-inside space-y-1 ml-8">
+                <li>Without audio: 6 tickets per second (e.g., 5s = 30 tickets, 10s = 60 tickets)</li>
+                <li>With audio: 8 tickets per second (e.g., 5s = 40 tickets, 10s = 80 tickets)</li>
+                <li>Duration options: 3–15 seconds in 1-second increments</li>
+              </ul>
             </ul>
-            <p className="mt-2 text-sm text-yellow-400">Pricing is subject to change.</p>
+            <p className="mt-2 text-sm text-yellow-400">Pricing is subject to change. Ticket costs are deducted at the time of generation and are non-refundable once consumed.</p>
 
             <h3 className="text-xl font-semibold mb-3 mt-6 text-purple-400">5.2 Dev Tier Subscriptions</h3>
             <p className="mb-4">We offer recurring subscription plans ("Dev Tier") with billing through PayPal:</p>
@@ -128,8 +149,13 @@ export default function TermsPage() {
 
             <h3 className="text-xl font-semibold mb-3 mt-6 text-purple-400">5.4 Payment Processing</h3>
             <p className="mb-4">
-              All payments are processed through PayPal. By making a purchase, you agree to PayPal's terms of service.
-              We are not responsible for any issues arising from PayPal's payment processing services, including but not limited to
+              All payments are processed through <strong>Lemon Squeezy</strong>, which acts as our Merchant of Record. This means Lemon Squeezy
+              is the seller of record for all transactions, handles tax compliance and remittance, and manages payment processing
+              on our behalf. By making a purchase, you agree to{' '}
+              <a href="https://www.lemonsqueezy.com/terms" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">Lemon Squeezy's Terms of Service</a>{' '}
+              and{' '}
+              <a href="https://www.lemonsqueezy.com/privacy" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">Privacy Policy</a>.
+              We are not responsible for any issues arising from Lemon Squeezy's payment processing services, including but not limited to
               payment failures, security breaches, or unauthorized transactions.
             </p>
 
@@ -409,8 +435,9 @@ export default function TermsPage() {
           <section>
             <h2 className="text-2xl font-bold mb-4 text-cyan-400">19. Entire Agreement</h2>
             <p className="mb-4">
-              These Terms, together with our Privacy Policy, constitute the entire agreement between you and Prompt & Protocol LLC
-              regarding the Service and supersede all prior agreements and understandings.
+              These Terms, together with our <a href="/privacy" className="text-cyan-400 hover:underline">Privacy Policy</a> and{' '}
+              <a href="/refund" className="text-cyan-400 hover:underline">Refund Policy</a>, constitute the entire agreement between you
+              and Prompt &amp; Protocol LLC regarding the Service and supersede all prior agreements and understandings.
             </p>
           </section>
 

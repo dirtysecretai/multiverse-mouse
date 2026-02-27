@@ -12,7 +12,7 @@ export default function PrivacyPage() {
         <h1 className="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">
           Privacy Policy
         </h1>
-        <p className="text-slate-400 mb-8">Last Updated: January 30, 2026 | Version 3.0</p>
+        <p className="text-slate-400 mb-8">Last Updated: February 27, 2026 | Version 3.1</p>
 
         <div className="space-y-8 text-slate-300">
           <section>
@@ -52,12 +52,12 @@ export default function PrivacyPage() {
               <div>
                 <h3 className="font-bold text-purple-400 mb-2">2.3 Payment and Subscription Information</h3>
                 <ul className="list-disc ml-6 space-y-1 text-sm">
-                  <li>PayPal transaction IDs and payment amounts</li>
+                  <li>Lemon Squeezy transaction IDs and payment amounts</li>
                   <li>Subscription plan details (Dev Tier: biweekly, monthly, or yearly)</li>
                   <li>Ticket purchase history and balance</li>
                   <li>Subscription status (active, canceled, expired)</li>
                   <li><strong className="text-green-400">We do NOT store credit card numbers, bank account details, or billing addresses</strong></li>
-                  <li>All payment processing is handled securely by PayPal</li>
+                  <li>All payment processing is handled securely by Lemon Squeezy (our Merchant of Record)</li>
                 </ul>
               </div>
               <div>
@@ -169,11 +169,12 @@ export default function PrivacyPage() {
                 <div className="flex items-start gap-3">
                   <div className="text-3xl">💳</div>
                   <div className="flex-1">
-                    <h3 className="font-bold text-white text-lg mb-2">PayPal (Payment Processor)</h3>
-                    <p className="text-sm mb-2"><strong className="text-cyan-400">What they receive:</strong> Your email, payment amount, transaction details, and subscription plan information</p>
-                    <p className="text-sm mb-2"><strong className="text-cyan-400">Purpose:</strong> Secure payment processing for ticket purchases and subscription billing</p>
-                    <p className="text-sm mb-2"><strong className="text-cyan-400">What we DON'T see:</strong> Your credit card numbers, bank account details, or full billing addresses</p>
-                    <p className="text-sm mb-3"><strong className="text-cyan-400">Privacy policy:</strong> <a href="https://www.paypal.com/privacy" className="text-cyan-400 hover:underline" target="_blank" rel="noopener noreferrer">paypal.com/privacy</a></p>
+                    <h3 className="font-bold text-white text-lg mb-2">Lemon Squeezy (Merchant of Record &amp; Payment Processor)</h3>
+                    <p className="text-sm mb-2"><strong className="text-cyan-400">Role:</strong> Lemon Squeezy is our Merchant of Record — they are the legal seller of record for all transactions, handle tax collection and remittance, and manage payment processing on our behalf</p>
+                    <p className="text-sm mb-2"><strong className="text-cyan-400">What they receive:</strong> Your name, email, billing address, payment method details, transaction amounts, and subscription plan information</p>
+                    <p className="text-sm mb-2"><strong className="text-cyan-400">Purpose:</strong> Secure payment processing, subscription billing, tax compliance, and chargeback management for all ticket and subscription purchases</p>
+                    <p className="text-sm mb-2"><strong className="text-cyan-400">What we DON'T see:</strong> Your full credit card numbers, bank account details, or complete billing addresses — all sensitive payment data is handled exclusively by Lemon Squeezy</p>
+                    <p className="text-sm mb-3"><strong className="text-cyan-400">Privacy policy:</strong> <a href="https://www.lemonsqueezy.com/privacy" className="text-cyan-400 hover:underline" target="_blank" rel="noopener noreferrer">lemonsqueezy.com/privacy</a></p>
                   </div>
                 </div>
               </div>
@@ -534,8 +535,8 @@ export default function PrivacyPage() {
         </div>
 
         <div className="mt-6 text-center border-t border-slate-800 pt-6">
-          <p className="text-sm text-slate-500">Last Updated: January 30, 2026</p>
-          <p className="text-xs text-slate-600 mt-1">Version 3.0</p>
+          <p className="text-sm text-slate-500">Last Updated: February 27, 2026</p>
+          <p className="text-xs text-slate-600 mt-1">Version 3.1</p>
         </div>
       </div>
     </div>
