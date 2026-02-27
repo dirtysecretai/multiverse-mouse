@@ -7,6 +7,7 @@ import { FlaskRound, Sparkles, Lock, CheckCircle, XCircle, Plus, Trash2, Wand2, 
 import { getModelConfig } from '../modelConfig';
 import CanvasScanner from '../CanvasScanner';
 import { SavedModelPicker } from '@/components/SavedModelPicker';
+import { upload } from '@vercel/blob/client';
 
 type AspectRatio = '1:1' | '2:3' | '3:2' | '4:5' | '3:4' | '4:3' | '9:16' | '16:9';
 
@@ -562,20 +563,20 @@ export default function PromptingStudio() {
 
     for (const file of filesToUpload) {
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch('/api/upload-reference', {
-          method: 'POST',
-          body: formData
+        // Use client-side Vercel Blob upload so the file goes directly from the
+        // browser to Vercel's CDN. This avoids the 4.5MB serverless body limit
+        // that blocks large AI-upscaled reference images.
+        const blob = await upload(file.name, file, {
+          access: 'public',
+          handleUploadUrl: '/api/upload-reference',
         });
-        const data = await res.json();
-        if (data.url) {
+        if (blob.url) {
           setSharedReferenceImages(prev => {
             if (prev.length >= MAX_REFERENCE_IMAGES) return prev;
             const enabledCount = prev.filter(r => r.enabled).length;
             const newRef: SharedReferenceImage = {
               id: `ref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              url: data.url,
+              url: blob.url,
               enabled: enabledCount < MAX_ACTIVE_REFERENCES,
               filename: file.name,
             };
@@ -640,20 +641,17 @@ export default function PromptingStudio() {
 
     for (const file of filesToUpload) {
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch('/api/upload-reference', {
-          method: 'POST',
-          body: formData
+        const blob = await upload(file.name, file, {
+          access: 'public',
+          handleUploadUrl: '/api/upload-reference',
         });
-        const data = await res.json();
-        if (data.url) {
+        if (blob.url) {
           setSharedReferenceImages(prev => {
             if (prev.length >= MAX_REFERENCE_IMAGES) return prev;
             const enabledCount = prev.filter(r => r.enabled).length;
             const newRef: SharedReferenceImage = {
               id: `ref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              url: data.url,
+              url: blob.url,
               enabled: enabledCount < MAX_ACTIVE_REFERENCES,
               filename: file.name,
             };
