@@ -13,7 +13,7 @@ import { SavedModelPicker } from '@/components/SavedModelPicker';
 // while still providing plenty of resolution for AI reference image use.
 const compressImage = (file: File): Promise<Blob> =>
   new Promise((resolve, reject) => {
-    const img = new Image();
+    const img = document.createElement('img') as HTMLImageElement;
     const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(objectUrl);
