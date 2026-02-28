@@ -117,9 +117,12 @@ export async function POST(request: Request) {
       where: { userId: user.id }
     })
 
-    if (!skipTickets && (!ticketRecord || ticketRecord.balance < ticketCost)) {
+    // Effective available balance = balance minus any tickets already reserved for
+    // in-flight async jobs. This prevents over-committing when multiple jobs fire rapidly.
+    const effectiveBalance = (ticketRecord?.balance || 0) - (ticketRecord?.reserved || 0)
+    if (!skipTickets && effectiveBalance < ticketCost) {
       return NextResponse.json(
-        { error: `Insufficient tickets. Need ${ticketCost} ticket(s), but you have ${ticketRecord?.balance || 0}.` },
+        { error: `Insufficient tickets. Need ${ticketCost} ticket(s), but you have ${effectiveBalance}.` },
         { status: 402 }
       )
     }
@@ -335,18 +338,20 @@ export async function POST(request: Request) {
 
           console.log(`FAL.ai accepted job, request_id: ${request_id}`)
 
-          // Reserve tickets immediately
+          // Reserve tickets — do NOT decrement balance yet.
+          // The balance is only decremented by the webhook once FAL.ai confirms
+          // the image was delivered. On failure the reservation is simply released,
+          // so no tickets are ever lost to a failed or missing webhook.
+          let reservationMade = false
           if (!skipTickets) {
             await prisma.ticket.update({
               where: { userId: user.id },
-              data: {
-                balance: { decrement: ticketCost },
-                reserved: { increment: ticketCost }
-              }
+              data: { reserved: { increment: ticketCost } }
             })
+            reservationMade = true
           }
 
-          // Get new balance for immediate UI update
+          // Fetch updated ticket record so we can return the current effective balance
           const updatedTicket = await prisma.ticket.findUnique({
             where: { userId: user.id }
           })
@@ -381,9 +386,10 @@ export async function POST(request: Request) {
           console.log(`Queue entry created: #${queueEntry.id}`)
           console.log('=== FAL.AI JOB SUBMITTED — AWAITING WEBHOOK ===')
 
+          // Effective balance = balance minus all reserved tickets (including this new one)
           const newBalance = skipTickets
             ? (ticketRecord?.balance || 0)
-            : (updatedTicket?.balance || 0)
+            : Math.max(0, (updatedTicket?.balance || 0) - (updatedTicket?.reserved || 0))
 
           return NextResponse.json({
             queueId: queueEntry.id,
@@ -399,6 +405,14 @@ export async function POST(request: Request) {
 
       } catch (error: any) {
         console.error('FAL.ai queue submit error:', error)
+        // If the reservation was made before the error, release it so tickets
+        // aren't stuck in "reserved" state from a job that will never complete.
+        if (reservationMade) {
+          await prisma.ticket.update({
+            where: { userId: user.id },
+            data: { reserved: { decrement: ticketCost } }
+          }).catch(e => console.error('Failed to release reservation on error:', e))
+        }
         return NextResponse.json(
           { error: `FAL.ai submission failed: ${error.message}` },
           { status: 500 }

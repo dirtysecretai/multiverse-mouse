@@ -28,9 +28,13 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Effective balance = total balance minus any tickets reserved for in-flight jobs.
+    // This is what users see — tickets are only "spent" when a generation succeeds.
+    const effectiveBalance = Math.max(0, ticket.balance - (ticket.reserved || 0));
     return NextResponse.json({
       success: true,
-      balance: ticket.balance
+      balance: effectiveBalance,
+      reserved: ticket.reserved || 0,
     });
 
   } catch (error: any) {

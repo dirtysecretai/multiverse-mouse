@@ -45,11 +45,10 @@ export async function POST(request: Request) {
       console.error(`FAL.ai job failed for queue #${queueItem.id}:`, errorMsg)
 
       await Promise.all([
-        // Refund reserved tickets
+        // Release the reservation — balance was never decremented so no refund needed.
         prisma.ticket.update({
           where: { userId: queueItem.userId },
           data: {
-            balance: { increment: queueItem.ticketCost },
             reserved: { decrement: queueItem.ticketCost }
           }
         }),
@@ -87,10 +86,7 @@ export async function POST(request: Request) {
         await Promise.all([
           prisma.ticket.update({
             where: { userId: queueItem.userId },
-            data: {
-              balance: { increment: queueItem.ticketCost },
-              reserved: { decrement: queueItem.ticketCost }
-            }
+            data: { reserved: { decrement: queueItem.ticketCost } }
           }),
           prisma.generationQueue.update({
             where: { id: queueItem.id },
@@ -164,10 +160,7 @@ export async function POST(request: Request) {
         await Promise.all([
           prisma.ticket.update({
             where: { userId: queueItem.userId },
-            data: {
-              balance: { increment: queueItem.ticketCost },
-              reserved: { decrement: queueItem.ticketCost }
-            }
+            data: { reserved: { decrement: queueItem.ticketCost } }
           }),
           prisma.generationQueue.update({
             where: { id: queueItem.id },
@@ -185,14 +178,16 @@ export async function POST(request: Request) {
         return NextResponse.json({ received: true })
       }
 
-      // Finalize tickets (deduct from balance, release reservation, record usage)
+      // Finalize tickets — this is the FIRST and ONLY balance deduction.
+      // The generate route only reserved tickets; the actual spend happens here
+      // once FAL.ai confirms the image was successfully delivered.
       if (!isAdminMode) {
         await prisma.ticket.update({
           where: { userId: queueItem.userId },
           data: {
-            balance: { decrement: queueItem.ticketCost },
-            reserved: { decrement: queueItem.ticketCost },
-            totalUsed: { increment: queueItem.ticketCost }
+            balance: { decrement: queueItem.ticketCost },   // First (and only) deduction
+            reserved: { decrement: queueItem.ticketCost },  // Release reservation
+            totalUsed: { increment: queueItem.ticketCost }  // Record lifetime usage
           }
         })
       } else {
