@@ -151,6 +151,7 @@ export async function POST(request: Request) {
       // ============================================
       console.log('Using FAL.ai async queue...')
 
+      let reservationMade = false
       try {
         let modelEndpoint = selectedModel.name
 
@@ -342,7 +343,6 @@ export async function POST(request: Request) {
           // The balance is only decremented by the webhook once FAL.ai confirms
           // the image was delivered. On failure the reservation is simply released,
           // so no tickets are ever lost to a failed or missing webhook.
-          let reservationMade = false
           if (!skipTickets) {
             await prisma.ticket.update({
               where: { userId: user.id },
