@@ -406,6 +406,11 @@ export default function PromptingStudio() {
           // added this image with a different id (e.g. the GeneratedImage DB id), causing
           // a duplicate at position {x:0,y:0} that stacks "over the middle".
           resolvedJobIdsRef.current.add(job.id);
+          // Refresh ticket balance — webhook just settled this job (balance deducted)
+          fetch(`/api/user/tickets?userId=${user.id}`)
+            .then(r => r.json())
+            .then(d => { if (d.success) setTicketBalance(d.balance); })
+            .catch(() => {});
           // Skip if the user explicitly deleted this image from the canvas.
           if (deletedImageUrlsRef.current.has(job.resultUrl)) continue;
           setLoadingPlaceholders(prev =>
@@ -437,6 +442,11 @@ export default function PromptingStudio() {
           // Job failed — mark the placeholder red. After a page reload, loadingPlaceholders
           // starts empty so no placeholder exists yet — create one so the failure is visible.
           resolvedJobIdsRef.current.add(job.id);
+          // Refresh ticket balance — webhook just released the reservation (no charge)
+          fetch(`/api/user/tickets?userId=${user.id}`)
+            .then(r => r.json())
+            .then(d => { if (d.success) setTicketBalance(d.balance); })
+            .catch(() => {});
           const jobPosition = params?.position || { x: 0, y: 0 };
           setLoadingPlaceholders(prev => {
             const exists = prev.some(p => p.id === jobPlaceholderId);
