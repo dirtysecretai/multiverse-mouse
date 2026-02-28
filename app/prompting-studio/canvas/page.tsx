@@ -561,35 +561,49 @@ export default function PromptingStudio() {
 
     setIsUploadingReference(true);
 
-    for (const file of filesToUpload) {
-      try {
-        // Use client-side Vercel Blob upload so the file goes directly from the
-        // browser to Vercel's CDN. This avoids the 4.5MB serverless body limit
-        // that blocks large AI-upscaled reference images.
+    // Upload all files in parallel — faster and more resilient than sequential.
+    // Errors surface per-file so a single failure doesn't silently kill the rest.
+    const results = await Promise.allSettled(
+      filesToUpload.map(async (file) => {
         const blob = await upload(file.name, file, {
           access: 'public',
           handleUploadUrl: '/api/upload-reference',
         });
-        if (blob.url) {
-          setSharedReferenceImages(prev => {
-            if (prev.length >= MAX_REFERENCE_IMAGES) return prev;
-            const enabledCount = prev.filter(r => r.enabled).length;
-            const newRef: SharedReferenceImage = {
-              id: `ref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              url: blob.url,
-              enabled: enabledCount < MAX_ACTIVE_REFERENCES,
-              filename: file.name,
-            };
-            return [...prev, newRef];
+        return { url: blob.url, filename: file.name };
+      })
+    );
+
+    const successful = results
+      .filter((r): r is PromiseFulfilledResult<{ url: string; filename: string }> =>
+        r.status === 'fulfilled' && Boolean(r.value.url)
+      )
+      .map(r => r.value);
+
+    const failCount = results.filter(r => r.status === 'rejected').length;
+
+    if (successful.length > 0) {
+      setSharedReferenceImages(prev => {
+        let refs = [...prev];
+        for (const { url, filename } of successful) {
+          if (refs.length >= MAX_REFERENCE_IMAGES) break;
+          const enabledCount = refs.filter(r => r.enabled).length;
+          refs.push({
+            id: `ref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            url,
+            enabled: enabledCount < MAX_ACTIVE_REFERENCES,
+            filename,
           });
         }
-      } catch (err) {
-        console.error('Failed to upload reference:', err);
-      }
+        return refs;
+      });
+    }
+
+    if (failCount > 0) {
+      alert(`${failCount} of ${filesToUpload.length} upload${failCount > 1 ? 's' : ''} failed. Please try again.`);
     }
 
     setIsUploadingReference(false);
-    // Reset the input
+    // Reset the input so the same files can be re-selected if needed
     e.target.value = '';
   };
 
@@ -639,28 +653,43 @@ export default function PromptingStudio() {
 
     const filesToUpload = files.slice(0, remaining);
 
-    for (const file of filesToUpload) {
-      try {
+    const results = await Promise.allSettled(
+      filesToUpload.map(async (file) => {
         const blob = await upload(file.name, file, {
           access: 'public',
           handleUploadUrl: '/api/upload-reference',
         });
-        if (blob.url) {
-          setSharedReferenceImages(prev => {
-            if (prev.length >= MAX_REFERENCE_IMAGES) return prev;
-            const enabledCount = prev.filter(r => r.enabled).length;
-            const newRef: SharedReferenceImage = {
-              id: `ref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              url: blob.url,
-              enabled: enabledCount < MAX_ACTIVE_REFERENCES,
-              filename: file.name,
-            };
-            return [...prev, newRef];
+        return { url: blob.url, filename: file.name };
+      })
+    );
+
+    const successful = results
+      .filter((r): r is PromiseFulfilledResult<{ url: string; filename: string }> =>
+        r.status === 'fulfilled' && Boolean(r.value.url)
+      )
+      .map(r => r.value);
+
+    const failCount = results.filter(r => r.status === 'rejected').length;
+
+    if (successful.length > 0) {
+      setSharedReferenceImages(prev => {
+        let refs = [...prev];
+        for (const { url, filename } of successful) {
+          if (refs.length >= MAX_REFERENCE_IMAGES) break;
+          const enabledCount = refs.filter(r => r.enabled).length;
+          refs.push({
+            id: `ref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            url,
+            enabled: enabledCount < MAX_ACTIVE_REFERENCES,
+            filename,
           });
         }
-      } catch (err) {
-        console.error('Failed to upload reference:', err);
-      }
+        return refs;
+      });
+    }
+
+    if (failCount > 0) {
+      alert(`${failCount} of ${filesToUpload.length} scanner upload${failCount > 1 ? 's' : ''} failed. Please try again.`);
     }
   };
 
@@ -1172,8 +1201,9 @@ export default function PromptingStudio() {
         return;
       }
 
-      // Count total placeholders (including failed ones) for canvas limit
-      if (sessionImages.length + loadingPlaceholders.length >= CANVAS_CONFIG.maxImages) {
+      // Only count active (non-failed) placeholders against the canvas limit.
+      // Failed (red) placeholders hold no real slot and should not block new generations.
+      if (sessionImages.length + loadingPlaceholders.filter(p => !p.failed).length >= CANVAS_CONFIG.maxImages) {
         alert(`Canvas is full (${CANVAS_CONFIG.maxImages} images max). Start a new session.`);
         return;
       }
@@ -1507,7 +1537,7 @@ export default function PromptingStudio() {
       return;
     }
 
-    if (sessionImages.length + loadingPlaceholders.length >= CANVAS_CONFIG.maxImages) {
+    if (sessionImages.length + loadingPlaceholders.filter(p => !p.failed).length >= CANVAS_CONFIG.maxImages) {
       alert(`Canvas is full (${CANVAS_CONFIG.maxImages} images max). Start a new session.`);
       return;
     }
@@ -1902,7 +1932,25 @@ export default function PromptingStudio() {
     }
     setSessionImages([]);
     setLoadingPlaceholders([]);
-    setSharedReferenceImages([]); // Clear shared reference images
+    setSharedReferenceImages([]);
+    // Clear in-memory tracking refs so old deleted URLs / pending slots don't
+    // bleed into the new session.
+    deletedImageUrlsRef.current = new Set();
+    pendingPositionsRef.current = new Set();
+    // Write immediately to localStorage — don't wait for the 1-second debounced
+    // auto-save, so a fast page-navigate-and-return doesn't restore the old session.
+    try {
+      const saved = localStorage.getItem('canvas-scanner-autosave');
+      const existing = saved ? JSON.parse(saved) : {};
+      localStorage.setItem('canvas-scanner-autosave', JSON.stringify({
+        ...existing,
+        sessionImages: [],
+        loadingPlaceholders: [],
+        sharedReferenceImages: [],
+        deletedImageUrls: [],
+        timestamp: Date.now(),
+      }));
+    } catch {}
     recenterCanvas();
   };
 
