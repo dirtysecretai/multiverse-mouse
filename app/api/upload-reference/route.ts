@@ -1,46 +1,34 @@
 // app/api/upload-reference/route.ts
-// Handles Vercel Blob client-side upload token requests.
-// The browser calls this route to get a signed token, then uploads the file
-// DIRECTLY to Vercel Blob without the file body passing through this function.
-// This bypasses Vercel's 4.5MB serverless body limit for large reference images.
+// Accepts a single compressed JPEG as FormData and stores it in Vercel Blob.
+// The client compresses to ≤1920px before sending, keeping the body well
+// under Vercel's 4.5MB serverless limit without any client-SDK complexity.
 
-import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
+import { put } from '@vercel/blob';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const body = (await req.json()) as HandleUploadBody;
-
   try {
-    const jsonResponse = await handleUpload({
-      body,
-      request: req,
-      onBeforeGenerateToken: async (_pathname) => {
-        // Allow all common image types, no practical size ceiling
-        return {
-          allowedContentTypes: [
-            'image/jpeg',
-            'image/jpg',
-            'image/png',
-            'image/webp',
-            'image/gif',
-            'image/bmp',
-            'image/tiff',
-          ],
-          // 200 MB ceiling — well above any upscaled 4K image
-          maximumSizeInBytes: 200 * 1024 * 1024,
-        };
-      },
-      onUploadCompleted: async () => {
-        // Nothing extra to do — the URL is returned directly to the client
-      },
+    const formData = await req.formData();
+    const file = formData.get('file') as File | null;
+
+    if (!file) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const filename = `reference-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.jpg`;
+
+    const blob = await put(filename, buffer, {
+      access: 'public',
+      contentType: 'image/jpeg',
     });
 
-    return NextResponse.json(jsonResponse);
+    return NextResponse.json({ url: blob.url });
   } catch (error) {
-    console.error('Upload token error:', error);
+    console.error('Reference upload error:', error);
     return NextResponse.json(
       { error: (error as Error).message },
-      { status: 400 }
+      { status: 500 }
     );
   }
 }

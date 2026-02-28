@@ -7,7 +7,52 @@ import { FlaskRound, Sparkles, Lock, CheckCircle, XCircle, Plus, Trash2, Wand2, 
 import { getModelConfig } from '../modelConfig';
 import CanvasScanner from '../CanvasScanner';
 import { SavedModelPicker } from '@/components/SavedModelPicker';
-import { upload } from '@vercel/blob/client';
+
+// Compress an image file to ≤1920px JPEG before uploading.
+// This keeps each request well under Vercel's 4.5MB serverless body limit
+// while still providing plenty of resolution for AI reference image use.
+const compressImage = (file: File): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const MAX = 1920;
+      let w = img.width;
+      let h = img.height;
+      if (w > MAX || h > MAX) {
+        const ratio = Math.min(MAX / w, MAX / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error('Canvas compression failed'))),
+        'image/jpeg',
+        0.82
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Image load failed')); };
+    img.src = objectUrl;
+  });
+
+// Compress a file then upload it to Vercel Blob via the server route.
+const uploadReferenceFile = async (file: File): Promise<string> => {
+  const compressed = await compressImage(file);
+  const formData = new FormData();
+  formData.append('file', compressed, file.name.replace(/\.[^/.]+$/, '.jpg'));
+  const res = await fetch('/api/upload-reference', { method: 'POST', body: formData });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Upload failed (${res.status})`);
+  }
+  const data = await res.json();
+  return data.url;
+};
 
 type AspectRatio = '1:1' | '2:3' | '3:2' | '4:5' | '3:4' | '4:3' | '9:16' | '16:9';
 
@@ -561,16 +606,13 @@ export default function PromptingStudio() {
 
     setIsUploadingReference(true);
 
-    // Upload all files in parallel — faster and more resilient than sequential.
+    // Upload all files in parallel — compress first, then POST to server.
     // Errors surface per-file so a single failure doesn't silently kill the rest.
     const results = await Promise.allSettled(
-      filesToUpload.map(async (file) => {
-        const blob = await upload(file.name, file, {
-          access: 'public',
-          handleUploadUrl: '/api/upload-reference',
-        });
-        return { url: blob.url, filename: file.name };
-      })
+      filesToUpload.map(async (file) => ({
+        url: await uploadReferenceFile(file),
+        filename: file.name,
+      }))
     );
 
     const successful = results
@@ -654,13 +696,10 @@ export default function PromptingStudio() {
     const filesToUpload = files.slice(0, remaining);
 
     const results = await Promise.allSettled(
-      filesToUpload.map(async (file) => {
-        const blob = await upload(file.name, file, {
-          access: 'public',
-          handleUploadUrl: '/api/upload-reference',
-        });
-        return { url: blob.url, filename: file.name };
-      })
+      filesToUpload.map(async (file) => ({
+        url: await uploadReferenceFile(file),
+        filename: file.name,
+      }))
     );
 
     const successful = results
