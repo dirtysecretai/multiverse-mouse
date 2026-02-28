@@ -1351,6 +1351,11 @@ export default function PromptingStudio() {
             p.id === placeholderId ? { ...p, id: `job-${data.jobId}` } : p
           ));
         }
+        // Reservation was made — effective balance dropped. Refresh so the count is live.
+        fetch(`/api/user/tickets?userId=${user.id}`)
+          .then(r => r.json())
+          .then(d => { if (d.success) setTicketBalance(d.balance); })
+          .catch(() => {});
       } else if (data.success && data.imageUrl) {
         if (data.jobId) {
           knownJobIdsRef.current.add(data.jobId);
@@ -1409,6 +1414,11 @@ export default function PromptingStudio() {
           return p;
         }));
 
+        // Reservation was released on failure. Refresh so the count is live.
+        fetch(`/api/user/tickets?userId=${user.id}`)
+          .then(r => r.json())
+          .then(d => { if (d.success) setTicketBalance(d.balance); })
+          .catch(() => {});
         if (data.isSensitiveContent) {
           alert('Sensitive Content Detected\n\nYour request was blocked by content filters. Your tickets have been refunded.');
         } else {
@@ -1683,6 +1693,11 @@ export default function PromptingStudio() {
             p.id === placeholderId ? { ...p, id: `job-${data.jobId}` } : p
           ));
         }
+        // Reservation was made — effective balance dropped. Refresh so the count is live.
+        fetch(`/api/user/tickets?userId=${user.id}`)
+          .then(r => r.json())
+          .then(d => { if (d.success) setTicketBalance(d.balance); })
+          .catch(() => {});
       } else if (data.success && data.imageUrl) {
         if (data.jobId) {
           knownJobIdsRef.current.add(data.jobId);
@@ -1740,6 +1755,11 @@ export default function PromptingStudio() {
           return p;
         }));
 
+        // Reservation was released on failure. Refresh so the count is live.
+        fetch(`/api/user/tickets?userId=${user.id}`)
+          .then(r => r.json())
+          .then(d => { if (d.success) setTicketBalance(d.balance); })
+          .catch(() => {});
         if (data.isSensitiveContent) {
           alert('Sensitive Content Detected\n\nYour request was blocked by content filters. Your tickets have been refunded.');
         } else {
