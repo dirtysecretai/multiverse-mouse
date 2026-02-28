@@ -165,7 +165,11 @@ export async function POST(req: NextRequest) {
             aspectRatio: aspectRatio || '1:1',
             referenceImageUrls: permanentReferenceUrls,
           },
-          status: 'processing',
+          // FAL async models (NanoBanana Pro, SeeDream, FLUX-2) are submitted to
+          // FAL's queue and stay "queued" until the webhook fires.
+          // Sync models (Gemini, NanoBanana Cluster) update status themselves.
+          // Using "queued" prevents a Vercel timeout from leaving a phantom "processing" row.
+          status: 'queued',
           ticketCost,
           startedAt: new Date(),
         },

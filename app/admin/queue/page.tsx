@@ -92,6 +92,21 @@ export default function AdminQueuePage() {
     }
   };
 
+  const resetStaleJobs = async () => {
+    try {
+      const res = await fetch('/api/admin/queue/reset-stale', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        fetchData();
+      } else {
+        alert(data.error || 'Failed to reset stale jobs');
+      }
+    } catch {
+      alert('Failed to reset stale jobs');
+    }
+  };
+
   const fetchData = async () => {
     try {
       const [limitsRes, queueRes, statsRes] = await Promise.all([
@@ -239,6 +254,13 @@ export default function AdminQueuePage() {
               </h1>
             </div>
           </div>
+          <button
+            onClick={resetStaleJobs}
+            className="px-3 py-2 rounded-lg bg-orange-900/50 hover:bg-orange-800/60 border border-orange-500/40 text-orange-400 text-xs font-bold transition-all"
+            title="Mark all processing jobs older than 30 minutes as failed"
+          >
+            Reset Stuck Jobs
+          </button>
           <button
             onClick={fetchData}
             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-all"
