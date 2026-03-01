@@ -63,7 +63,11 @@ export default function BuyTicketsPage() {
         const res = await fetch('/api/auth/session')
         const data = await res.json()
         if (!data.authenticated) { router.push('/login'); return }
-        setUser(data.user)
+        // Fetch real-time ticket balance — session value may be stale from login
+        const ticketRes = await fetch(`/api/user/tickets?userId=${data.user.id}`)
+        const ticketData = await ticketRes.json()
+        const liveBalance = ticketData.success ? ticketData.balance : data.user.ticketBalance
+        setUser({ ...data.user, ticketBalance: liveBalance })
         const subRes = await fetch('/api/user/subscription')
         const subData = await subRes.json()
         if (subData.success && subData.hasPromptStudioDev) setHasPromptStudioDev(true)
