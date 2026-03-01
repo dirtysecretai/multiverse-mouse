@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight, Download, ExternalLink, Copy, Sparkles, AlertTriangle } from "lucide-react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 
 interface GeneratedImage {
   id: number
@@ -286,12 +287,12 @@ export default function MyImagesGalleryPage() {
               {pagination.total} total images generated
             </p>
           </div>
-          <Button
-            onClick={() => router.push('/dashboard')}
-            className="bg-slate-800 hover:bg-slate-700 text-white"
-          >
-            Back to Dashboard
-          </Button>
+          <Link href="/dashboard">
+            <Button className="bg-slate-800 hover:bg-slate-700 text-white">
+              <ChevronLeft size={16} className="mr-1" />
+              Back to Dashboard
+            </Button>
+          </Link>
         </div>
 
         {/* Top Pagination */}
