@@ -1170,7 +1170,7 @@ export default function MultiversePortalLegacy() {
                       }}
                       placeholder={`Name ${idx + 1}...`}
                       className="px-3 py-2 bg-slate-950 border-2 border-slate-700 focus:border-purple-500 rounded-lg text-sm text-white placeholder:text-slate-600 focus:outline-none"
-                      disabled={isGenerating}
+                      disabled={false}
                     />
                   ))}
                 </div>
@@ -1195,7 +1195,7 @@ export default function MultiversePortalLegacy() {
                       }}
                       placeholder={`Enhancement ${idx + 1}...`}
                       className="px-3 py-2 bg-slate-950 border-2 border-slate-700 focus:border-purple-500 rounded-lg text-sm text-white placeholder:text-slate-600 focus:outline-none"
-                      disabled={isGenerating}
+                      disabled={false}
                     />
                   ))}
                 </div>
@@ -1217,7 +1217,7 @@ export default function MultiversePortalLegacy() {
                           <button
                             onClick={() => setShowPromptModelDropdown(!showPromptModelDropdown)}
                             className="px-3 py-1 bg-purple-600 text-white rounded font-bold text-xs flex items-center gap-1 h-7"
-                            disabled={isGenerating}
+                            disabled={false}
                           >
                             <span>
                               {promptModel === 'gemini-3-flash' ? 'Gemini 3 Flash' :
@@ -1278,7 +1278,7 @@ export default function MultiversePortalLegacy() {
                         </div>
                         <Button
                           onClick={handleGeneratePrompt}
-                          disabled={promptCooldown > 0 || isGenerating}
+                          disabled={promptCooldown > 0}
                           size="sm"
                           className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 h-7 text-xs px-3"
                           title={promptCooldown > 0 ? `Cooldown: ${promptCooldown}s` : ''}
@@ -1323,7 +1323,7 @@ export default function MultiversePortalLegacy() {
                   {/* Saved Preset Picker — prominent dedicated row */}
                   <div className="mb-3 p-2.5 rounded-lg border border-fuchsia-500/20 bg-fuchsia-500/5">
                     <p className="text-[10px] text-fuchsia-400/70 font-medium mb-1.5 uppercase tracking-wide">Load a saved preset</p>
-                    <SavedModelPicker onSelect={handleLoadSavedModel} disabled={isLoadingModel || isGenerating} />
+                    <SavedModelPicker onSelect={handleLoadSavedModel} disabled={isLoadingModel} />
                     {isLoadingModel && (
                       <div className="flex items-center gap-2 text-xs text-fuchsia-400 mt-2">
                         <div className="w-3 h-3 border border-fuchsia-500/30 border-t-fuchsia-500 rounded-full animate-spin" />
@@ -1389,7 +1389,7 @@ export default function MultiversePortalLegacy() {
                         }}
                         className="hidden"
                         id="reference-upload"
-                        disabled={isGenerating || referenceImages.length >= 8}
+                        disabled={referenceImages.length >= 8}
                       />
                       <label
                         htmlFor="reference-upload"
@@ -1487,7 +1487,7 @@ export default function MultiversePortalLegacy() {
                         <button
                           key={q}
                           onClick={() => setQuality(q)}
-                          disabled={isGenerating}
+                          disabled={false}
                           className={`p-2 rounded-lg font-bold uppercase text-xs transition-all ${
                             quality === q
                               ? 'bg-cyan-500 text-black'
@@ -1509,7 +1509,7 @@ export default function MultiversePortalLegacy() {
                       <button
                         key={ratio}
                         onClick={() => setAspectRatio(ratio)}
-                        disabled={isGenerating}
+                        disabled={false}
                         className={`p-2 rounded-lg font-bold text-xs transition-all ${
                           aspectRatio === ratio
                             ? 'bg-fuchsia-500 text-black'
@@ -1533,7 +1533,7 @@ export default function MultiversePortalLegacy() {
               {/* Scan Button */}
               <Button
                 onClick={handleGenerate}
-                disabled={isGenerating || !coordinates.trim() || generationQueue >= MAX_QUEUE_SIZE}
+                disabled={!coordinates.trim() || generationQueue >= MAX_QUEUE_SIZE}
                 className="w-full h-12 text-sm font-black bg-gradient-to-r from-cyan-500 to-fuchsia-500 hover:from-cyan-400 hover:to-fuchsia-400 text-black disabled:opacity-50"
               >
                 {generationQueue >= MAX_QUEUE_SIZE ? (
@@ -1541,7 +1541,7 @@ export default function MultiversePortalLegacy() {
                     <Zap className="mr-2" size={20} />
                     QUEUE FULL ({generationQueue}/{MAX_QUEUE_SIZE})
                   </>
-                ) : isGenerating ? (
+                ) : generationQueue > 0 ? (
                   <>
                     <Zap className="mr-2 animate-pulse" size={20} />
                     SCANNING... ({generationQueue}/{MAX_QUEUE_SIZE})
@@ -1571,7 +1571,7 @@ export default function MultiversePortalLegacy() {
               )}
 
               {/* Generated Image Display */}
-              {isGenerating && (
+              {generationQueue > 0 && (
                 <div className="mt-4 p-4 rounded-lg border border-cyan-500/30 bg-slate-950">
                   <p className="text-xs font-bold text-cyan-400 mb-2 uppercase">Image Loading</p>
                   <div className="relative aspect-video rounded-lg overflow-hidden bg-slate-900 mb-3 flex items-center justify-center">
@@ -1594,7 +1594,7 @@ export default function MultiversePortalLegacy() {
                 </div>
               )}
 
-              {generatedImage && !isGenerating && (
+              {generatedImage && (
                 <div className="mt-4 p-4 rounded-lg border border-cyan-500/30 bg-slate-950">
                   <p className="text-xs font-bold text-cyan-400 mb-2 uppercase">Universe Scan Complete</p>
                   
