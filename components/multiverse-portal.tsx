@@ -132,7 +132,7 @@ export default function MultiversePortalLegacy() {
   const [showPromptModelDropdown, setShowPromptModelDropdown] = useState(false)
 
   // Dynamic queue size based on subscription tier
-  const MAX_QUEUE_SIZE = hasPromptStudioDev ? 3 : 1
+  const MAX_QUEUE_SIZE = hasPromptStudioDev ? 6 : 2
   const MAX_FEED_SIZE = 50
 
   // Session feed - images generated in current session (newest first)
