@@ -542,6 +542,9 @@ export default function MultiversePortalLegacy() {
 
     // Create loading placeholder ID
     const loadingId = `loading-${Date.now()}`
+    // Flag set to true when a FAL async job is submitted — prevents the finally
+    // block from resetting state immediately (the polling loop owns cleanup instead).
+    let isQueuedAsync = false
 
     // Add loading placeholder to session feed
     setSessionFeed(prev => [{
@@ -588,8 +591,61 @@ export default function MultiversePortalLegacy() {
       const data = await res.json()
 
       if (data.success) {
+        if (data.queued && data.queueId) {
+          // ── FAL async job submitted ──────────────────────────────────────
+          // The image will arrive via webhook in ~15-30s. Update the balance
+          // immediately (reservation already made) then poll the jobs endpoint
+          // every 3s until the webhook settles the job.
+          isQueuedAsync = true
+          if (user) setUser(prev => prev ? { ...prev, ticketBalance: data.newBalance } : prev)
+
+          let pollAttempts = 0
+          const pollInterval = setInterval(async () => {
+            pollAttempts++
+            // 40 attempts × 3s = 2 min max — after that, give up gracefully
+            if (pollAttempts > 40) {
+              clearInterval(pollInterval)
+              setSessionFeed(prev => prev.filter(item => item.id !== loadingId))
+              setGenerationError('Generation timed out. Please try again.')
+              setIsGenerating(false)
+              setGenerationQueue(prev => Math.max(0, prev - 1))
+              return
+            }
+            try {
+              const jobRes = await fetch('/api/prompting-studio/jobs')
+              const jobData = await jobRes.json()
+              const job = jobData.jobs?.find((j: any) => j.id === data.queueId)
+              if (job?.status === 'completed' && job.resultUrl) {
+                clearInterval(pollInterval)
+                setGeneratedImage(job.resultUrl)
+                setSessionFeed(prev => [{
+                  id: `${Date.now()}`,
+                  url: job.resultUrl,
+                  prompt: coordinates,
+                  model: selectedModel,
+                  quality,
+                  aspectRatio,
+                  timestamp: Date.now(),
+                  referenceImages: [...referenceImages]
+                }, ...prev.filter(item => item.id !== loadingId)].slice(0, MAX_FEED_SIZE))
+                // Refresh balance — webhook just deducted the tickets
+                const ticketRes = await fetch(`/api/user/tickets?userId=${user!.id}`)
+                const ticketData = await ticketRes.json()
+                if (ticketData.success) setUser(prev => prev ? { ...prev, ticketBalance: ticketData.balance } : prev)
+                setIsGenerating(false)
+                setGenerationQueue(prev => Math.max(0, prev - 1))
+              } else if (job?.status === 'failed') {
+                clearInterval(pollInterval)
+                setSessionFeed(prev => prev.filter(item => item.id !== loadingId))
+                setGenerationError(job.errorMessage || 'Universe scan failed. Please try again.')
+                setIsGenerating(false)
+                setGenerationQueue(prev => Math.max(0, prev - 1))
+              }
+            } catch { /* ignore transient poll errors */ }
+          }, 3000)
+
         // Check if multi-image response (NanoBanana Cluster returns 2 images)
-        if (data.images && data.images.length > 1) {
+        } else if (data.images && data.images.length > 1) {
           setGeneratedImages(data.images)
           setGeneratedImage(data.images[0].url) // Set first image for modal
 
@@ -637,8 +693,11 @@ export default function MultiversePortalLegacy() {
       setSessionFeed(prev => prev.filter(item => item.id !== loadingId))
       setGenerationError('Network error. Please try again.')
     } finally {
-      setIsGenerating(false)
-      setGenerationQueue(prev => Math.max(0, prev - 1)) // Remove from queue
+      // Skip if an async FAL job is polling — that interval owns state cleanup
+      if (!isQueuedAsync) {
+        setIsGenerating(false)
+        setGenerationQueue(prev => Math.max(0, prev - 1)) // Remove from queue
+      }
     }
   }
 

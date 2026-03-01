@@ -392,8 +392,9 @@ export async function POST(request: Request) {
             : Math.max(0, (updatedTicket?.balance || 0) - (updatedTicket?.reserved || 0))
 
           return NextResponse.json({
+            success: true,
+            queued: true,
             queueId: queueEntry.id,
-            status: 'processing',
             newBalance,
             message: skipTickets
               ? `Admin scan queued! (FREE) — image will appear shortly.`
