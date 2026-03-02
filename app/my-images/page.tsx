@@ -279,7 +279,7 @@ export default function MyImagesGalleryPage() {
       {/* Back to Dashboard - fixed above everything including the image modal */}
       <button
         onClick={() => { window.location.href = '/dashboard' }}
-        className="fixed top-4 left-4 z-[9999] inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer shadow-lg border border-slate-700"
+        className="fixed top-4 right-4 z-[9999] inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer shadow-lg border border-slate-700"
       >
         <ChevronLeft size={16} />
         Back to Dashboard
