@@ -114,6 +114,8 @@ export default function MultiversePortalLegacy() {
   const [aspectRatio, setAspectRatio] = useState<'1:1' | '4:5' | '9:16' | '16:9'>('16:9')
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationQueue, setGenerationQueue] = useState(0) // Track concurrent generations (max 3)
+  // 6-slot grid: each entry is { id: loadingId, prompt } while loading, or null when empty
+  const [activeSlots, setActiveSlots] = useState<Array<{id: string, prompt: string} | null>>([null, null, null, null, null, null])
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
   const [generatedImages, setGeneratedImages] = useState<Array<{url: string, id: string}>>([])
   const [showImageModal, setShowImageModal] = useState(false)
@@ -542,6 +544,20 @@ export default function MultiversePortalLegacy() {
 
     // Create loading placeholder ID
     const loadingId = `loading-${Date.now()}`
+
+    // Assign this generation to the first available slot
+    let assignedSlot = -1
+    setActiveSlots(prev => {
+      const next = [...prev]
+      for (let i = 0; i < MAX_QUEUE_SIZE; i++) {
+        if (next[i] === null) {
+          assignedSlot = i
+          next[i] = { id: loadingId, prompt: coordinates }
+          break
+        }
+      }
+      return next
+    })
     // Flag set to true when a FAL async job is submitted — prevents the finally
     // block from resetting state immediately (the polling loop owns cleanup instead).
     let isQueuedAsync = false
@@ -606,6 +622,7 @@ export default function MultiversePortalLegacy() {
             if (pollAttempts > 40) {
               clearInterval(pollInterval)
               setSessionFeed(prev => prev.filter(item => item.id !== loadingId))
+              setActiveSlots(prev => prev.map(s => s?.id === loadingId ? null : s))
               setGenerationError('Generation timed out. Please try again.')
               setIsGenerating(false)
               setGenerationQueue(prev => Math.max(0, prev - 1))
@@ -632,11 +649,13 @@ export default function MultiversePortalLegacy() {
                 const ticketRes = await fetch(`/api/user/tickets?userId=${user!.id}`)
                 const ticketData = await ticketRes.json()
                 if (ticketData.success) setUser(prev => prev ? { ...prev, ticketBalance: ticketData.balance } : prev)
+                setActiveSlots(prev => prev.map(s => s?.id === loadingId ? null : s))
                 setIsGenerating(false)
                 setGenerationQueue(prev => Math.max(0, prev - 1))
               } else if (job?.status === 'failed') {
                 clearInterval(pollInterval)
                 setSessionFeed(prev => prev.filter(item => item.id !== loadingId))
+                setActiveSlots(prev => prev.map(s => s?.id === loadingId ? null : s))
                 setGenerationError(job.errorMessage || 'Universe scan failed. Please try again.')
                 setIsGenerating(false)
                 setGenerationQueue(prev => Math.max(0, prev - 1))
@@ -685,18 +704,21 @@ export default function MultiversePortalLegacy() {
       } else {
         // Remove loading placeholder on error
         setSessionFeed(prev => prev.filter(item => item.id !== loadingId))
+        setActiveSlots(prev => prev.map(s => s?.id === loadingId ? null : s))
         setGenerationError(data.error || 'Universe scan failed. Please try again.')
       }
     } catch (err: any) {
       console.error('Generation error:', err)
       // Remove loading placeholder on error
       setSessionFeed(prev => prev.filter(item => item.id !== loadingId))
+      setActiveSlots(prev => prev.map(s => s?.id === loadingId ? null : s))
       setGenerationError('Network error. Please try again.')
     } finally {
       // Skip if an async FAL job is polling — that interval owns state cleanup
       if (!isQueuedAsync) {
         setIsGenerating(false)
         setGenerationQueue(prev => Math.max(0, prev - 1)) // Remove from queue
+        setActiveSlots(prev => prev.map(s => s?.id === loadingId ? null : s))
       }
     }
   }
@@ -1570,116 +1592,79 @@ export default function MultiversePortalLegacy() {
                 </p>
               )}
 
-              {/* Generated Image Display */}
-              {generationQueue > 0 && (
-                <div className="mt-4 p-4 rounded-lg border border-cyan-500/30 bg-slate-950">
-                  <p className="text-xs font-bold text-cyan-400 mb-2 uppercase">Image Loading</p>
-                  <div className="relative aspect-video rounded-lg overflow-hidden bg-slate-900 mb-3 flex items-center justify-center">
-                    <div className="text-center">
-                      <Zap className="w-12 h-12 text-cyan-400 mx-auto animate-pulse mb-3" />
-                      <p className="text-slate-400 text-sm mb-2">Generating image...</p>
-                      <div className="flex items-center justify-center gap-1">
-                        <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></div>
-                        <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
-                        <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse" style={{animationDelay: '0.4s'}}></div>
+              {/* Generation Slots - 6-slot queue grid, always visible */}
+              <div className="mt-4 p-4 rounded-xl border border-slate-800/60 bg-slate-950/80">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-bold text-cyan-400 uppercase tracking-wider">Generation Queue</p>
+                  {generationQueue > 0 && (
+                    <span className="text-[10px] text-cyan-400 font-mono animate-pulse">
+                      {generationQueue}/{MAX_QUEUE_SIZE} scanning...
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {[0, 1, 2, 3, 4, 5].map((slotIndex) => {
+                    const isLocked = !hasPromptStudioDev && slotIndex >= 2
+                    const slot = activeSlots[slotIndex]
+
+                    if (isLocked) {
+                      return (
+                        <div
+                          key={slotIndex}
+                          className="aspect-square rounded-lg border border-slate-700/30 bg-slate-900/30 flex flex-col items-center justify-center gap-1 p-2"
+                        >
+                          <Lock className="w-4 h-4 text-slate-600" />
+                          <p className="text-[8px] text-slate-600 text-center font-mono leading-tight uppercase">Dev Tier</p>
+                        </div>
+                      )
+                    }
+
+                    if (slot !== null) {
+                      return (
+                        <div
+                          key={slotIndex}
+                          className="aspect-square rounded-lg border border-cyan-500/50 bg-slate-900 flex flex-col items-center justify-center gap-1.5"
+                        >
+                          <Zap className="w-5 h-5 text-cyan-400 animate-pulse" />
+                          <div className="flex gap-0.5">
+                            <div className="w-1 h-1 bg-cyan-500 rounded-full animate-pulse" />
+                            <div className="w-1 h-1 bg-cyan-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                            <div className="w-1 h-1 bg-cyan-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div
+                        key={slotIndex}
+                        className="aspect-square rounded-lg border border-dashed border-slate-700/40 bg-slate-900/20 flex items-center justify-center"
+                      >
+                        <div className="w-3 h-3 rounded-full border border-slate-700/40" />
                       </div>
-                    </div>
-                  </div>
-                  <div className="bg-yellow-500/10 border border-yellow-500/50 rounded p-2">
+                    )
+                  })}
+                </div>
+
+                {!hasPromptStudioDev && (
+                  <p className="text-[10px] text-slate-500 mt-3 text-center">
+                    <Link href="/subscriptions" className="text-violet-400 hover:text-violet-300 underline underline-offset-2">
+                      Upgrade to Dev Tier
+                    </Link>
+                    {' '}to unlock all 6 generation slots
+                  </p>
+                )}
+
+                {generationQueue > 0 && (
+                  <div className="mt-3 bg-yellow-500/10 border border-yellow-500/40 rounded-lg p-2">
                     <p className="text-yellow-400 text-xs font-bold flex items-center gap-2">
-                      <AlertTriangle size={14} />
-                      DO NOT REFRESH - Image loading
+                      <AlertTriangle size={13} />
+                      DO NOT REFRESH — generations in progress
                     </p>
                   </div>
-                </div>
-              )}
-
-              {generatedImage && (
-                <div className="mt-4 p-4 rounded-lg border border-cyan-500/30 bg-slate-950">
-                  <p className="text-xs font-bold text-cyan-400 mb-2 uppercase">Universe Scan Complete</p>
-                  
-                  {/* Multi-image display for NanoBanana Cluster (2 images) */}
-                  {generatedImages.length > 1 ? (
-                    <div className="grid grid-cols-2 gap-3 mb-3">
-                      {generatedImages.map((img, idx) => (
-                        <div key={img.id} className="space-y-2">
-                          <div 
-                            className="relative aspect-square rounded-lg overflow-hidden bg-slate-900 cursor-pointer hover:opacity-90 transition-opacity"
-                            onClick={() => {
-                              setGeneratedImage(img.url)
-                              setShowImageModal(true)
-                            }}
-                          >
-                            <img src={img.url} alt={`Generated ${idx + 1}`} className="w-full h-full object-contain" />
-                          </div>
-                          <p className="text-xs text-slate-400 text-center">Image {idx + 1}/{generatedImages.length}</p>
-                          <a href={img.url} download className="block">
-                            <Button className="w-full bg-slate-800 hover:bg-slate-700 text-xs h-8">
-                              <Download className="w-3 h-3 mr-1" />
-                              Download {idx + 1}
-                            </Button>
-                          </a>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    /* Single image display */
-                    <>
-                      <div 
-                        className="relative aspect-video rounded-lg overflow-hidden bg-slate-900 mb-3 cursor-pointer hover:opacity-90 transition-opacity"
-                        onClick={() => setShowImageModal(true)}
-                      >
-                        <img src={generatedImage} alt="Generated" className="w-full h-full object-contain" />
-                      </div>
-                      <div className="flex gap-2">
-                        <a href={generatedImage} download className="flex-1">
-                          <Button className="w-full bg-slate-800 hover:bg-slate-700 text-xs h-8">
-                            Download
-                          </Button>
-                        </a>
-                        <Button
-                          onClick={() => {
-                            // Keep current prompt and reference images, just clear the generated result
-                            setGeneratedImage(null)
-                            setGeneratedImages([])
-                            window.scrollTo({
-                              top: document.getElementById('scanner-section')?.offsetTop || 0,
-                              behavior: 'smooth'
-                            })
-                          }}
-                          className="bg-fuchsia-500 hover:bg-fuchsia-400 text-white font-bold text-xs h-8 flex items-center gap-1"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                          </svg>
-                          Rescan
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                  
-                  {/* Rescan button for multi-image */}
-                  {generatedImages.length > 1 && (
-                    <Button
-                      onClick={() => {
-                        // Keep current prompt and reference images, just clear the generated result
-                        setGeneratedImage(null)
-                        setGeneratedImages([])
-                        window.scrollTo({
-                          top: document.getElementById('scanner-section')?.offsetTop || 0,
-                          behavior: 'smooth'
-                        })
-                      }}
-                      className="w-full bg-fuchsia-500 hover:bg-fuchsia-400 text-white font-bold text-xs h-8 flex items-center justify-center gap-1"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      Rescan
-                    </Button>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
 
