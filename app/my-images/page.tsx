@@ -287,12 +287,13 @@ export default function MyImagesGalleryPage() {
               {pagination.total} total images generated
             </p>
           </div>
-          <Link href="/dashboard">
-            <Button className="bg-slate-800 hover:bg-slate-700 text-white">
-              <ChevronLeft size={16} className="mr-1" />
-              Back to Dashboard
-            </Button>
-          </Link>
+          <a
+            href="/dashboard"
+            className="inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+          >
+            <ChevronLeft size={16} />
+            Back to Dashboard
+          </a>
         </div>
 
         {/* Top Pagination */}
