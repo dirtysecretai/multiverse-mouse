@@ -393,6 +393,7 @@ export default function AdminQueuePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {[
                   { id: 'wan-2.5', displayName: 'Wan 2.5', ticketCost: 10 },
+                  { id: 'kling-v3', displayName: 'Kling 3.0', ticketCost: 10 },
                 ].map((model) => {
                   const existingLimit = limits.find(l => l.modelId === model.id);
                   const currentLimit = existingLimit?.maxConcurrent;
@@ -507,6 +508,7 @@ export default function AdminQueuePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {[
                   { id: 'wan-2.5', displayName: 'Wan 2.5' },
+                  { id: 'kling-v3', displayName: 'Kling 3.0' },
                 ].map((model) => {
                   const modelQueue = queueItems.filter(item => item.modelId === model.id);
                   const queuedCount = modelQueue.filter(item => item.status === 'queued').length;
