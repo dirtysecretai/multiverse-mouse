@@ -276,6 +276,15 @@ export default function MyImagesGalleryPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white p-6">
+      {/* Back to Dashboard - fixed above everything including the image modal */}
+      <button
+        onClick={() => { window.location.href = '/dashboard' }}
+        className="fixed top-4 left-4 z-[9999] inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer shadow-lg border border-slate-700"
+      >
+        <ChevronLeft size={16} />
+        Back to Dashboard
+      </button>
+
       {/* Header */}
       <div className="max-w-7xl mx-auto mb-4">
         <div className="flex items-center justify-between mb-4">
@@ -287,13 +296,6 @@ export default function MyImagesGalleryPage() {
               {pagination.total} total images generated
             </p>
           </div>
-          <button
-            onClick={() => { window.location.href = '/dashboard' }}
-            className="inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer"
-          >
-            <ChevronLeft size={16} />
-            Back to Dashboard
-          </button>
         </div>
 
         {/* Top Pagination */}
