@@ -91,6 +91,8 @@ export default function LegacyScanner() {
   // UI state
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [generationQueue, setGenerationQueue] = useState(0); // Track concurrent generations (max 3)
+  // 6-slot generation queue grid
+  const [activeSlots, setActiveSlots] = useState<Array<{id: string, prompt: string} | null>>([null, null, null, null, null, null]);
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
   const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
   const [activeGenerations, setActiveGenerations] = useState<Set<string>>(new Set()); // Track which buttons are actively generating
@@ -578,6 +580,21 @@ export default function LegacyScanner() {
     setActiveGenerations(prev => new Set(prev).add(generationId));
     setGenerationQueue(prev => prev + (isCluster ? 2 : 1)); // Cluster counts as 2
 
+    // Assign slot(s) in the 6-slot queue grid
+    setActiveSlots(prev => {
+      const next = [...prev];
+      let filled = 0;
+      for (let i = 0; i < 6; i++) {
+        if (next[i] === null) {
+          if (filled === 0) next[i] = { id: generationId, prompt };
+          else if (filled === 1 && isCluster && generationId2) next[i] = { id: generationId2, prompt };
+          filled++;
+          if (filled >= (isCluster ? 2 : 1)) break;
+        }
+      }
+      return next;
+    });
+
     // Add loading placeholder(s) to generated images (newest first, limit to 50)
     const placeholders: GeneratedImage[] = [
       { id: generationId, prompt, imageUrl: '', model, timestamp: Date.now(), loading: true },
@@ -696,6 +713,10 @@ export default function LegacyScanner() {
         return newSet;
       });
       setGenerationQueue(prev => Math.max(0, prev - (isCluster ? 2 : 1))); // Cluster counts as 2
+      // Clear slot(s) from the queue grid
+      setActiveSlots(prev => prev.map(s =>
+        (s?.id === generationId || (isCluster && s?.id === generationId2)) ? null : s
+      ));
     }
   };
 
@@ -1180,6 +1201,80 @@ export default function LegacyScanner() {
                 </>
               )}
             </Button>
+
+            {/* Generation Queue — 6-slot grid */}
+            <div className="mt-4 p-4 rounded-xl border border-slate-800/60 bg-slate-950/80">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-bold text-cyan-400 uppercase tracking-wider">Generation Queue</p>
+                {generationQueue > 0 && (
+                  <span className="text-[10px] text-cyan-400 font-mono animate-pulse">
+                    {generationQueue}/{Math.min(MAX_QUEUE_SIZE, 6)} scanning...
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {[0, 1, 2, 3, 4, 5].map((slotIndex) => {
+                  const isLocked = !hasPromptStudioDev && !isAdmin && slotIndex >= 2;
+                  const slot = activeSlots[slotIndex];
+
+                  if (isLocked) {
+                    return (
+                      <div
+                        key={slotIndex}
+                        className="aspect-square rounded-lg border border-slate-700/30 bg-slate-900/30 flex flex-col items-center justify-center gap-1 p-2"
+                      >
+                        <Lock className="w-4 h-4 text-slate-600" />
+                        <p className="text-[8px] text-slate-600 text-center font-mono leading-tight uppercase">Dev Tier</p>
+                      </div>
+                    );
+                  }
+
+                  if (slot !== null) {
+                    return (
+                      <div
+                        key={slotIndex}
+                        className="aspect-square rounded-lg border border-cyan-500/50 bg-slate-900 flex flex-col items-center justify-center gap-1.5"
+                      >
+                        <Zap className="w-5 h-5 text-cyan-400 animate-pulse" />
+                        <div className="flex gap-0.5">
+                          <div className="w-1 h-1 bg-cyan-500 rounded-full animate-pulse" />
+                          <div className="w-1 h-1 bg-cyan-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                          <div className="w-1 h-1 bg-cyan-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={slotIndex}
+                      className="aspect-square rounded-lg border border-dashed border-slate-700/40 bg-slate-900/20 flex items-center justify-center"
+                    >
+                      <div className="w-3 h-3 rounded-full border border-slate-700/40" />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {!hasPromptStudioDev && !isAdmin && (
+                <p className="text-[10px] text-slate-500 mt-3 text-center">
+                  <Link href="/subscriptions" className="text-violet-400 hover:text-violet-300 underline underline-offset-2">
+                    Upgrade to Dev Tier
+                  </Link>
+                  {' '}to unlock all 6 generation slots
+                </p>
+              )}
+
+              {generationQueue > 0 && (
+                <div className="mt-3 bg-yellow-500/10 border border-yellow-500/40 rounded-lg p-2">
+                  <p className="text-yellow-400 text-xs font-bold flex items-center gap-2">
+                    <AlertTriangle size={13} />
+                    DO NOT REFRESH — generations in progress
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Generated Images */}
