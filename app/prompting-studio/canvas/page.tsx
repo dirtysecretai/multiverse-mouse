@@ -290,6 +290,9 @@ export default function PromptingStudio() {
           // Must be included so the debounced save doesn't overwrite the immediately-saved
           // deleted URLs that removeImageFromCanvas / removeSelectedImages write on deletion.
           deletedImageUrls: Array.from(deletedImageUrlsRef.current),
+          // Must be included so the debounced save doesn't overwrite the sessionCreatedAt
+          // that createNewSession() writes immediately to localStorage.
+          sessionCreatedAt: sessionCreatedAtRef.current || undefined,
           scannerPanels,
           sharedReferenceImages,
           savedPrompts,
