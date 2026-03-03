@@ -710,7 +710,7 @@ export default function DashboardPage() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-yellow-400">AI Design Studio</h3>
+                      <h3 className="font-bold text-yellow-400">AI Design Studio - Scanner Canvas</h3>
                       <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">MAINTENANCE</span>
                     </div>
                     <p className="text-[10px] text-slate-500">Temporarily offline</p>
@@ -732,7 +732,7 @@ export default function DashboardPage() {
                       </svg>
                     </div>
                     <div>
-                      <h3 className="font-black text-fuchsia-400 text-base mb-0.5">AI Design Studio</h3>
+                      <h3 className="font-black text-fuchsia-400 text-base mb-0.5">AI Design Studio - Scanner Canvas</h3>
                       <p className="text-[10px] text-slate-500">3 modes + infinite canvas</p>
                     </div>
                   </div>
@@ -774,7 +774,7 @@ export default function DashboardPage() {
                       </svg>
                     </div>
                     <div>
-                      <h3 className="font-black text-fuchsia-400">AI Design Studio</h3>
+                      <h3 className="font-black text-fuchsia-400">AI Design Studio - Scanner Canvas</h3>
                       <p className="text-[10px] text-slate-500">3 modes + infinite canvas</p>
                     </div>
                   </div>
