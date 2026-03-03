@@ -100,6 +100,41 @@ export default function CompositionCanvas() {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Admin auth gate — composition canvas is admin-only while in development
+  const [isAdminAuth, setIsAdminAuth] = useState(false);
+  const [isAdminChecking, setIsAdminChecking] = useState(true);
+  const [adminPassword, setAdminPassword] = useState('');
+
+  useEffect(() => {
+    const authStatus = localStorage.getItem('multiverse-admin-auth');
+    const savedPassword = sessionStorage.getItem('admin-password');
+    if (authStatus === 'true' && savedPassword) {
+      setIsAdminAuth(true);
+    }
+    setIsAdminChecking(false);
+  }, []);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/admin/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword }),
+      });
+      if (res.ok) {
+        sessionStorage.setItem('admin-password', adminPassword);
+        localStorage.setItem('multiverse-admin-auth', 'true');
+        setIsAdminAuth(true);
+      } else {
+        alert('Invalid password');
+      }
+    } catch {
+      alert('Authentication failed');
+    }
+  };
+
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [ticketBalance, setTicketBalance] = useState<number>(0);
@@ -1884,6 +1919,44 @@ export default function CompositionCanvas() {
   }, [layers, panOffset, zoom, rotation, gridRows, gridCols, viewState, currentCanvasId, canvasInitialized]);
 
   const activeRefCount = referenceImages.filter(r => r.active).length + (canvasRefActive ? 1 : 0);
+
+  if (isAdminChecking) {
+    return (
+      <div className="min-h-screen bg-[#050810] flex items-center justify-center">
+        <div className="text-purple-400 text-xl font-mono">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!isAdminAuth) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="mb-8 text-center">
+            <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-fuchsia-500 mb-2">
+              COMPOSITION CANVAS
+            </h1>
+            <p className="text-slate-500 text-sm">Admin Access Only</p>
+          </div>
+          <form onSubmit={handleAdminLogin} className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm">
+            <input
+              type="password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              placeholder="Enter admin password"
+              className="w-full p-3 rounded-lg bg-slate-950 border border-slate-700 text-white focus:border-purple-500 focus:outline-none mb-4"
+            />
+            <button
+              type="submit"
+              className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-500 to-fuchsia-500 hover:from-purple-400 hover:to-fuchsia-400 text-white font-bold transition-all"
+            >
+              ACCESS CANVAS
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

@@ -1033,31 +1033,6 @@ export default function MultiversePortal() {
             </div>
           </Link>
 
-          {/* Composition Canvas */}
-          <Link href="/composition-canvas">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm overflow-hidden hover:border-slate-700 hover:bg-slate-900/80 transition-all cursor-pointer group">
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0">
-                      <Eye size={15} className="text-white" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-black text-white">Composition Canvas</p>
-                      <p className="text-[10px] text-slate-600">Layers</p>
-                    </div>
-                  </div>
-                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-slate-700 border border-slate-600 text-slate-300 font-black uppercase tracking-wider flex-shrink-0">Dev</span>
-                </div>
-                <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
-                  Layer-based composition with grid regeneration and session saving
-                </p>
-                <span className="text-xs text-slate-500 group-hover:text-slate-300 transition-colors font-medium">
-                  Open Canvas →
-                </span>
-              </div>
-            </div>
-          </Link>
         </aside>
 
         {/* CENTER CONTENT */}

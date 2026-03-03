@@ -1016,39 +1016,6 @@ export default function MultiversePortalLegacy() {
             </div>
           </Link>
 
-          {/* Composition Canvas Promo */}
-          <Link href="/composition-canvas">
-            <div className="rounded-xl border-2 border-purple-500/30 bg-gradient-to-br from-purple-500/5 to-slate-900/50 backdrop-blur-sm overflow-hidden hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 transition-all cursor-pointer group">
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] font-black uppercase tracking-wider shadow-lg shadow-purple-500/30">
-                    <Sparkles size={10} />
-                    Dev
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-400 text-[9px] font-bold uppercase tracking-wider">
-                    Layers
-                  </span>
-                </div>
-                <div className="mb-3">
-                  <h3 className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-1">
-                    Composition Canvas
-                  </h3>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Layer-based composition with grid regeneration and session saving
-                  </p>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-purple-400 font-medium group-hover:text-purple-300 transition-colors">
-                    Open Canvas →
-                  </span>
-                  <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                    <Zap size={10} />
-                    <span>AI Composition</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Link>
         </aside>
 
         {/* CENTER CONTENT */}

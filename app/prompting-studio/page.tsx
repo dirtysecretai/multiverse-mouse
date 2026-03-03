@@ -218,50 +218,7 @@ export default function StudioSelection() {
             <div className="flex-1 h-px bg-fuchsia-500/20" />
           </div>
 
-          <div className="grid md:grid-cols-2 gap-5">
-            {/* Composition Canvas */}
-            <div className="p-6 rounded-2xl border-2 border-fuchsia-500/30 bg-slate-900/80 backdrop-blur-sm hover:border-fuchsia-400/60 transition-all group relative">
-              {!hasDevTier && (
-                <div className="absolute inset-0 bg-slate-900/85 backdrop-blur-sm rounded-2xl flex items-center justify-center z-10">
-                  <div className="text-center p-6">
-                    <Lock className="text-slate-500 mx-auto mb-3" size={28} />
-                    <p className="text-slate-400 text-sm mb-4">Dev Tier Required</p>
-                    <Link href="/prompting-studio/upgrade">
-                      <Button className="bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 font-bold text-sm">
-                        Upgrade to Dev Tier
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              )}
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-xl bg-fuchsia-500/20 flex items-center justify-center">
-                  <Layers className="text-fuchsia-400" size={22} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white">Composition Canvas</h3>
-                  <p className="text-xs text-slate-400">Layered AI composition tool</p>
-                </div>
-              </div>
-              <p className="text-sm text-slate-400 mb-4">
-                Build multi-layer compositions using AI generation. Select areas to inpaint, composite images across layers, and export at full 4K resolution.
-              </p>
-              <div className="mb-5">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Models</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {['NanoBanana Pro', 'Pro Scanner v3', 'SeeDream 4.5'].map(m => (
-                    <span key={m} className="text-[10px] bg-fuchsia-500/10 text-fuchsia-300 border border-fuchsia-500/20 rounded px-2 py-0.5 font-medium">{m}</span>
-                  ))}
-                </div>
-              </div>
-              <Link href="/composition-canvas">
-                <Button className="w-full bg-fuchsia-700 hover:bg-fuchsia-600 font-bold group-hover:shadow-lg group-hover:shadow-fuchsia-500/20 transition-all">
-                  Open Composition Canvas
-                  <ArrowRight className="ml-2" size={15} />
-                </Button>
-              </Link>
-            </div>
-
+          <div className="grid gap-5">
             {/* Scanner Canvas (AI Canvas) */}
             <div className="p-6 rounded-2xl border-2 border-purple-500/30 bg-slate-900/80 backdrop-blur-sm hover:border-purple-400/60 transition-all group relative">
               {!hasDevTier && (

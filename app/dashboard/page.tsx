@@ -861,26 +861,7 @@ export default function DashboardPage() {
 
           {/* Canvas Options */}
           {isMaintenanceMode ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 relative overflow-hidden">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 rounded-lg bg-yellow-500/20">
-                    <svg className="w-5 h-5 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="2" y="2" width="20" height="20" rx="2"></rect>
-                      <path d="M2 7h20"></path><path d="M2 12h20"></path><path d="M2 17h20"></path>
-                      <path d="M7 2v20"></path><path d="M12 2v20"></path><path d="M17 2v20"></path>
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-yellow-400">Composition Canvas</h3>
-                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">MAINTENANCE</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Temporarily offline</p>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-400">Canvas is under maintenance and will be back soon.</p>
-              </div>
+            <div>
               <div className="p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 relative overflow-hidden">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="p-2 rounded-lg bg-yellow-500/20">
@@ -902,31 +883,7 @@ export default function DashboardPage() {
               </div>
             </div>
           ) : hasPromptStudioDev ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* AI Composition Canvas */}
-              <Link href="/composition-canvas">
-                <div className="p-4 rounded-xl border-2 border-purple-500/30 bg-slate-950/50 hover:border-purple-400 hover:bg-purple-500/5 transition-all cursor-pointer group h-full">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-purple-500/20 group-hover:bg-purple-500/30 transition-colors">
-                      <svg className="w-5 h-5 text-purple-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="2" y="2" width="20" height="20" rx="2"></rect>
-                        <path d="M2 7h20"></path><path d="M2 12h20"></path><path d="M2 17h20"></path>
-                        <path d="M7 2v20"></path><path d="M12 2v20"></path><path d="M17 2v20"></path>
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="font-black text-purple-400 text-base mb-0.5">Composition Canvas</h3>
-                      <p className="text-[10px] text-slate-500">Layer-based AI composition</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400 mb-2">Layer-based composition with grid regeneration and session saving.</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400">Grid System</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-400">AI Regeneration</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-400">Save Sessions</span>
-                  </div>
-                </div>
-              </Link>
+            <div>
               {/* Scanner Canvas */}
               <Link href="/prompting-studio/canvas">
                 <div className="p-4 rounded-xl border-2 border-fuchsia-500/30 bg-slate-950/50 hover:border-fuchsia-400 hover:bg-fuchsia-500/5 transition-all cursor-pointer group h-full">
@@ -953,42 +910,7 @@ export default function DashboardPage() {
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Locked Composition Canvas */}
-              <div className="p-4 rounded-xl border-2 border-slate-700 bg-slate-950/30 relative overflow-hidden">
-                <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[1px] flex items-center justify-center z-10">
-                  <div className="text-center">
-                    <div className="w-10 h-10 mx-auto mb-2 rounded-full bg-slate-800 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                      </svg>
-                    </div>
-                    <p className="text-xs text-slate-400 font-medium mb-2">Dev Tier Required</p>
-                    <Link href="/prompting-studio/subscribe">
-                      <Button className="bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white font-bold text-xs h-7 px-4">
-                        Upgrade
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-                <div className="opacity-40">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-purple-500/20">
-                      <svg className="w-5 h-5 text-purple-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="2" y="2" width="20" height="20" rx="2"></rect>
-                        <path d="M2 7h20"></path><path d="M2 12h20"></path><path d="M2 17h20"></path>
-                        <path d="M7 2v20"></path><path d="M12 2v20"></path><path d="M17 2v20"></path>
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="font-black text-purple-400">Composition Canvas</h3>
-                      <p className="text-[10px] text-slate-500">Layer-based AI composition</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400">Layer-based composition with grid regeneration and session saving.</p>
-                </div>
-              </div>
+            <div>
               {/* Locked Scanner Canvas */}
               <div className="p-4 rounded-xl border-2 border-slate-700 bg-slate-950/30 relative overflow-hidden">
                 <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[1px] flex items-center justify-center z-10">

@@ -126,6 +126,18 @@ export default function AdminPrototypePage() {
       featureColors: ["bg-purple-500/20 text-purple-400", "bg-pink-500/20 text-pink-400", "bg-fuchsia-500/20 text-fuchsia-400"],
     },
     {
+      name: "Composition Canvas",
+      description: "Layer-based AI composition tool with multi-layer support, grid regeneration, inpainting, and 4K export. Moved from live site for further development.",
+      href: "/composition-canvas",
+      status: "In Development",
+      statusColor: "text-violet-400 bg-violet-500/20",
+      gradient: "from-purple-500/20 to-fuchsia-500/20",
+      border: "border-purple-500/30 hover:border-purple-400",
+      titleColor: "text-purple-400",
+      features: ["Multi-layer", "Inpainting", "4K Export"],
+      featureColors: ["bg-purple-500/20 text-purple-400", "bg-pink-500/20 text-pink-400", "bg-fuchsia-500/20 text-fuchsia-400"],
+    },
+    {
       name: "NanoBanana Pro 2",
       description: "Full-parameter prototype for fal-ai/nano-banana-2. Customize aspect ratio, resolution, safety tolerance, web search, seed, and more.",
       href: "/admin/nano-banana-2",
