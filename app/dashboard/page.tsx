@@ -664,171 +664,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Scanners Section */}
-        <div className="p-6 rounded-xl border-2 border-purple-500/30 bg-slate-900/80 backdrop-blur-sm mb-6">
-          <div className="flex items-center justify-between gap-4 mb-4">
-            {/* Left: Title */}
-            <div className="flex items-center gap-3">
-              <svg className="text-purple-400" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"></path>
-                <path d="M8.5 2h7"></path>
-                <path d="M7 16h10"></path>
-              </svg>
-              <div>
-                <div className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">
-                  SCANNERS
-                </div>
-                <p className="text-sm text-slate-400">AI Image Generation</p>
-              </div>
-            </div>
-
-            {/* Right: Tier Badge */}
-            {hasPromptStudioDev ? (
-              <span className="text-[10px] font-bold bg-gradient-to-r from-purple-500 to-cyan-500 text-white px-3 py-1 rounded-full">
-                DEV TIER
-              </span>
-            ) : (
-              <span className="text-[10px] font-medium bg-slate-700 text-slate-300 px-3 py-1 rounded-full">
-                FREE TIER
-              </span>
-            )}
-          </div>
-
-          {/* Scanner Options */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
-            {/* Main Scanner - Always accessible */}
-            {isMaintenanceMode ? (
-              <div className="p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 relative overflow-hidden">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 rounded-lg bg-yellow-500/20">
-                    <svg className="w-5 h-5 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                      <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-yellow-400">Main Scanner</h3>
-                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">MAINTENANCE</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Temporarily offline</p>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-400">Scanner is under maintenance and will be back soon.</p>
-              </div>
-            ) : (
-              <Link href="/">
-                <div className="p-4 rounded-xl border-2 border-green-500/30 bg-slate-950/50 hover:border-green-400 hover:bg-green-500/5 transition-all cursor-pointer group">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-green-500/20 group-hover:bg-green-500/30 transition-colors">
-                      <svg className="w-5 h-5 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-green-400">Main Scanner</h3>
-                      <p className="text-[10px] text-slate-500">AI image generator</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400">Generate AI images across all available models. The primary scanner.</p>
-                </div>
-              </Link>
-            )}
-
-            {/* Legacy Scanner - Dev Tier Only */}
-            {isMaintenanceMode ? (
-              <div className="p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 relative overflow-hidden">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 rounded-lg bg-yellow-500/20">
-                    <svg className="w-5 h-5 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="3"></circle>
-                      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-yellow-400">Legacy Scanner</h3>
-                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">MAINTENANCE</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Temporarily offline</p>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-400">Scanner is under maintenance and will be back soon.</p>
-              </div>
-            ) : (
-              <Link href="/prompting-studio/legacy">
-                <div className="p-4 rounded-xl border-2 border-cyan-500/30 bg-slate-950/50 hover:border-cyan-400 hover:bg-cyan-500/5 transition-all cursor-pointer group">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-cyan-500/20 group-hover:bg-cyan-500/30 transition-colors">
-                      <svg className="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="3"></circle>
-                        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-cyan-400">Legacy Scanner</h3>
-                      <p className="text-[10px] text-slate-500">AI image generator</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400">Alternative AI image generator with a different layout and feel.</p>
-                </div>
-              </Link>
-            )}
-
-            {/* Video Scanner - Dev Tier Only */}
-            {isMaintenanceMode ? (
-              <div className="p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 relative overflow-hidden">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 rounded-lg bg-yellow-500/20">
-                    <svg className="w-5 h-5 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-                      <line x1="7" y1="2" x2="7" y2="22"></line>
-                      <line x1="17" y1="2" x2="17" y2="22"></line>
-                      <line x1="2" y1="12" x2="22" y2="12"></line>
-                      <line x1="2" y1="7" x2="7" y2="7"></line>
-                      <line x1="2" y1="17" x2="7" y2="17"></line>
-                      <line x1="17" y1="17" x2="22" y2="17"></line>
-                      <line x1="17" y1="7" x2="22" y2="7"></line>
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-yellow-400">Video Scanner</h3>
-                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">MAINTENANCE</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Temporarily offline</p>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-400">Scanner is under maintenance and will be back soon.</p>
-              </div>
-            ) : (
-              <Link href="/video-scanner">
-                <div className="p-4 rounded-xl border-2 border-orange-500/30 bg-slate-950/50 hover:border-orange-400 hover:bg-orange-500/5 transition-all cursor-pointer group">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-orange-500/20 group-hover:bg-orange-500/30 transition-colors">
-                      <svg className="w-5 h-5 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-                        <polygon points="10 8 16 12 10 16 10 8"></polygon>
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-orange-400">Video Scanner</h3>
-                      <p className="text-[10px] text-slate-500">Image-to-video generation</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400">Transform images into 5-10s videos with AI motion generation.</p>
-                </div>
-              </Link>
-            )}
-
-
-          </div>
-        </div>
-
         {/* AI Design Studio Section */}
         <div className="p-6 rounded-xl border-2 border-emerald-500/30 bg-slate-900/80 backdrop-blur-sm mb-8">
-          <div className="flex items-center justify-between gap-4 mb-4">
+          <div className="flex items-center justify-between gap-4 mb-6">
             <div className="flex items-center gap-3">
               <svg className="text-emerald-400" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"></path>
@@ -844,10 +682,9 @@ export default function DashboardPage() {
                 <div className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">
                   AI DESIGN STUDIO
                 </div>
-                <p className="text-sm text-slate-400">Creative Canvas & AI Tools</p>
+                <p className="text-sm text-slate-400">Creative Canvas &amp; AI Tools</p>
               </div>
             </div>
-
             {hasPromptStudioDev ? (
               <span className="text-[10px] font-bold bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-3 py-1 rounded-full">
                 DEV TIER
@@ -859,9 +696,9 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Canvas Options */}
+          {/* AI Design Studio Canvas */}
           {isMaintenanceMode ? (
-            <div>
+            <div className="mb-6">
               <div className="p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 relative overflow-hidden">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="p-2 rounded-lg bg-yellow-500/20">
@@ -873,7 +710,7 @@ export default function DashboardPage() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-yellow-400">Scanner Canvas</h3>
+                      <h3 className="font-bold text-yellow-400">AI Design Studio</h3>
                       <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">MAINTENANCE</span>
                     </div>
                     <p className="text-[10px] text-slate-500">Temporarily offline</p>
@@ -883,10 +720,9 @@ export default function DashboardPage() {
               </div>
             </div>
           ) : hasPromptStudioDev ? (
-            <div>
-              {/* Scanner Canvas */}
+            <div className="mb-6">
               <Link href="/prompting-studio/canvas">
-                <div className="p-4 rounded-xl border-2 border-fuchsia-500/30 bg-slate-950/50 hover:border-fuchsia-400 hover:bg-fuchsia-500/5 transition-all cursor-pointer group h-full">
+                <div className="p-4 rounded-xl border-2 border-fuchsia-500/30 bg-slate-950/50 hover:border-fuchsia-400 hover:bg-fuchsia-500/5 transition-all cursor-pointer group">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="p-2 rounded-lg bg-fuchsia-500/20 group-hover:bg-fuchsia-500/30 transition-colors">
                       <svg className="w-5 h-5 text-fuchsia-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -896,7 +732,7 @@ export default function DashboardPage() {
                       </svg>
                     </div>
                     <div>
-                      <h3 className="font-black text-fuchsia-400 text-base mb-0.5">Scanner Canvas</h3>
+                      <h3 className="font-black text-fuchsia-400 text-base mb-0.5">AI Design Studio</h3>
                       <p className="text-[10px] text-slate-500">3 modes + infinite canvas</p>
                     </div>
                   </div>
@@ -910,8 +746,7 @@ export default function DashboardPage() {
               </Link>
             </div>
           ) : (
-            <div>
-              {/* Locked Scanner Canvas */}
+            <div className="mb-6">
               <div className="p-4 rounded-xl border-2 border-slate-700 bg-slate-950/30 relative overflow-hidden">
                 <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[1px] flex items-center justify-center z-10">
                   <div className="text-center">
@@ -939,7 +774,7 @@ export default function DashboardPage() {
                       </svg>
                     </div>
                     <div>
-                      <h3 className="font-black text-fuchsia-400">Scanner Canvas</h3>
+                      <h3 className="font-black text-fuchsia-400">AI Design Studio</h3>
                       <p className="text-[10px] text-slate-500">3 modes + infinite canvas</p>
                     </div>
                   </div>
@@ -948,6 +783,143 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+
+          {/* Divider */}
+          <div className="border-t border-slate-800/60 mb-6" />
+
+          {/* Image Scanners */}
+          <div className="mb-6">
+            <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <span className="px-2 py-1 rounded bg-purple-500/20 text-purple-300">IMAGE SCANNERS</span>
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Main Scanner */}
+              {isMaintenanceMode ? (
+                <div className="p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 relative overflow-hidden">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 rounded-lg bg-yellow-500/20">
+                      <svg className="w-5 h-5 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-yellow-400">Main Scanner</h3>
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">MAINTENANCE</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">Temporarily offline</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400">Scanner is under maintenance and will be back soon.</p>
+                </div>
+              ) : (
+                <Link href="/">
+                  <div className="p-4 rounded-xl border-2 border-green-500/30 bg-slate-950/50 hover:border-green-400 hover:bg-green-500/5 transition-all cursor-pointer group">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 rounded-lg bg-green-500/20 group-hover:bg-green-500/30 transition-colors">
+                        <svg className="w-5 h-5 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-green-400">Main Scanner</h3>
+                        <p className="text-[10px] text-slate-500">AI image generator</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-400">Generate AI images across all available models. The primary scanner.</p>
+                  </div>
+                </Link>
+              )}
+              {/* Legacy Scanner */}
+              {isMaintenanceMode ? (
+                <div className="p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 relative overflow-hidden">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 rounded-lg bg-yellow-500/20">
+                      <svg className="w-5 h-5 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-yellow-400">Legacy Scanner</h3>
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">MAINTENANCE</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">Temporarily offline</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400">Scanner is under maintenance and will be back soon.</p>
+                </div>
+              ) : (
+                <Link href="/prompting-studio/legacy">
+                  <div className="p-4 rounded-xl border-2 border-cyan-500/30 bg-slate-950/50 hover:border-cyan-400 hover:bg-cyan-500/5 transition-all cursor-pointer group">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 rounded-lg bg-cyan-500/20 group-hover:bg-cyan-500/30 transition-colors">
+                        <svg className="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="3"></circle>
+                          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-cyan-400">Legacy Scanner</h3>
+                        <p className="text-[10px] text-slate-500">AI image generator</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-400">Alternative AI image generator with a different layout and feel.</p>
+                  </div>
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {/* Video Scanners */}
+          <div>
+            <h3 className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <span className="px-2 py-1 rounded bg-orange-500/20 text-orange-300">VIDEO SCANNERS</span>
+            </h3>
+            <div>
+              {isMaintenanceMode ? (
+                <div className="p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 relative overflow-hidden">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 rounded-lg bg-yellow-500/20">
+                      <svg className="w-5 h-5 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                        <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-yellow-400">Video Scanner</h3>
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">MAINTENANCE</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">Temporarily offline</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400">Scanner is under maintenance and will be back soon.</p>
+                </div>
+              ) : (
+                <Link href="/video-scanner">
+                  <div className="p-4 rounded-xl border-2 border-orange-500/30 bg-slate-950/50 hover:border-orange-400 hover:bg-orange-500/5 transition-all cursor-pointer group">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 rounded-lg bg-orange-500/20 group-hover:bg-orange-500/30 transition-colors">
+                        <svg className="w-5 h-5 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                          <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-orange-400">Video Scanner</h3>
+                        <p className="text-[10px] text-slate-500">Image-to-video generation</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-400">Transform images into 5-10s videos with AI motion generation.</p>
+                  </div>
+                </Link>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Shop Section */}
