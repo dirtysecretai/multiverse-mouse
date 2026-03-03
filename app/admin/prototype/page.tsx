@@ -138,6 +138,18 @@ export default function AdminPrototypePage() {
       featureColors: ["bg-purple-500/20 text-purple-400", "bg-pink-500/20 text-pink-400", "bg-fuchsia-500/20 text-fuchsia-400"],
     },
     {
+      name: "SeedDream 5.0 Lite Edit",
+      description: "Multi-image AI editor powered by Bytedance's SeedDream 5.0 Lite. Upload up to 10 reference images (Figure 1–10) and edit them with natural language prompts.",
+      href: "/admin/seedream-5-lite-edit",
+      status: "Prototype",
+      statusColor: "text-teal-400 bg-teal-500/20",
+      gradient: "from-teal-500/20 to-cyan-500/20",
+      border: "border-teal-500/30 hover:border-teal-400",
+      titleColor: "text-teal-400",
+      features: ["10 Images", "Edit Mode", "2K–3K Output"],
+      featureColors: ["bg-teal-500/20 text-teal-400", "bg-cyan-500/20 text-cyan-400", "bg-emerald-500/20 text-emerald-400"],
+    },
+    {
       name: "NanoBanana Pro 2",
       description: "Full-parameter prototype for fal-ai/nano-banana-2. Customize aspect ratio, resolution, safety tolerance, web search, seed, and more.",
       href: "/admin/nano-banana-2",
