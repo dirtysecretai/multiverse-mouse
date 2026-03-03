@@ -777,11 +777,9 @@ export default function LegacyScanner() {
               <Ticket size={18} />
               {ticketBalance} tickets
             </div>
-            <Link href="/dashboard">
-              <Button className="bg-slate-700 hover:bg-slate-600 h-9 text-sm">
-                Dashboard
-              </Button>
-            </Link>
+            <Button onClick={() => router.push('/dashboard')} className="bg-slate-700 hover:bg-slate-600 h-9 text-sm">
+              Dashboard
+            </Button>
           </div>
         </div>
       </div>
