@@ -460,6 +460,12 @@ export default function PromptingStudio() {
           // Job failed — mark the placeholder red. After a page reload, loadingPlaceholders
           // starts empty so no placeholder exists yet — create one so the failure is visible.
           resolvedJobIdsRef.current.add(job.id);
+          // Skip failures that occurred before the current session was created —
+          // same guard as completed jobs so New Session + refresh gives a clean canvas.
+          if (sessionCreatedAtRef.current > 0) {
+            const jobFailedAt = job.completedAt ? new Date(job.completedAt).getTime() : 0;
+            if (jobFailedAt < sessionCreatedAtRef.current) continue;
+          }
           // Refresh ticket balance — webhook just released the reservation (no charge)
           fetch(`/api/user/tickets?userId=${user.id}`)
             .then(r => r.json())
