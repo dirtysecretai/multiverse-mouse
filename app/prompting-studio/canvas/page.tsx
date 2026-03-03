@@ -156,6 +156,10 @@ export default function PromptingStudio() {
   const knownJobIdsRef = useRef<Set<number>>(new Set());
   const resolvedJobIdsRef = useRef<Set<number>>(new Set());
 
+  // Timestamp (ms) of the last "New Session" action. Jobs completed before this
+  // timestamp are ignored by syncJobs so they don't reappear after a page refresh.
+  const sessionCreatedAtRef = useRef<number>(0);
+
   // URLs of images the user explicitly deleted — persisted in localStorage so
   // syncJobs doesn't re-add them after a page refresh.
   const deletedImageUrlsRef = useRef<Set<string>>(new Set());
@@ -324,6 +328,9 @@ export default function PromptingStudio() {
             if (Array.isArray(sessionData.deletedImageUrls)) {
               deletedImageUrlsRef.current = new Set(sessionData.deletedImageUrls as string[]);
             }
+            if (sessionData.sessionCreatedAt) {
+              sessionCreatedAtRef.current = sessionData.sessionCreatedAt;
+            }
 
             // Restore completed session images from localStorage.
             // In-flight jobs (loading placeholders) are NOT restored from localStorage —
@@ -406,6 +413,14 @@ export default function PromptingStudio() {
           // added this image with a different id (e.g. the GeneratedImage DB id), causing
           // a duplicate at position {x:0,y:0} that stacks "over the middle".
           resolvedJobIdsRef.current.add(job.id);
+          // Skip jobs completed before the current session was created. This prevents
+          // old images from reappearing after "New Session" + page refresh, because
+          // createNewSession resets deletedImageUrls to [] but those jobs are still in
+          // the DB and would otherwise pass both the resolvedJobIds and deletedUrls checks.
+          if (sessionCreatedAtRef.current > 0) {
+            const jobCompletedAt = job.completedAt ? new Date(job.completedAt).getTime() : 0;
+            if (jobCompletedAt < sessionCreatedAtRef.current) continue;
+          }
           // Refresh ticket balance — webhook just settled this job (balance deducted)
           fetch(`/api/user/tickets?userId=${user.id}`)
             .then(r => r.json())
@@ -2006,6 +2021,8 @@ export default function PromptingStudio() {
     // bleed into the new session.
     deletedImageUrlsRef.current = new Set();
     pendingPositionsRef.current = new Set();
+    const newSessionTs = Date.now();
+    sessionCreatedAtRef.current = newSessionTs;
     // Write immediately to localStorage — don't wait for the 1-second debounced
     // auto-save, so a fast page-navigate-and-return doesn't restore the old session.
     try {
@@ -2017,7 +2034,8 @@ export default function PromptingStudio() {
         loadingPlaceholders: [],
         sharedReferenceImages: [],
         deletedImageUrls: [],
-        timestamp: Date.now(),
+        sessionCreatedAt: newSessionTs,
+        timestamp: newSessionTs,
       }));
     } catch {}
     recenterCanvas();
