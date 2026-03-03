@@ -15,6 +15,10 @@ const IMAGE_SIZE_PRESETS = [
   { value: "portrait_16_9", label: "9:16", desc: "Portrait" },
   { value: "landscape_4_3", label: "4:3", desc: "Landscape" },
   { value: "portrait_4_3", label: "3:4", desc: "Portrait" },
+  { value: "4k_16_9",  label: "4K 16:9", desc: "3840×2160", size: { width: 3840, height: 2160 } },
+  { value: "4k_9_16",  label: "4K 9:16", desc: "2160×3840", size: { width: 2160, height: 3840 } },
+  { value: "4k_4_3",   label: "4K 4:3",  desc: "3200×2400", size: { width: 3200, height: 2400 } },
+  { value: "4k_4_5",   label: "4K 4:5",  desc: "2560×3200", size: { width: 2560, height: 3200 } },
   { value: "custom", label: "Custom", desc: "W × H" },
 ]
 
@@ -150,16 +154,20 @@ export default function SeedDream5LiteEditPage() {
     setSelectedImage(null)
 
     try {
+      const selectedPreset = IMAGE_SIZE_PRESETS.find(p => p.value === imageSize)
       const body: Record<string, unknown> = {
         prompt,
         images_base64: uploadedImages.map(img => img.base64),
-        image_size: imageSize,
+        image_size: selectedPreset?.size ? 'custom' : imageSize,
         num_images: numImages,
         max_images: maxImages,
         enable_safety_checker: enableSafetyChecker,
       }
 
-      if (imageSize === 'custom') {
+      if (selectedPreset?.size) {
+        body.custom_width = selectedPreset.size.width
+        body.custom_height = selectedPreset.size.height
+      } else if (imageSize === 'custom') {
         body.custom_width = customWidth
         body.custom_height = customHeight
       }
@@ -523,7 +531,14 @@ export default function SeedDream5LiteEditPage() {
           {/* Params summary */}
           <div className="p-3 rounded-xl border border-slate-800 bg-slate-950/60 font-mono text-[10px] text-slate-500 space-y-1">
             <p className="text-slate-400 font-bold mb-1">Current Parameters</p>
-            <p>image_size: <span className="text-teal-400">{imageSize === 'custom' ? `${customWidth}×${customHeight}` : imageSize}</span></p>
+            <p>image_size: <span className="text-teal-400">
+              {(() => {
+                const p = IMAGE_SIZE_PRESETS.find(x => x.value === imageSize)
+                if (p?.size) return `${p.size.width}×${p.size.height}`
+                if (imageSize === 'custom') return `${customWidth}×${customHeight}`
+                return imageSize
+              })()}
+            </span></p>
             <p>num_images: <span className="text-cyan-400">{numImages}</span></p>
             <p>max_images: <span className="text-cyan-400">{maxImages}</span></p>
             <p>enable_safety_checker: <span className={enableSafetyChecker ? 'text-green-400' : 'text-red-400'}>{String(enableSafetyChecker)}</span></p>
