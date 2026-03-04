@@ -231,7 +231,6 @@ export async function POST(request: Request) {
           inputParams.output_format = 'png'
           inputParams.num_images = 1
           inputParams.safety_tolerance = '6'
-          inputParams.limit_generations = true
           console.log(`NanoBanana Pro: resolution=${inputParams.resolution} aspect=${aspectRatio}`)
         } else {
           // NanoBanana (cluster) — generates 2 images per job

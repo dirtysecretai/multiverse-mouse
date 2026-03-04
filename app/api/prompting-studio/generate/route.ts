@@ -222,7 +222,6 @@ export async function POST(req: NextRequest) {
         resolution: resolution,
         output_format: 'png',
         safety_tolerance: '6',
-        limit_generations: true,
       };
 
       // If reference images provided, switch to edit endpoint
