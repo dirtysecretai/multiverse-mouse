@@ -109,7 +109,6 @@ export default function PromptStudioUpgradePage() {
                 <ul className="space-y-2.5 mb-6">
                   {[
                     'Main Scanner',
-                    'Legacy Scanner',
                     'Video Scanner',
                     'All AI models (NanoBanana Pro, SeeDream 4.5, Kling V3, FLUX, and more)',
                     '2 concurrent generations',
@@ -253,7 +252,7 @@ export default function PromptStudioUpgradePage() {
                 {[
                   {
                     q: 'What scanners does the free tier include?',
-                    a: 'Free tier gets full access to the Main Scanner, Legacy Scanner, and Video Scanner — including every AI model available on each. You can generate images and videos across all three tools with 2 concurrent generations running at the same time.',
+                    a: 'Free tier gets full access to the Main Scanner and Video Scanner — including every AI model available on each. You can generate images and videos across both tools with 2 concurrent generations running at the same time.',
                   },
                   {
                     q: 'What does Dev Tier add on top of that?',
