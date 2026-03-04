@@ -231,6 +231,8 @@ export async function POST(request: Request) {
           inputParams.output_format = 'png'
           // NanoBanana generates 2 images in one async job
           inputParams.num_images = model === 'nano-banana' ? 2 : 1
+          inputParams.safety_tolerance = '6'
+          inputParams.limit_generations = true
           console.log(`NanoBanana: resolution=${inputParams.resolution} aspect=${aspectRatio} num_images=${inputParams.num_images}`)
         }
 
