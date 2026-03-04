@@ -224,16 +224,22 @@ export async function POST(request: Request) {
           inputParams.num_inference_steps = 28
           console.log(`FLUX 2: ${JSON.stringify(inputParams.image_size)}`)
 
-        } else {
-          // NanoBanana / NanoBanana Pro
+        } else if (model === 'nano-banana-pro') {
+          // NanoBanana Pro
           inputParams.resolution = quality === '4k' ? '4K' : '2K'
           inputParams.aspect_ratio = aspectRatio
           inputParams.output_format = 'png'
-          // NanoBanana generates 2 images in one async job
-          inputParams.num_images = model === 'nano-banana' ? 2 : 1
+          inputParams.num_images = 1
           inputParams.safety_tolerance = '6'
           inputParams.limit_generations = true
-          console.log(`NanoBanana: resolution=${inputParams.resolution} aspect=${aspectRatio} num_images=${inputParams.num_images}`)
+          console.log(`NanoBanana Pro: resolution=${inputParams.resolution} aspect=${aspectRatio}`)
+        } else {
+          // NanoBanana (cluster) — generates 2 images per job
+          inputParams.resolution = quality === '4k' ? '4K' : '2K'
+          inputParams.aspect_ratio = aspectRatio
+          inputParams.output_format = 'png'
+          inputParams.num_images = 2
+          console.log(`NanoBanana Cluster: resolution=${inputParams.resolution} aspect=${aspectRatio}`)
         }
 
         // Handle reference images (upload to FAL storage first)
