@@ -136,35 +136,6 @@ export default function StudioSelection() {
               </Link>
             </div>
 
-            {/* Legacy Scanner */}
-            <div className="p-6 rounded-2xl border-2 border-slate-600/40 bg-slate-900/80 backdrop-blur-sm hover:border-slate-500/60 transition-all group">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-xl bg-slate-700/50 flex items-center justify-center">
-                  <Scan className="text-slate-400" size={22} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white">Legacy Scanner</h3>
-                  <p className="text-xs text-slate-400">Classic single-image generation</p>
-                </div>
-              </div>
-              <p className="text-sm text-slate-400 mb-4">
-                The original scanner interface. Simple and focused — perfect for quick one-off generations with full model and reference image support.
-              </p>
-              <div className="mb-5">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Models</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {['NanoBanana Cluster', 'NanoBanana Pro', 'SeeDream 4.5', 'FLUX 2', 'Pro Scanner v3', 'Flash Scanner v2.5'].map(m => (
-                    <span key={m} className="text-[10px] bg-slate-700/60 text-slate-400 border border-slate-600/40 rounded px-2 py-0.5 font-medium">{m}</span>
-                  ))}
-                </div>
-              </div>
-              <Link href="/prompting-studio/legacy">
-                <Button className="w-full bg-slate-700 hover:bg-slate-600 font-bold group-hover:shadow-lg group-hover:shadow-slate-500/10 transition-all">
-                  Open Legacy Scanner
-                  <ArrowRight className="ml-2" size={15} />
-                </Button>
-              </Link>
-            </div>
           </div>
         </div>
 
