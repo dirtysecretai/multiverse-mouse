@@ -696,97 +696,6 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* AI Design Studio Canvas */}
-          {isMaintenanceMode ? (
-            <div className="mb-6">
-              <div className="p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 relative overflow-hidden">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 rounded-lg bg-yellow-500/20">
-                    <svg className="w-5 h-5 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                      <polyline points="21 15 16 10 5 21"></polyline>
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-yellow-400">AI Design Studio - Scanner Canvas</h3>
-                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">MAINTENANCE</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Temporarily offline</p>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-400">Scanner is under maintenance and will be back soon.</p>
-              </div>
-            </div>
-          ) : hasPromptStudioDev ? (
-            <div className="mb-6">
-              <Link href="/prompting-studio/canvas">
-                <div className="p-4 rounded-xl border-2 border-fuchsia-500/30 bg-slate-950/50 hover:border-fuchsia-400 hover:bg-fuchsia-500/5 transition-all cursor-pointer group">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-fuchsia-500/20 group-hover:bg-fuchsia-500/30 transition-colors">
-                      <svg className="w-5 h-5 text-fuchsia-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                        <polyline points="21 15 16 10 5 21"></polyline>
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="font-black text-fuchsia-400 text-base mb-0.5">AI Design Studio - Scanner Canvas</h3>
-                      <p className="text-[10px] text-slate-500">3 modes + infinite canvas</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400 mb-2">Canvas/Fullscreen/Studio modes, 6 scanners, reference panel, session saving.</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-400">6 Scanners</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400">3 Modes</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400">Infinite Canvas</span>
-                  </div>
-                </div>
-              </Link>
-            </div>
-          ) : (
-            <div className="mb-6">
-              <div className="p-4 rounded-xl border-2 border-slate-700 bg-slate-950/30 relative overflow-hidden">
-                <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[1px] flex items-center justify-center z-10">
-                  <div className="text-center">
-                    <div className="w-10 h-10 mx-auto mb-2 rounded-full bg-slate-800 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                      </svg>
-                    </div>
-                    <p className="text-xs text-slate-400 font-medium mb-2">Dev Tier Required</p>
-                    <Link href="/prompting-studio/upgrade">
-                      <Button className="bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white font-bold text-xs h-7 px-4">
-                        Upgrade
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-                <div className="opacity-40">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-fuchsia-500/20">
-                      <svg className="w-5 h-5 text-fuchsia-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                        <polyline points="21 15 16 10 5 21"></polyline>
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="font-black text-fuchsia-400">AI Design Studio - Scanner Canvas</h3>
-                      <p className="text-[10px] text-slate-500">3 modes + infinite canvas</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400">Canvas/Fullscreen/Studio modes, 6 scanners, reference panel, session saving.</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Divider */}
-          <div className="border-t border-slate-800/60 mb-6" />
-
           {/* Image Scanners */}
           <div className="mb-6">
             <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -832,19 +741,20 @@ export default function DashboardPage() {
                   </div>
                 </Link>
               )}
-              {/* Legacy Scanner */}
+              {/* Scanner Canvas */}
               {isMaintenanceMode ? (
                 <div className="p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 relative overflow-hidden">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="p-2 rounded-lg bg-yellow-500/20">
                       <svg className="w-5 h-5 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="3"></circle>
-                        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                        <polyline points="21 15 16 10 5 21"></polyline>
                       </svg>
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-yellow-400">Legacy Scanner</h3>
+                        <h3 className="font-bold text-yellow-400">AI Design Studio - Scanner Canvas</h3>
                         <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-bold">MAINTENANCE</span>
                       </div>
                       <p className="text-[10px] text-slate-500">Temporarily offline</p>
@@ -852,24 +762,60 @@ export default function DashboardPage() {
                   </div>
                   <p className="text-xs text-slate-400">Scanner is under maintenance and will be back soon.</p>
                 </div>
-              ) : (
-                <Link href="/prompting-studio/legacy">
-                  <div className="p-4 rounded-xl border-2 border-cyan-500/30 bg-slate-950/50 hover:border-cyan-400 hover:bg-cyan-500/5 transition-all cursor-pointer group">
+              ) : hasPromptStudioDev ? (
+                <Link href="/prompting-studio/canvas">
+                  <div className="p-4 rounded-xl border-2 border-fuchsia-500/30 bg-slate-950/50 hover:border-fuchsia-400 hover:bg-fuchsia-500/5 transition-all cursor-pointer group">
                     <div className="flex items-center gap-3 mb-2">
-                      <div className="p-2 rounded-lg bg-cyan-500/20 group-hover:bg-cyan-500/30 transition-colors">
-                        <svg className="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="12" cy="12" r="3"></circle>
-                          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+                      <div className="p-2 rounded-lg bg-fuchsia-500/20 group-hover:bg-fuchsia-500/30 transition-colors">
+                        <svg className="w-5 h-5 text-fuchsia-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                          <polyline points="21 15 16 10 5 21"></polyline>
                         </svg>
                       </div>
                       <div>
-                        <h3 className="font-bold text-cyan-400">Legacy Scanner</h3>
-                        <p className="text-[10px] text-slate-500">AI image generator</p>
+                        <h3 className="font-black text-fuchsia-400">AI Design Studio - Scanner Canvas</h3>
+                        <p className="text-[10px] text-slate-500">3 modes + infinite canvas</p>
                       </div>
                     </div>
-                    <p className="text-xs text-slate-400">Alternative AI image generator with a different layout and feel.</p>
+                    <p className="text-xs text-slate-400">Canvas/Fullscreen/Studio modes, 6 scanners, reference panel, session saving.</p>
                   </div>
                 </Link>
+              ) : (
+                <div className="p-4 rounded-xl border-2 border-slate-700 bg-slate-950/30 relative overflow-hidden">
+                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[1px] flex items-center justify-center z-10">
+                    <div className="text-center">
+                      <div className="w-10 h-10 mx-auto mb-2 rounded-full bg-slate-800 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                      </div>
+                      <p className="text-xs text-slate-400 font-medium mb-2">Dev Tier Required</p>
+                      <Link href="/subscriptions">
+                        <Button className="bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white font-bold text-xs h-7 px-4">
+                          Upgrade
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                  <div className="opacity-40">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 rounded-lg bg-fuchsia-500/20">
+                        <svg className="w-5 h-5 text-fuchsia-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                          <polyline points="21 15 16 10 5 21"></polyline>
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="font-black text-fuchsia-400">AI Design Studio - Scanner Canvas</h3>
+                        <p className="text-[10px] text-slate-500">3 modes + infinite canvas</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-400">Canvas/Fullscreen/Studio modes, 6 scanners, reference panel, session saving.</p>
+                  </div>
+                </div>
               )}
             </div>
           </div>

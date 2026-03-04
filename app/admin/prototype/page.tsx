@@ -150,6 +150,18 @@ export default function AdminPrototypePage() {
       featureColors: ["bg-teal-500/20 text-teal-400", "bg-cyan-500/20 text-cyan-400", "bg-emerald-500/20 text-emerald-400"],
     },
     {
+      name: "Legacy Scanner",
+      description: "The original single-panel AI image scanner with model selector, reference image upload, prompt builder, and 6-slot generation queue. Moved from the user dashboard.",
+      href: "/prompting-studio/legacy",
+      status: "Archived",
+      statusColor: "text-slate-400 bg-slate-500/20",
+      gradient: "from-cyan-500/20 to-slate-800/20",
+      border: "border-cyan-500/30 hover:border-cyan-400",
+      titleColor: "text-cyan-400",
+      features: ["Model Selector", "6-Slot Queue", "Reference Images"],
+      featureColors: ["bg-cyan-500/20 text-cyan-400", "bg-slate-500/20 text-slate-400", "bg-purple-500/20 text-purple-400"],
+    },
+    {
       name: "NanoBanana Pro 2",
       description: "Full-parameter prototype for fal-ai/nano-banana-2. Customize aspect ratio, resolution, safety tolerance, web search, seed, and more.",
       href: "/admin/nano-banana-2",
