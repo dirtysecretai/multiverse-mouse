@@ -230,7 +230,8 @@ export async function POST(request: Request) {
           inputParams.aspect_ratio = aspectRatio
           inputParams.output_format = 'png'
           inputParams.num_images = 1
-          inputParams.safety_tolerance = '6'
+          inputParams.safety_tolerance = 6
+          inputParams.enable_safety_checker = false
           console.log(`NanoBanana Pro: resolution=${inputParams.resolution} aspect=${aspectRatio}`)
         } else {
           // NanoBanana (cluster) — generates 2 images per job
