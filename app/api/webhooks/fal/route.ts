@@ -43,6 +43,8 @@ export async function POST(request: Request) {
     if (status === 'ERROR' || status === 'FAILED' || error) {
       const errorMsg = error?.message || error || 'FAL.ai generation failed'
       console.error(`FAL.ai job failed for queue #${queueItem.id}:`, errorMsg)
+      console.error(`FAL.ai full error object:`, JSON.stringify(error))
+      console.error(`FAL.ai full body:`, JSON.stringify(body))
 
       await Promise.all([
         // Release the reservation — balance was never decremented so no refund needed.

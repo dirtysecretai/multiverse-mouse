@@ -221,7 +221,6 @@ export async function POST(req: NextRequest) {
         aspect_ratio: aspectRatio || '1:1',
         resolution: resolution,
         output_format: 'png',
-        enable_safety_checker: false,
       };
 
       // If reference images provided, switch to edit endpoint
