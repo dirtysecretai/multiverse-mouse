@@ -156,6 +156,7 @@ export async function POST(req: NextRequest) {
           modelType: 'image',
           prompt: prompt,
           parameters: {
+            source: 'canvas',
             slotId: slotId || 'studio-scanner',
             position: position || { x: 0, y: 0 },
             celebrityName: celebrityName || null,
@@ -267,7 +268,7 @@ export async function POST(req: NextRequest) {
             where: { id: jobId },
             data: {
               falRequestId: request_id,
-              parameters: { slotId: slotId || 'studio-scanner', position: position || { x: 0, y: 0 }, celebrityName: celebrityName || null, enhancement: enhancement || null, model, quality: quality || '2k', aspectRatio: aspectRatio || '1:1', referenceImageUrls: permanentReferenceUrls, savePrompt },
+              parameters: { source: 'canvas', slotId: slotId || 'studio-scanner', position: position || { x: 0, y: 0 }, celebrityName: celebrityName || null, enhancement: enhancement || null, model, quality: quality || '2k', aspectRatio: aspectRatio || '1:1', referenceImageUrls: permanentReferenceUrls, savePrompt },
             },
           });
         } catch (e) { console.error('⚠️ Failed to update job with falRequestId (non-fatal):', e); }
@@ -367,7 +368,7 @@ export async function POST(req: NextRequest) {
             where: { id: jobId },
             data: {
               falRequestId: request_id,
-              parameters: { slotId: slotId || 'studio-scanner', position: position || { x: 0, y: 0 }, celebrityName: celebrityName || null, enhancement: enhancement || null, model, quality: quality || '2k', aspectRatio: aspectRatio || '1:1', referenceImageUrls: permanentReferenceUrls, savePrompt },
+              parameters: { source: 'canvas', slotId: slotId || 'studio-scanner', position: position || { x: 0, y: 0 }, celebrityName: celebrityName || null, enhancement: enhancement || null, model, quality: quality || '2k', aspectRatio: aspectRatio || '1:1', referenceImageUrls: permanentReferenceUrls, savePrompt },
             },
           });
         } catch (e) { console.error('⚠️ Failed to update job with falRequestId (non-fatal):', e); }
@@ -467,7 +468,7 @@ export async function POST(req: NextRequest) {
             where: { id: jobId },
             data: {
               falRequestId: request_id,
-              parameters: { slotId: slotId || 'studio-scanner', position: position || { x: 0, y: 0 }, celebrityName: celebrityName || null, enhancement: enhancement || null, model, quality: quality || '2k', aspectRatio: aspectRatio || '1:1', referenceImageUrls: permanentReferenceUrls, savePrompt },
+              parameters: { source: 'canvas', slotId: slotId || 'studio-scanner', position: position || { x: 0, y: 0 }, celebrityName: celebrityName || null, enhancement: enhancement || null, model, quality: quality || '2k', aspectRatio: aspectRatio || '1:1', referenceImageUrls: permanentReferenceUrls, savePrompt },
             },
           });
         } catch (e) { console.error('⚠️ Failed to update job with falRequestId (non-fatal):', e); }

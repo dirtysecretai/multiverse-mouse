@@ -61,7 +61,7 @@ export async function GET() {
     // while the page was reloading, without returning stale old data.
     const since = new Date(Date.now() - 2 * 60 * 60 * 1000)
 
-    const jobs = await prisma.generationQueue.findMany({
+    const allJobs = await prisma.generationQueue.findMany({
       where: {
         userId: user.id,
         modelType: 'image',
@@ -74,6 +74,15 @@ export async function GET() {
         ],
       },
       orderBy: { createdAt: 'asc' },
+    })
+
+    // Only return canvas-sourced jobs. Canvas jobs always include `slotId` in their
+    // parameters (set by /api/prompting-studio/generate). Main scanner jobs use
+    // /api/generate and never have slotId, so excluding them here prevents main-scanner
+    // images from appearing on the canvas when the user switches pages.
+    const jobs = allJobs.filter(j => {
+      const params = j.parameters as any
+      return params?.slotId != null || params?.source === 'canvas'
     })
 
     const activeCount = jobs.filter(
