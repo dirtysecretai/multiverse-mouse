@@ -909,45 +909,6 @@ export default function MultiversePortalLegacy() {
             </div>
           )}
 
-          {/* Legacy Scanner Promo */}
-          <Link href="/prompting-studio/legacy">
-            <div className="rounded-xl border-2 border-cyan-500/30 bg-gradient-to-br from-cyan-500/5 to-slate-900/50 backdrop-blur-sm overflow-hidden hover:border-cyan-500/50 hover:shadow-lg hover:shadow-cyan-500/10 transition-all cursor-pointer group">
-              <div className="p-4">
-                {/* Badge */}
-                <div className="flex items-center justify-between mb-3">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-green-500 to-emerald-500 text-white text-[10px] font-black uppercase tracking-wider shadow-lg shadow-green-500/30">
-                    <Sparkles size={10} />
-                    Free
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 text-[9px] font-bold uppercase tracking-wider">
-                    New
-                  </span>
-                </div>
-
-                {/* Content */}
-                <div className="mb-3">
-                  <h3 className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400 mb-1">
-                    Legacy Scanner
-                  </h3>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Try our streamlined scanner with a simpler interface and faster workflow
-                  </p>
-                </div>
-
-                {/* CTA */}
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-cyan-400 font-medium group-hover:text-cyan-300 transition-colors">
-                    Check it out →
-                  </span>
-                  <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                    <Zap size={10} />
-                    <span>Quick & Simple</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Link>
-
           {/* Scanner Canvas Promo */}
           <Link href="/prompting-studio/canvas">
             <div className="rounded-xl border-2 border-fuchsia-500/30 bg-gradient-to-br from-fuchsia-500/5 to-slate-900/50 backdrop-blur-sm overflow-hidden hover:border-fuchsia-500/50 hover:shadow-lg hover:shadow-fuchsia-500/10 transition-all cursor-pointer group">
@@ -1695,40 +1656,6 @@ export default function MultiversePortalLegacy() {
             <NotificationBanner />
 
             <MiniEchoChamber />
-
-            {/* Legacy Scanner Promo - Mobile */}
-            <Link href="/prompting-studio/legacy">
-              <div className="rounded-xl border-2 border-cyan-500/30 bg-gradient-to-br from-cyan-500/5 to-slate-900/50 backdrop-blur-sm overflow-hidden hover:border-cyan-500/50 transition-all">
-                <div className="p-4">
-                  {/* Badge */}
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-green-500 to-emerald-500 text-white text-[10px] font-black uppercase tracking-wider shadow-lg shadow-green-500/30">
-                      <Sparkles size={10} />
-                      Free
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 text-[9px] font-bold uppercase tracking-wider">
-                      New
-                    </span>
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1">
-                      <h3 className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400 mb-1">
-                        Legacy Scanner
-                      </h3>
-                      <p className="text-[11px] text-slate-400 leading-relaxed mb-2">
-                        Streamlined interface • Faster workflow
-                      </p>
-                      <span className="text-xs text-cyan-400 font-medium">
-                        Check it out →
-                      </span>
-                    </div>
-                    <Zap size={20} className="text-cyan-400/30" />
-                  </div>
-                </div>
-              </div>
-            </Link>
 
             {/* Prompt Studio CTA */}
             {!hasPromptStudioDev ? (
