@@ -575,6 +575,9 @@ export default function LegacyScanner() {
     const isCluster = model === 'nano-banana-cluster';
     const generationId = `gen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const generationId2: string | null = isCluster ? `gen-${Date.now() + 1}-${Math.random().toString(36).substr(2, 9)}-2` : null;
+    // Set to true when a FAL async job is queued — prevents finally from clearing
+    // slots/queue immediately (the polling loop owns cleanup for async jobs).
+    let isQueuedAsync = false;
 
     // Add to active generations
     setActiveGenerations(prev => new Set(prev).add(generationId));
@@ -647,38 +650,103 @@ export default function LegacyScanner() {
 
       const data = await res.json();
 
-      if (data.success && data.imageUrl) {
-        // Replace loading placeholder(s) with actual image(s)
-        if (isCluster && data.images && data.images.length > 1 && generationId2) {
-          // Cluster returned 2 images — resolve both placeholders
-          setGeneratedImages(prev =>
-            prev.map(img => {
-              if (img.id === generationId) return { ...img, imageUrl: data.images[0].url, loading: false, failed: false };
-              if (img.id === generationId2) return { ...img, imageUrl: data.images[1].url, loading: false, failed: false };
-              return img;
-            }).slice(0, MAX_FEED_SIZE)
-          );
-        } else {
-          // Single image (or cluster returned only 1)
-          setGeneratedImages(prev =>
-            prev.map(img =>
-              img.id === generationId
-                ? { ...img, imageUrl: data.imageUrl, loading: false, failed: false }
-                : img
-            ).slice(0, MAX_FEED_SIZE)
-          );
-          // Remove unused second placeholder if cluster only returned 1 image
-          if (isCluster && generationId2) {
-            setGeneratedImages(prev => prev.filter(img => img.id !== generationId2));
+      if (data.success) {
+        if (data.queued && data.jobId) {
+          // ── FAL async job submitted ─────────────────────────────────────────
+          // The image arrives via webhook. Poll the jobs endpoint every 3s until
+          // the job is completed or failed.
+          isQueuedAsync = true;
+          let pollAttempts = 0;
+          const pollInterval = setInterval(async () => {
+            pollAttempts++;
+            if (pollAttempts > 40) {
+              clearInterval(pollInterval);
+              setGeneratedImages(prev =>
+                prev.map(img =>
+                  (img.id === generationId || (isCluster && img.id === generationId2))
+                    ? { ...img, loading: false, failed: true }
+                    : img
+                )
+              );
+              alert('Generation timed out. Please try again.');
+              setGenerationQueue(prev => Math.max(0, prev - (isCluster ? 2 : 1)));
+              setActiveSlots(prev => prev.map(s =>
+                (s?.id === generationId || (isCluster && s?.id === generationId2)) ? null : s
+              ));
+              setActiveGenerations(prev => { const s = new Set(prev); s.delete(generationId); return s; });
+              return;
+            }
+            try {
+              const jobRes = await fetch('/api/prompting-studio/jobs');
+              const jobData = await jobRes.json();
+              const job = jobData.jobs?.find((j: any) => j.id === data.jobId);
+              if (job?.status === 'completed' && job.resultUrl) {
+                clearInterval(pollInterval);
+                setGeneratedImages(prev =>
+                  prev.map(img =>
+                    img.id === generationId
+                      ? { ...img, imageUrl: job.resultUrl, loading: false, failed: false }
+                      : img
+                  ).slice(0, MAX_FEED_SIZE)
+                );
+                const ticketRes = await fetch(`/api/user/tickets?userId=${user!.id}`);
+                const ticketData = await ticketRes.json();
+                if (ticketData.success) setTicketBalance(ticketData.balance);
+                setGenerationQueue(prev => Math.max(0, prev - (isCluster ? 2 : 1)));
+                setActiveSlots(prev => prev.map(s =>
+                  (s?.id === generationId || (isCluster && s?.id === generationId2)) ? null : s
+                ));
+                setActiveGenerations(prev => { const s = new Set(prev); s.delete(generationId); return s; });
+              } else if (job?.status === 'failed') {
+                clearInterval(pollInterval);
+                setGeneratedImages(prev =>
+                  prev.map(img =>
+                    (img.id === generationId || (isCluster && img.id === generationId2))
+                      ? { ...img, loading: false, failed: true }
+                      : img
+                  )
+                );
+                alert(job.errorMessage || 'Generation failed. Please try again.');
+                setGenerationQueue(prev => Math.max(0, prev - (isCluster ? 2 : 1)));
+                setActiveSlots(prev => prev.map(s =>
+                  (s?.id === generationId || (isCluster && s?.id === generationId2)) ? null : s
+                ));
+                setActiveGenerations(prev => { const s = new Set(prev); s.delete(generationId); return s; });
+              }
+            } catch { /* ignore transient poll errors */ }
+          }, 3000);
+
+        } else if (data.imageUrl) {
+          // ── Sync model returned image directly ─────────────────────────────
+          if (isCluster && data.images && data.images.length > 1 && generationId2) {
+            // Cluster returned 2 images — resolve both placeholders
+            setGeneratedImages(prev =>
+              prev.map(img => {
+                if (img.id === generationId) return { ...img, imageUrl: data.images[0].url, loading: false, failed: false };
+                if (img.id === generationId2) return { ...img, imageUrl: data.images[1].url, loading: false, failed: false };
+                return img;
+              }).slice(0, MAX_FEED_SIZE)
+            );
+          } else {
+            // Single image (or cluster returned only 1)
+            setGeneratedImages(prev =>
+              prev.map(img =>
+                img.id === generationId
+                  ? { ...img, imageUrl: data.imageUrl, loading: false, failed: false }
+                  : img
+              ).slice(0, MAX_FEED_SIZE)
+            );
+            if (isCluster && generationId2) {
+              setGeneratedImages(prev => prev.filter(img => img.id !== generationId2));
+            }
           }
+
+          // Refresh ticket balance
+          const ticketRes = await fetch(`/api/user/tickets?userId=${user!.id}`);
+          const ticketData = await ticketRes.json();
+          if (ticketData.success) setTicketBalance(ticketData.balance);
         }
 
-        // Refresh ticket balance
-        const ticketRes = await fetch(`/api/user/tickets?userId=${user.id}`);
-        const ticketData = await ticketRes.json();
-        if (ticketData.success) {
-          setTicketBalance(ticketData.balance);
-        }
       } else {
         // Mark loading placeholder(s) as failed (red state)
         setGeneratedImages(prev =>
@@ -706,17 +774,18 @@ export default function LegacyScanner() {
         )
       );
     } finally {
-      // Remove from active generations
-      setActiveGenerations(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(generationId);
-        return newSet;
-      });
-      setGenerationQueue(prev => Math.max(0, prev - (isCluster ? 2 : 1))); // Cluster counts as 2
-      // Clear slot(s) from the queue grid
-      setActiveSlots(prev => prev.map(s =>
-        (s?.id === generationId || (isCluster && s?.id === generationId2)) ? null : s
-      ));
+      // Skip cleanup for FAL async jobs — the polling loop owns their lifecycle.
+      if (!isQueuedAsync) {
+        setActiveGenerations(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(generationId);
+          return newSet;
+        });
+        setGenerationQueue(prev => Math.max(0, prev - (isCluster ? 2 : 1)));
+        setActiveSlots(prev => prev.map(s =>
+          (s?.id === generationId || (isCluster && s?.id === generationId2)) ? null : s
+        ));
+      }
     }
   };
 
