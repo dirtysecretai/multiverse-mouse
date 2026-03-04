@@ -164,6 +164,10 @@ export default function PromptingStudio() {
   // syncJobs doesn't re-add them after a page refresh.
   const deletedImageUrlsRef = useRef<Set<string>>(new Set());
 
+  // IDs of failed jobs the user explicitly dismissed — persisted in localStorage
+  // so syncJobs doesn't re-create the red placeholder after a page refresh.
+  const dismissedFailedJobIdsRef = useRef<Set<number>>(new Set());
+
   // Positions claimed by in-flight generations but not yet committed to state.
   // Prevents rapid concurrent calls to getNextPosition() from getting the same
   // grid slot before React has processed the previous setLoadingPlaceholders call.
@@ -290,6 +294,7 @@ export default function PromptingStudio() {
           // Must be included so the debounced save doesn't overwrite the immediately-saved
           // deleted URLs that removeImageFromCanvas / removeSelectedImages write on deletion.
           deletedImageUrls: Array.from(deletedImageUrlsRef.current),
+          dismissedFailedJobIds: Array.from(dismissedFailedJobIdsRef.current),
           // Must be included so the debounced save doesn't overwrite the sessionCreatedAt
           // that createNewSession() writes immediately to localStorage.
           sessionCreatedAt: sessionCreatedAtRef.current || undefined,
@@ -330,6 +335,9 @@ export default function PromptingStudio() {
             // doesn't re-add them after the refresh.
             if (Array.isArray(sessionData.deletedImageUrls)) {
               deletedImageUrlsRef.current = new Set(sessionData.deletedImageUrls as string[]);
+            }
+            if (Array.isArray(sessionData.dismissedFailedJobIds)) {
+              dismissedFailedJobIdsRef.current = new Set(sessionData.dismissedFailedJobIds as number[]);
             }
             if (sessionData.sessionCreatedAt) {
               sessionCreatedAtRef.current = sessionData.sessionCreatedAt;
@@ -466,6 +474,9 @@ export default function PromptingStudio() {
             const jobFailedAt = job.completedAt ? new Date(job.completedAt).getTime() : 0;
             if (jobFailedAt < sessionCreatedAtRef.current) continue;
           }
+          // Skip failures the user already dismissed — persisted so they don't
+          // reappear after a page refresh.
+          if (dismissedFailedJobIdsRef.current.has(job.id)) continue;
           // Refresh ticket balance — webhook just released the reservation (no charge)
           fetch(`/api/user/tickets?userId=${user.id}`)
             .then(r => r.json())
@@ -3144,6 +3155,18 @@ export default function PromptingStudio() {
                   }}
                   onClick={() => {
                     if (placeholder.failed) {
+                      // Extract job ID from placeholder id (format: "job-{id}") and
+                      // persist the dismissal so syncJobs won't re-create it on refresh.
+                      const jobId = parseInt(placeholder.id.replace('job-', ''), 10);
+                      if (!isNaN(jobId)) {
+                        dismissedFailedJobIdsRef.current.add(jobId);
+                        try {
+                          const saved = localStorage.getItem('canvas-scanner-autosave');
+                          const data = saved ? JSON.parse(saved) : {};
+                          data.dismissedFailedJobIds = Array.from(dismissedFailedJobIdsRef.current);
+                          localStorage.setItem('canvas-scanner-autosave', JSON.stringify(data));
+                        } catch {}
+                      }
                       setLoadingPlaceholders(prev => prev.filter(p => p.id !== placeholder.id));
                     }
                   }}
