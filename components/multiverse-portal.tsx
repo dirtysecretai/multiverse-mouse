@@ -1296,7 +1296,6 @@ export default function MultiversePortalLegacy() {
                   onChange={(e) => setCoordinates(e.target.value)}
                   placeholder="Describe the universe you want to scan..."
                   className="w-full h-24 p-3 rounded-lg bg-slate-950 border-2 border-slate-700 focus:border-cyan-500 text-white placeholder:text-slate-600 focus:outline-none resize-none text-sm"
-                  disabled={isGenerating}
                 />
               </div>
 
