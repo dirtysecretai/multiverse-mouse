@@ -60,7 +60,8 @@ export default function SubscribePage() {
   const [acceptedTOS, setAcceptedTOS] = useState(false);
   const [hasSubscription, setHasSubscription] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
-  const [comingSoon, setComingSoon] = useState(false);
+  const [purchasing, setPurchasing] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -92,10 +93,23 @@ export default function SubscribePage() {
     }
   };
 
-  const handleSubscribe = () => {
-    if (!acceptedTOS) return;
-    setComingSoon(true);
-    setTimeout(() => setComingSoon(false), 4000);
+  const handleSubscribe = async () => {
+    if (!acceptedTOS || !selectedPlan || purchasing) return;
+    setPurchasing(true);
+    setPurchaseError(null);
+    try {
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'subscription', planId: selectedPlan.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create checkout');
+      window.location.href = data.checkoutUrl;
+    } catch (err: any) {
+      setPurchaseError(err.message || 'Something went wrong. Please try again.');
+      setPurchasing(false);
+    }
   };
 
   if (loading) {
@@ -373,23 +387,28 @@ export default function SubscribePage() {
                   </div>
 
                   {/* Subscribe button */}
+                  {purchaseError && (
+                    <p className="text-xs text-red-400 text-center bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 mb-3">
+                      {purchaseError}
+                    </p>
+                  )}
                   <button
                     onClick={handleSubscribe}
-                    disabled={!acceptedTOS}
+                    disabled={!acceptedTOS || purchasing}
                     className={`w-full py-4 rounded-xl font-black text-base tracking-widest transition-all ${
                       !acceptedTOS
                         ? 'cursor-not-allowed bg-slate-900 border-2 border-slate-800 text-slate-600'
-                        : comingSoon
-                        ? 'cursor-default bg-slate-800 border-2 border-slate-600 text-slate-300'
+                        : purchasing
+                        ? 'cursor-wait bg-slate-800 border-2 border-purple-500/50 text-purple-400 animate-pulse'
                         : 'cursor-pointer bg-gradient-to-r from-purple-600 to-cyan-600 border-2 border-purple-400/50 text-white hover:shadow-lg hover:shadow-purple-500/30 active:scale-[0.99]'
                     }`}
                   >
-                    {comingSoon ? 'CHECKOUT COMING SOON...' : 'SUBSCRIBE'}
+                    {purchasing ? 'REDIRECTING TO CHECKOUT...' : 'SUBSCRIBE'}
                     <span className={`block text-[10px] font-normal mt-0.5 tracking-normal ${
-                      !acceptedTOS ? 'text-slate-700' : comingSoon ? 'text-slate-400' : 'text-white/60'
+                      !acceptedTOS ? 'text-slate-700' : purchasing ? 'text-purple-600' : 'text-white/60'
                     }`}>
-                      {comingSoon
-                        ? 'Secure checkout is coming soon — check back shortly!'
+                      {purchasing
+                        ? 'Opening secure checkout...'
                         : !acceptedTOS
                         ? 'Accept the terms above to continue'
                         : `${selectedPlan.name} · $${selectedPlan.price} ${selectedPlan.intervalLabel}`}
@@ -397,7 +416,7 @@ export default function SubscribePage() {
                   </button>
 
                   <p className="text-[9px] text-slate-700 text-center font-mono tracking-widest uppercase mt-3">
-                    Secure checkout coming soon
+                    All transactions encrypted · Powered by LemonSqueezy
                   </p>
                 </>
               )}

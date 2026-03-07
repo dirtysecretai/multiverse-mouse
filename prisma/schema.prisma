@@ -116,7 +116,8 @@ model TicketPurchase {
   userId                Int
   ticketsCount          Int      // Number of tickets purchased
   amount                Float    // Price paid (gross amount)
-  paypalOrderId         String   @unique
+  paypalOrderId         String?  @unique // Legacy PayPal (optional for LS purchases)
+  lsOrderId             String?  @unique // LemonSqueezy order ID
   paypalCaptureId       String?  // PayPal capture/transaction ID
   paypalPayerId         String?
   payerEmail            String?  // Customer's PayPal email
@@ -696,6 +697,9 @@ model Subscription {
   paypalSubscriptionId String?   @unique
   paypalOrderId        String?   // PayPal order ID for initial payment
   paypalCaptureId      String?   // PayPal capture ID for initial payment
+  lsSubscriptionId     String?   @unique // LemonSqueezy subscription ID
+  lsVariantId          Int?      // LemonSqueezy variant ID
+  lsCurrentPeriodEnd   DateTime? // Current billing period end (renews_at from LS)
   metadata             Json?     // Plan info (plan name, ticketsPerCycle, etc.)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt

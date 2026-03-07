@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Ticket, Zap, Crown, Sparkles, ChevronLeft, Check, Shield } from "lucide-react"
 import Link from "next/link"
@@ -55,7 +55,9 @@ export default function BuyTicketsPage() {
   const [selected, setSelected] = useState(TICKET_PACKAGES[1]) // default: 50
   const [hasPromptStudioDev, setHasPromptStudioDev] = useState(false)
   const [acceptedTOS, setAcceptedTOS] = useState(false)
-  const [comingSoon, setComingSoon] = useState(false)
+  const [purchasing, setPurchasing] = useState(false)
+  const [purchaseError, setPurchaseError] = useState<string | null>(null)
+  const [successTickets, setSuccessTickets] = useState<number | null>(null)
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -80,6 +82,17 @@ export default function BuyTicketsPage() {
     checkAuth()
   }, [])
 
+  // Show success banner if redirected back from LS checkout
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('success') === 'true') {
+      const t = parseInt(params.get('tickets') ?? '0')
+      if (t > 0) setSuccessTickets(t)
+      // Clean the URL without reloading
+      window.history.replaceState({}, '', '/buy-tickets')
+    }
+  }, [])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#050810] flex items-center justify-center">
@@ -94,10 +107,23 @@ export default function BuyTicketsPage() {
   const ppt        = price / selected.tickets
   const devSavePct = Math.round((savings / selected.freeTierPrice) * 100)
 
-  const handleDispense = () => {
-    if (!acceptedTOS) return
-    setComingSoon(true)
-    setTimeout(() => setComingSoon(false), 4000)
+  const handleDispense = async () => {
+    if (!acceptedTOS || purchasing) return
+    setPurchasing(true)
+    setPurchaseError(null)
+    try {
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'tickets', tickets: selected.tickets }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to create checkout')
+      window.location.href = data.checkoutUrl
+    } catch (err: any) {
+      setPurchaseError(err.message || 'Something went wrong. Please try again.')
+      setPurchasing(false)
+    }
   }
 
   return (
@@ -113,6 +139,16 @@ export default function BuyTicketsPage() {
         <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-slate-500 hover:text-cyan-400 text-sm mb-8 transition-colors">
           <ChevronLeft size={16} />Back to Dashboard
         </Link>
+
+        {/* Success banner */}
+        {successTickets !== null && (
+          <div className="mb-6 px-4 py-3 rounded-xl border border-green-500/40 bg-green-500/10 flex items-center gap-3">
+            <Check size={15} className="text-green-400 flex-shrink-0" />
+            <p className="text-sm text-slate-300">
+              <span className="font-bold text-green-400">Purchase successful!</span> {successTickets} tickets have been added to your account. It may take a moment to reflect.
+            </p>
+          </div>
+        )}
 
         {/* Page header row */}
         <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
@@ -321,23 +357,28 @@ export default function BuyTicketsPage() {
               </label>
 
               {/* ── Dispense button ── */}
+              {purchaseError && (
+                <p className="text-xs text-red-400 text-center bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                  {purchaseError}
+                </p>
+              )}
               <button
                 onClick={handleDispense}
-                disabled={!acceptedTOS}
+                disabled={!acceptedTOS || purchasing}
                 className={`w-full py-4 rounded-xl font-black text-base tracking-widest transition-all ${
                   !acceptedTOS
                     ? 'cursor-not-allowed bg-slate-900 border-2 border-slate-800 text-slate-600'
-                    : comingSoon
-                    ? 'cursor-default bg-slate-800 border-2 border-slate-600 text-slate-300'
+                    : purchasing
+                    ? 'cursor-wait bg-slate-800 border-2 border-cyan-500/50 text-cyan-400 animate-pulse'
                     : 'cursor-pointer bg-gradient-to-r from-cyan-500 to-fuchsia-500 border-2 border-cyan-400/50 text-black hover:shadow-lg hover:shadow-cyan-500/30 active:scale-[0.99]'
                 }`}
               >
-                {comingSoon ? 'CHECKOUT COMING SOON...' : 'DISPENSE TICKETS'}
+                {purchasing ? 'REDIRECTING TO CHECKOUT...' : 'DISPENSE TICKETS'}
                 <span className={`block text-[10px] font-normal mt-0.5 tracking-normal ${
-                  !acceptedTOS ? 'text-slate-700' : comingSoon ? 'text-slate-400' : 'text-black/60'
+                  !acceptedTOS ? 'text-slate-700' : purchasing ? 'text-cyan-600' : 'text-black/60'
                 }`}>
-                  {comingSoon
-                    ? 'Secure checkout is coming soon — check back shortly!'
+                  {purchasing
+                    ? 'Opening secure checkout...'
                     : !acceptedTOS
                     ? 'Accept the terms above to continue'
                     : `${selected.tickets} tickets · $${price.toFixed(2)}`}
@@ -345,7 +386,7 @@ export default function BuyTicketsPage() {
               </button>
 
               <p className="text-[9px] text-slate-800 text-center font-mono tracking-widest uppercase">
-                All transactions encrypted · Secure checkout
+                All transactions encrypted · Powered by LemonSqueezy
               </p>
             </div>
           </div>
