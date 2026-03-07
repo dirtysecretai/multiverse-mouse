@@ -371,6 +371,7 @@ export async function POST(request: Request) {
               modelType: 'image',
               prompt: prompt.trim(),
               parameters: {
+                source: 'main-scanner',
                 quality,
                 aspectRatio,
                 model,

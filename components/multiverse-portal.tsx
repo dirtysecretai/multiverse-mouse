@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle, ExternalLink, X, Wrench, Sparkles, Eye, Settings2, Zap, Ticket, Upload, Download, ChevronDown, Wand2, Lock } from "lucide-react"
 import Link from "next/link"
@@ -110,6 +110,10 @@ export default function MultiversePortalLegacy() {
 
   // AI Scanner state
   const [coordinates, setCoordinates] = useState('')
+  // Prevents the restore-session effect from re-running every time user state updates
+  // (e.g. balance refreshes), which would overwrite whatever the user has typed.
+  const sessionRestoredRef = useRef(false)
+
   const [quality, setQuality] = useState<'2k' | '4k'>('2k')
   const [aspectRatio, setAspectRatio] = useState<'1:1' | '4:5' | '9:16' | '16:9'>('16:9')
   const [isGenerating, setIsGenerating] = useState(false)
@@ -339,9 +343,11 @@ export default function MultiversePortalLegacy() {
     return () => clearTimeout(saveTimer)
   }, [user, coordinates, quality, aspectRatio, selectedModel, sessionFeed, names, enhancements, promptModel])
 
-  // Auto-restore session on mount
+  // Auto-restore session on mount — runs once per login, not on every balance refresh
   useEffect(() => {
     if (!user) return
+    if (sessionRestoredRef.current) return
+    sessionRestoredRef.current = true
 
     const restoreSession = async () => {
       try {
@@ -629,7 +635,7 @@ export default function MultiversePortalLegacy() {
               return
             }
             try {
-              const jobRes = await fetch('/api/prompting-studio/jobs')
+              const jobRes = await fetch('/api/prompting-studio/jobs?source=main-scanner')
               const jobData = await jobRes.json()
               const job = jobData.jobs?.find((j: any) => j.id === data.queueId)
               if (job?.status === 'completed' && job.resultUrl) {

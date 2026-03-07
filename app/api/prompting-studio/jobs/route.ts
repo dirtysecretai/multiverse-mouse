@@ -12,8 +12,11 @@ const prisma = new PrismaClient()
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url)
+    const source = searchParams.get('source') // 'canvas' | 'main-scanner' | null
+
     const cookieStore = await cookies()
     const token = cookieStore.get('session')?.value
     if (!token) {
@@ -76,12 +79,16 @@ export async function GET() {
       orderBy: { createdAt: 'asc' },
     })
 
-    // Only return canvas-sourced jobs. Canvas jobs always include `slotId` in their
-    // parameters (set by /api/prompting-studio/generate). Main scanner jobs use
-    // /api/generate and never have slotId, so excluding them here prevents main-scanner
-    // images from appearing on the canvas when the user switches pages.
+    // Filter jobs by source so each client only sees its own jobs:
+    // - main scanner polls with ?source=main-scanner → return only main-scanner jobs
+    // - canvas polls with no param → return only canvas-sourced jobs
+    // This prevents main-scanner completions from polluting the canvas and vice-versa.
     const jobs = allJobs.filter(j => {
       const params = j.parameters as any
+      if (source === 'main-scanner') {
+        return params?.source === 'main-scanner'
+      }
+      // Default (canvas): jobs tagged as canvas or with a slotId
       return params?.slotId != null || params?.source === 'canvas'
     })
 
