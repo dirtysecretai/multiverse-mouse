@@ -782,13 +782,13 @@ export default function MultiversePortalLegacy() {
                   <h3 className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 mb-1">
                     DEV TIER
                   </h3>
-                  <p className="text-xs text-purple-400 font-bold">Save up to 37% on every generation</p>
+                  <p className="text-xs text-purple-400 font-bold">Save 30% on every ticket package</p>
                 </div>
 
                 {/* Stat Blocks */}
                 <div className="grid grid-cols-3 gap-2 mb-4">
                   <div className="text-center p-2 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                    <p className="text-sm font-black text-purple-400">37%</p>
+                    <p className="text-sm font-black text-purple-400">30%</p>
                     <p className="text-[9px] text-slate-500 leading-tight">off tickets</p>
                   </div>
                   <div className="text-center p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
@@ -809,7 +809,7 @@ export default function MultiversePortalLegacy() {
                     </div>
                     <div>
                       <p className="text-xs font-bold text-slate-300">Discounted Ticket Prices</p>
-                      <p className="text-[10px] text-slate-500">Pay 30–37% fewer tickets per generation</p>
+                      <p className="text-[10px] text-slate-500">30% off every ticket package in the dispenser</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
@@ -884,7 +884,7 @@ export default function MultiversePortalLegacy() {
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2 text-[10px] text-slate-400">
                       <Zap size={12} className="text-purple-400 flex-shrink-0" />
-                      <span>30–37% off every ticket</span>
+                      <span>30% off every ticket package</span>
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-slate-400">
                       <Sparkles size={12} className="text-cyan-400 flex-shrink-0" />
@@ -1676,13 +1676,13 @@ export default function MultiversePortalLegacy() {
                       <h3 className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">
                         Dev Tier
                       </h3>
-                      <p className="text-[10px] text-purple-400 font-bold">Save up to 37% on tickets</p>
+                      <p className="text-[10px] text-purple-400 font-bold">Save 30% on every ticket package</p>
                     </div>
                     <svg className="w-4 h-4 text-purple-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polyline points="9 18 15 12 9 6"></polyline>
                     </svg>
                   </div>
-                  <p className="text-xs text-slate-400 mb-2">37% off tickets • 6 concurrent gens • 500 tickets/month</p>
+                  <p className="text-xs text-slate-400 mb-2">30% off tickets • 6 concurrent gens • 500 tickets/month</p>
                   <div className="text-xs text-cyan-400 font-bold">Tap to upgrade →</div>
                 </div>
               </Link>
@@ -1703,7 +1703,7 @@ export default function MultiversePortalLegacy() {
                       <h3 className="text-xs font-bold text-purple-300">
                         Dev Tier
                       </h3>
-                      <p className="text-[10px] text-slate-500">37% off + 500 tickets/month</p>
+                      <p className="text-[10px] text-slate-500">30% off + 500 tickets/month</p>
                     </div>
                     <svg className="w-4 h-4 text-purple-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polyline points="9 18 15 12 9 6"></polyline>
