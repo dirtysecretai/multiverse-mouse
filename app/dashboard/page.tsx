@@ -970,7 +970,7 @@ export default function DashboardPage() {
                     <div>
                       <h3 className="font-black text-cyan-400 text-2xl mb-1">Buy Tickets</h3>
                       <p className="text-sm text-slate-400">
-                        <span className="text-purple-400 font-bold">✨ Dev Tier Discount:</span> Save up to 37% on all ticket packages
+                        <span className="text-purple-400 font-bold">✨ Dev Tier Discount:</span> Save 30% on all ticket packages
                       </p>
                     </div>
                   </div>

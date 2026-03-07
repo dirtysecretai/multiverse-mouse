@@ -80,9 +80,9 @@ export default function PromptStudioUpgradePage() {
             {/* 3 Hero Stats */}
             <div className="grid grid-cols-3 gap-4 mb-10">
               <div className="p-5 rounded-2xl border border-purple-500/30 bg-purple-500/10 text-center">
-                <div className="text-3xl font-black text-purple-400 mb-1">37%</div>
+                <div className="text-3xl font-black text-purple-400 mb-1">30%</div>
                 <div className="text-xs font-bold text-slate-300 mb-1">OFF TICKETS</div>
-                <div className="text-[11px] text-slate-500">Up to 37% discount on every ticket package purchase</div>
+                <div className="text-[11px] text-slate-500">30% off every ticket package — consistent across all bundles</div>
               </div>
               <div className="p-5 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 text-center">
                 <div className="text-3xl font-black text-cyan-400 mb-1">6×</div>
@@ -161,7 +161,7 @@ export default function PromptStudioUpgradePage() {
                     Everything in Free Tier
                   </li>
                   {[
-                    { text: '30–37% discount on all ticket packages', highlight: true },
+                    { text: '30% off all ticket packages', highlight: true },
                     { text: '250–500 tickets auto-delivered each billing cycle', highlight: true },
                     { text: 'Up to 6 concurrent generations (3× more)', highlight: true },
                     { text: 'AI Design Studio — Canvas Scanner, advanced prompting tools', highlight: false },
@@ -260,7 +260,7 @@ export default function PromptStudioUpgradePage() {
                   },
                   {
                     q: 'How does the ticket discount work?',
-                    a: 'Dev Tier subscribers see reduced prices on every ticket package in the Ticket Dispenser — up to 37% less than the standard rate. For example, 50 tickets costs $9 at free tier and $6 at Dev Tier. This discount stacks with your automatic ticket delivery.',
+                    a: 'Dev Tier subscribers see 30% off every ticket package in the Ticket Dispenser. For example, 50 tickets costs $9 at free tier and $6.30 at Dev Tier. This discount stacks with your automatic ticket delivery.',
                   },
                   {
                     q: 'How do automatic tickets work?',

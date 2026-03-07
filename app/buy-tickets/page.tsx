@@ -13,11 +13,11 @@ interface UserData {
 
 const TICKET_PACKAGES = [
   { tickets: 25,   freeTierPrice: 5.00,   devTierPrice: 3.50  },
-  { tickets: 50,   freeTierPrice: 9.00,   devTierPrice: 6.00,  popular: true  },
-  { tickets: 100,  freeTierPrice: 16.00,  devTierPrice: 11.00 },
-  { tickets: 250,  freeTierPrice: 35.00,  devTierPrice: 23.00 },
-  { tickets: 500,  freeTierPrice: 65.00,  devTierPrice: 40.00, bestValue: true },
-  { tickets: 1000, freeTierPrice: 120.00, devTierPrice: 75.00 },
+  { tickets: 50,   freeTierPrice: 9.00,   devTierPrice: 6.30,  popular: true  },
+  { tickets: 100,  freeTierPrice: 16.00,  devTierPrice: 11.20 },
+  { tickets: 250,  freeTierPrice: 35.00,  devTierPrice: 24.50 },
+  { tickets: 500,  freeTierPrice: 65.00,  devTierPrice: 45.50, bestValue: true },
+  { tickets: 1000, freeTierPrice: 120.00, devTierPrice: 84.00 },
 ]
 
 const BENEFITS = [
@@ -138,7 +138,7 @@ export default function BuyTicketsPage() {
           <div className="mb-6 px-4 py-3 rounded-xl border border-purple-500/40 bg-purple-500/10 flex items-center gap-3">
             <Sparkles size={15} className="text-purple-400 flex-shrink-0" />
             <p className="text-sm text-slate-300">
-              <span className="font-bold text-purple-400">Dev Tier pricing active</span> — you're saving up to 37% on every package.
+              <span className="font-bold text-purple-400">Dev Tier pricing active</span> — you're saving 30% on every package.
             </p>
           </div>
         )}
@@ -186,9 +186,9 @@ export default function BuyTicketsPage() {
             {/* Dev Tier upsell for non-subscribers */}
             {!hasPromptStudioDev && (
               <div className="mt-2 p-3 rounded-xl border border-purple-500/25 bg-purple-500/5">
-                <p className="text-xs font-bold text-purple-400 mb-1">Save up to 37%</p>
+                <p className="text-xs font-bold text-purple-400 mb-1">Save 30% on every package</p>
                 <p className="text-xs text-slate-500 mb-2.5 leading-relaxed">
-                  Dev Tier subscribers get exclusive discounted pricing on every package.
+                  Dev Tier subscribers get 30% off every ticket package.
                 </p>
                 <Link href="/prompting-studio/subscribe" className="text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors underline underline-offset-2">
                   Upgrade to Dev Tier →

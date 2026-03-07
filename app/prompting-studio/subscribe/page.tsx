@@ -138,7 +138,7 @@ export default function SubscribePage() {
   }
 
   const devTierFeatures = [
-    { text: '30–37% off all ticket package purchases', highlight: true },
+    { text: '30% off all ticket package purchases', highlight: true },
     { text: '250–500 tickets auto-delivered each billing cycle', highlight: true },
     { text: 'Up to 6 concurrent generations (vs 2 on free tier)', highlight: true },
     { text: 'AI Design Studio — Canvas Scanner & advanced tools', highlight: false },
@@ -196,7 +196,7 @@ export default function SubscribePage() {
               {/* 3 stat highlights */}
               <div className="grid grid-cols-3 gap-2 mb-5">
                 <div className="p-2.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-center">
-                  <div className="text-xl font-black text-purple-400">37%</div>
+                  <div className="text-xl font-black text-purple-400">30%</div>
                   <div className="text-[10px] text-slate-500 leading-tight">off tickets</div>
                 </div>
                 <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-center">
