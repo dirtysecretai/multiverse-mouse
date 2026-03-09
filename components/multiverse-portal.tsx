@@ -236,7 +236,12 @@ export default function MultiversePortalLegacy() {
               videoUrl: isVideo ? img.imageUrl : undefined,
             }
           })
-          setSessionFeed(recentImages)
+          // Preserve any in-flight loading placeholders that restoreSession may
+          // have already added — the two functions race, and we must not wipe them.
+          setSessionFeed(prev => {
+            const loading = prev.filter(item => item.loading)
+            return [...loading, ...recentImages].slice(0, MAX_FEED_SIZE)
+          })
         }
       }
     } catch (err) {
