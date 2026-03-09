@@ -410,6 +410,117 @@ export default function MultiversePortalLegacy() {
             }
           }
         }
+      // ── Restore in-flight jobs as loading placeholders ─────────────────────
+      // Always runs regardless of autosave so a page refresh can never bypass
+      // the concurrent generation limit. Any job still queued/processing in the
+      // DB gets a visual queue slot + session-feed placeholder, and a polling
+      // interval that resolves it exactly like a live generation would.
+      try {
+        const jobsRes = await fetch('/api/prompting-studio/jobs?source=main-scanner')
+        if (jobsRes.ok) {
+          const jobsData = await jobsRes.json()
+          const inFlight: any[] = (jobsData.jobs || []).filter(
+            (j: any) => j.status === 'processing' || j.status === 'queued'
+          )
+          if (inFlight.length > 0) {
+            // Build a loading placeholder for each in-flight job
+            const loadingItems: SessionFeedItem[] = inFlight.map(job => ({
+              id: `job-${job.id}`,
+              url: '',
+              prompt: job.prompt,
+              model: (job.parameters as any)?.model || job.modelId,
+              quality: ((job.parameters as any)?.quality || '2k') as '2k' | '4k',
+              aspectRatio: (job.parameters as any)?.aspectRatio || '16:9',
+              timestamp: new Date(job.createdAt).getTime(),
+              referenceImages: (job.parameters as any)?.referenceImageUrls || [],
+              loading: true,
+            }))
+
+            // Prepend loading items on top of the already-restored feed
+            setSessionFeed(prev => [
+              ...loadingItems,
+              ...prev.filter(item => !item.loading),
+            ].slice(0, MAX_FEED_SIZE))
+
+            // Fill active queue slots for each restored job
+            setActiveSlots(prev => {
+              const next = [...prev]
+              for (const job of inFlight) {
+                const slotId = `job-${job.id}`
+                for (let i = 0; i < next.length; i++) {
+                  if (next[i] === null) {
+                    next[i] = { id: slotId, prompt: job.prompt }
+                    break
+                  }
+                }
+              }
+              return next
+            })
+
+            // Lock the queue counter — handleGenerate checks this before allowing new scans
+            setGenerationQueue(inFlight.length)
+            setIsGenerating(true)
+
+            // Start a poll interval for each restored job until it settles
+            for (const job of inFlight) {
+              const restoredId  = `job-${job.id}`
+              const jobModel    = (job.parameters as any)?.model     || job.modelId
+              const jobQuality  = ((job.parameters as any)?.quality   || '2k') as '2k' | '4k'
+              const jobAspect   = (job.parameters as any)?.aspectRatio || '16:9'
+              const jobRefs     = (job.parameters as any)?.referenceImageUrls || []
+              const capturedUid = user!.id
+
+              let pollAttempts = 0
+              const pollInterval = setInterval(async () => {
+                pollAttempts++
+                // 40 × 3s = 2 min max, same ceiling as live generations
+                if (pollAttempts > 40) {
+                  clearInterval(pollInterval)
+                  setSessionFeed(prev => prev.filter(item => item.id !== restoredId))
+                  setActiveSlots(prev => prev.map(s => s?.id === restoredId ? null : s))
+                  setGenerationQueue(prev => Math.max(0, prev - 1))
+                  setIsGenerating(false)
+                  return
+                }
+                try {
+                  const pollRes  = await fetch('/api/prompting-studio/jobs?source=main-scanner')
+                  const pollData = await pollRes.json()
+                  const updated  = pollData.jobs?.find((j: any) => j.id === job.id)
+                  if (updated?.status === 'completed' && updated.resultUrl) {
+                    clearInterval(pollInterval)
+                    setSessionFeed(prev => [{
+                      id: `${Date.now()}-r${job.id}`,
+                      url: updated.resultUrl,
+                      prompt: job.prompt,
+                      model: jobModel,
+                      quality: jobQuality,
+                      aspectRatio: jobAspect,
+                      timestamp: Date.now(),
+                      referenceImages: jobRefs,
+                      loading: false,
+                    }, ...prev.filter(item => item.id !== restoredId)].slice(0, MAX_FEED_SIZE))
+                    setActiveSlots(prev => prev.map(s => s?.id === restoredId ? null : s))
+                    setGenerationQueue(prev => Math.max(0, prev - 1))
+                    setIsGenerating(false)
+                    // Refresh balance after the webhook deducted the tickets
+                    const ticketRes  = await fetch(`/api/user/tickets?userId=${capturedUid}`)
+                    const ticketData = await ticketRes.json()
+                    if (ticketData.success) {
+                      setUser(prev => prev ? { ...prev, ticketBalance: ticketData.balance } : prev)
+                    }
+                  } else if (updated?.status === 'failed') {
+                    clearInterval(pollInterval)
+                    setSessionFeed(prev => prev.filter(item => item.id !== restoredId))
+                    setActiveSlots(prev => prev.map(s => s?.id === restoredId ? null : s))
+                    setGenerationQueue(prev => Math.max(0, prev - 1))
+                    setIsGenerating(false)
+                  }
+                } catch { /* ignore transient poll errors */ }
+              }, 3000)
+            }
+          }
+        }
+      } catch { /* non-fatal — in-flight restore failed silently */ }
       } catch (err) {
         console.error('Failed to restore main scanner session:', err)
       }
