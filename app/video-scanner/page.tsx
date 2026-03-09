@@ -79,7 +79,8 @@ export default function VideoScanner() {
   const [endImageFile, setEndImageFile] = useState<File | null>(null);
   const [endImagePreviewUrl, setEndImagePreviewUrl] = useState<string>('');
 
-  const MAX_QUEUE_SIZE = 3;
+  // Free tier: 1 concurrent. Dev tier: 3 concurrent.
+  const MAX_QUEUE_SIZE = hasPromptStudioDev ? 3 : 1;
   const MAX_FEED_SIZE = 50;
 
   // Tracks active polling intervals keyed by generationId
@@ -214,6 +215,9 @@ export default function VideoScanner() {
               vid.id === generationId
                 ? {
                     ...vid,
+                    // Replace the temp gen-xxx id with the real DB id so the
+                    // autosave stores the correct id and the restore dedup works.
+                    id: statusData.videoId?.toString() || vid.id,
                     videoUrl: statusData.videoUrl,
                     thumbnailUrl: statusData.thumbnailUrl || uploadedThumbnailUrl,
                     loading: false,
@@ -281,7 +285,9 @@ export default function VideoScanner() {
 
             // Restored completed videos from autosave
             const restoredVideos: GeneratedVideo[] = sessionData.generatedVideos || [];
-            const existingVideoIds = new Set(restoredVideos.map((vid: any) => vid.id));
+            // Build dedup set from DB ids (fix 1 ensures completed videos are saved with
+            // their real DB id, so this correctly prevents fetching them again from the API)
+            const existingVideoIds = new Set(restoredVideos.map((vid: any) => vid.id?.toString()));
 
             // Restore loading placeholders — filter out stale ones > 20 minutes old
             const twentyMinutesAgo = Date.now() - (20 * 60 * 1000);
