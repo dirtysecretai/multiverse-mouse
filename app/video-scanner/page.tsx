@@ -151,7 +151,8 @@ export default function VideoScanner() {
     checkAuth();
   }, [router]);
 
-  // Auto-save session
+  // Auto-save session — only saves settings and in-progress placeholders.
+  // Completed videos are NOT saved because we always fetch them fresh from the API on restore.
   useEffect(() => {
     if (!user) return;
 
@@ -161,9 +162,8 @@ export default function VideoScanner() {
           prompt,
           duration,
           resolution,
-          imagePreviewUrl,
-          generatedVideos: generatedVideos.filter(vid => !vid.loading), // Completed videos only
-          loadingPlaceholders: generatedVideos.filter(vid => vid.loading), // Save loading placeholders separately
+          // Only loading placeholders — these carry requestId/falEndpoint for poll resumption
+          loadingPlaceholders: generatedVideos.filter(vid => vid.loading),
           timestamp: Date.now(),
         };
         localStorage.setItem('video-scanner-autosave', JSON.stringify(sessionData));
@@ -173,7 +173,7 @@ export default function VideoScanner() {
     }, 1000);
 
     return () => clearTimeout(saveTimer);
-  }, [user, prompt, duration, resolution, imagePreviewUrl, generatedVideos]);
+  }, [user, prompt, duration, resolution, generatedVideos]);
 
   // Start polling a FAL queue job for completion
   const startPolling = (
@@ -271,112 +271,88 @@ export default function VideoScanner() {
 
     const restoreSession = async () => {
       try {
+        // ── Step 1: Restore settings + loading placeholders from autosave ──
+        // Completed videos are NOT used from autosave — the API is the source of truth.
+        let loadingPlaceholders: GeneratedVideo[] = [];
         const saved = localStorage.getItem('video-scanner-autosave');
-
         if (saved) {
-          const sessionData = JSON.parse(saved);
-          const hoursSinceLastSave = (Date.now() - (sessionData.timestamp || 0)) / (1000 * 60 * 60);
+          try {
+            const sessionData = JSON.parse(saved);
+            const hoursSinceLastSave = (Date.now() - (sessionData.timestamp || 0)) / (1000 * 60 * 60);
+            if (hoursSinceLastSave < 24) {
+              if (sessionData.prompt !== undefined) setPrompt(sessionData.prompt);
+              if (sessionData.duration) setDuration(sessionData.duration);
+              if (sessionData.resolution) setResolution(sessionData.resolution);
+              // Don't restore imagePreviewUrl — blob URLs are invalid after page reload
 
-          if (hoursSinceLastSave < 24) {
-            if (sessionData.prompt !== undefined) setPrompt(sessionData.prompt);
-            if (sessionData.duration) setDuration(sessionData.duration);
-            if (sessionData.resolution) setResolution(sessionData.resolution);
-            // Don't restore imagePreviewUrl — blob URLs are invalid after page reload
+              // Non-stale loading placeholders only (< 20 min old)
+              const twentyMinutesAgo = Date.now() - (20 * 60 * 1000);
+              loadingPlaceholders = (sessionData.loadingPlaceholders || []).filter(
+                (p: any) => p.timestamp > twentyMinutesAgo
+              );
+            }
+          } catch { /* corrupt autosave — ignore */ }
+        }
 
-            // Restored completed videos from autosave
-            const restoredVideos: GeneratedVideo[] = sessionData.generatedVideos || [];
-            // Build dedup set from DB ids (fix 1 ensures completed videos are saved with
-            // their real DB id, so this correctly prevents fetching them again from the API)
-            const existingVideoIds = new Set(restoredVideos.map((vid: any) => vid.id?.toString()));
+        // ── Step 2: Fetch completed videos from API (always the source of truth) ──
+        let apiVideos: GeneratedVideo[] = [];
+        try {
+          const res = await fetch('/api/my-videos?limit=50');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.videos) {
+              apiVideos = data.videos.map((vid: any) => ({
+                id: vid.id.toString(),
+                prompt: vid.prompt,
+                videoUrl: vid.videoUrl,
+                thumbnailUrl: vid.thumbnailUrl,
+                model: vid.model || 'wan-2.5',
+                duration: vid.duration || '5',
+                resolution: (vid.resolution as '480p' | '720p' | '1080p') || '1080p',
+                timestamp: new Date(vid.createdAt).getTime(),
+                loading: false,
+              }));
+            }
+          }
+        } catch { /* API unavailable — proceed with empty list */ }
 
-            // Restore loading placeholders — filter out stale ones > 20 minutes old
-            const twentyMinutesAgo = Date.now() - (20 * 60 * 1000);
-            const loadingPlaceholders: GeneratedVideo[] = (sessionData.loadingPlaceholders || []).filter(
-              (p: any) => p.timestamp > twentyMinutesAgo
+        // ── Step 3: Reconcile loading placeholders against API results ──
+        // If a placeholder's video already completed (found in API by prompt + timestamp),
+        // the API copy is shown — no need to poll for it.
+        const thirtyMinutes = 30 * 60 * 1000;
+        const stillPolling: GeneratedVideo[] = [];
+
+        for (const placeholder of loadingPlaceholders) {
+          const alreadyDone = apiVideos.some(v => {
+            const timeDiff = Math.abs(v.timestamp - placeholder.timestamp);
+            return v.prompt === placeholder.prompt && timeDiff < thirtyMinutes;
+          });
+
+          if (alreadyDone) continue; // API has it — skip polling
+
+          if (placeholder.requestId && placeholder.falEndpoint) {
+            setGenerationQueue(prev => prev + 1);
+            startPolling(
+              placeholder.id,
+              placeholder.requestId,
+              placeholder.falEndpoint,
+              placeholder.prompt,
+              placeholder.model || 'wan-2.5',
+              placeholder.duration || '5',
+              placeholder.resolution || '1080p',
+              placeholder.ticketCost || 0,
+              placeholder.savedThumbnailUrl || '',
+              user.id,
             );
-
-            // Resume polling for any placeholders that have a saved requestId
-            for (const placeholder of loadingPlaceholders) {
-              if (placeholder.requestId && placeholder.falEndpoint) {
-                setGenerationQueue(prev => prev + 1);
-                startPolling(
-                  placeholder.id,
-                  placeholder.requestId,
-                  placeholder.falEndpoint,
-                  placeholder.prompt,
-                  placeholder.model || 'wan-2.5',
-                  placeholder.duration || '5',
-                  placeholder.resolution || '1080p',
-                  placeholder.ticketCost || 0,
-                  placeholder.savedThumbnailUrl || '',
-                  user.id,
-                );
-              }
-            }
-
-            // Fetch recent videos to surface any that completed while the page was away
-            // Use a 2-hour window so slow generations (Kling) are included
-            const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
-            const res = await fetch('/api/my-videos?limit=30');
-            if (res.ok) {
-              const data = await res.json();
-              if (data.success && data.videos) {
-                const recentNewVideos: GeneratedVideo[] = data.videos
-                  .filter((vid: any) => {
-                    const vidTime = new Date(vid.createdAt).getTime();
-                    return vidTime >= twoHoursAgo && !existingVideoIds.has(vid.id.toString());
-                  })
-                  .map((vid: any) => ({
-                    id: vid.id.toString(),
-                    prompt: vid.prompt,
-                    videoUrl: vid.videoUrl,
-                    thumbnailUrl: vid.thumbnailUrl,
-                    model: vid.model || 'wan-2.5',
-                    duration: vid.duration || '5',
-                    resolution: (vid.resolution as '480p' | '720p' | '1080p') || '1080p',
-                    timestamp: new Date(vid.createdAt).getTime(),
-                    loading: false,
-                  }));
-
-                // Remove loading placeholders whose video has now completed
-                // Match by requestId already resumed above, or by prompt + timestamp proximity
-                const twoMinutes = 2 * 60 * 1000;
-                const stillLoading = loadingPlaceholders.filter((placeholder) => {
-                  return !recentNewVideos.some((video) => {
-                    const timeDiff = Math.abs(video.timestamp - placeholder.timestamp);
-                    return timeDiff < twoMinutes && video.prompt === placeholder.prompt;
-                  });
-                });
-
-                const combined = [...recentNewVideos, ...stillLoading, ...restoredVideos].slice(0, MAX_FEED_SIZE);
-                setGeneratedVideos(combined);
-              } else {
-                setGeneratedVideos([...loadingPlaceholders, ...restoredVideos].slice(0, MAX_FEED_SIZE));
-              }
-            } else {
-              setGeneratedVideos([...loadingPlaceholders, ...restoredVideos].slice(0, MAX_FEED_SIZE));
-            }
-            return;
+            stillPolling.push(placeholder);
           }
         }
 
-        // No saved session or session expired — fetch from API
-        const videosRes = await fetch('/api/my-videos?limit=50');
-        const videosData = await videosRes.json();
-        if (videosData.success && videosData.videos) {
-          const recentVideos: GeneratedVideo[] = videosData.videos.map((vid: any) => ({
-            id: vid.id.toString(),
-            prompt: vid.prompt,
-            videoUrl: vid.videoUrl,
-            thumbnailUrl: vid.thumbnailUrl,
-            model: vid.model || 'wan-2.5',
-            duration: vid.duration || '5',
-            resolution: (vid.resolution as '480p' | '720p' | '1080p') || '1080p',
-            timestamp: new Date(vid.createdAt).getTime(),
-            loading: false,
-          }));
-          setGeneratedVideos(recentVideos);
-        }
+        // ── Step 4: Set state ──
+        // In-progress placeholders first, then all API-sourced completed videos.
+        // No autosaved completed videos — eliminates id-mismatch duplicates entirely.
+        setGeneratedVideos([...stillPolling, ...apiVideos].slice(0, MAX_FEED_SIZE));
+
       } catch (err) {
         console.error('Failed to restore video scanner session:', err);
       }
