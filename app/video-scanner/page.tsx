@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,6 +17,11 @@ interface GeneratedVideo {
   resolution: '480p' | '720p' | '1080p';
   timestamp: number;
   loading?: boolean;
+  // Async polling metadata (only on loading placeholders)
+  requestId?: string;
+  falEndpoint?: string;
+  ticketCost?: number;
+  savedThumbnailUrl?: string; // Uploaded URL (not blob) for cross-session persistence
 }
 
 interface AdminState {
@@ -76,6 +81,9 @@ export default function VideoScanner() {
 
   const MAX_QUEUE_SIZE = 3;
   const MAX_FEED_SIZE = 50;
+
+  // Tracks active polling intervals keyed by generationId
+  const activePollingIntervals = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
 
   // Calculate ticket cost based on model, duration, and resolution
   const getTicketCost = () => {
@@ -166,7 +174,94 @@ export default function VideoScanner() {
     return () => clearTimeout(saveTimer);
   }, [user, prompt, duration, resolution, imagePreviewUrl, generatedVideos]);
 
-  // Auto-restore session on mount
+  // Start polling a FAL queue job for completion
+  const startPolling = (
+    generationId: string,
+    requestId: string,
+    falEndpoint: string,
+    capturedPrompt: string,
+    capturedModel: string,
+    capturedDuration: string,
+    capturedResolution: string,
+    capturedTicketCost: number,
+    uploadedThumbnailUrl: string,
+    userId: string,
+  ) => {
+    const interval = setInterval(async () => {
+      try {
+        const statusRes = await fetch('/api/video/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestId,
+            falEndpoint,
+            prompt: capturedPrompt,
+            model: capturedModel,
+            duration: capturedDuration,
+            resolution: capturedResolution,
+            ticketCost: capturedTicketCost,
+            thumbnailUrl: uploadedThumbnailUrl,
+          }),
+        });
+        const statusData = await statusRes.json();
+
+        if (statusData.status === 'completed') {
+          clearInterval(interval);
+          activePollingIntervals.current.delete(generationId);
+          setGenerationQueue(prev => Math.max(0, prev - 1));
+          setGeneratedVideos(prev =>
+            prev.map(vid =>
+              vid.id === generationId
+                ? {
+                    ...vid,
+                    videoUrl: statusData.videoUrl,
+                    thumbnailUrl: statusData.thumbnailUrl || uploadedThumbnailUrl,
+                    loading: false,
+                    requestId: undefined,
+                    falEndpoint: undefined,
+                  }
+                : vid
+            )
+          );
+          // Refresh ticket balance
+          const ticketRes = await fetch(`/api/user/tickets?userId=${userId}`);
+          const ticketData = await ticketRes.json();
+          if (ticketData.success) setTicketBalance(ticketData.balance);
+
+        } else if (statusData.status === 'failed') {
+          clearInterval(interval);
+          activePollingIntervals.current.delete(generationId);
+          setGenerationQueue(prev => Math.max(0, prev - 1));
+          setGeneratedVideos(prev => prev.filter(vid => vid.id !== generationId));
+          setGenerationError(statusData.error || 'Video generation failed');
+        }
+        // else: in_progress / transient error — keep polling
+      } catch (pollErr) {
+        console.error('Poll error (will retry):', pollErr);
+      }
+    }, 15000); // poll every 15 seconds
+
+    activePollingIntervals.current.set(generationId, interval);
+
+    // Stop polling after 20 minutes regardless
+    setTimeout(() => {
+      if (activePollingIntervals.current.has(generationId)) {
+        clearInterval(interval);
+        activePollingIntervals.current.delete(generationId);
+        setGenerationQueue(prev => Math.max(0, prev - 1));
+        setGeneratedVideos(prev => {
+          const vid = prev.find(v => v.id === generationId);
+          if (vid?.loading) {
+            setGenerationError('Generation timed out. Your video may appear in My Images when ready.');
+            return prev.filter(v => v.id !== generationId);
+          }
+          return prev;
+        });
+      }
+    }, 20 * 60 * 1000);
+  };
+
+  // Auto-restore session on mount — also cleans up polling on unmount
   useEffect(() => {
     if (!user) return;
 
@@ -182,68 +277,84 @@ export default function VideoScanner() {
             if (sessionData.prompt !== undefined) setPrompt(sessionData.prompt);
             if (sessionData.duration) setDuration(sessionData.duration);
             if (sessionData.resolution) setResolution(sessionData.resolution);
-            // Don't restore imagePreviewUrl — blob URLs are invalid after a page reload
-            // and restoring them leaves imageFile null, permanently disabling the generate button
+            // Don't restore imagePreviewUrl — blob URLs are invalid after page reload
 
-            // Restore videos including loading placeholders
-            const restoredVideos = sessionData.generatedVideos || [];
+            // Restored completed videos from autosave
+            const restoredVideos: GeneratedVideo[] = sessionData.generatedVideos || [];
             const existingVideoIds = new Set(restoredVideos.map((vid: any) => vid.id));
 
-            // Restore loading placeholders from sessionData (filter out stale ones > 10 minutes old)
-            const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
-            const loadingPlaceholders = (sessionData.loadingPlaceholders || []).filter(
-              (placeholder: any) => placeholder.timestamp > tenMinutesAgo
+            // Restore loading placeholders — filter out stale ones > 20 minutes old
+            const twentyMinutesAgo = Date.now() - (20 * 60 * 1000);
+            const loadingPlaceholders: GeneratedVideo[] = (sessionData.loadingPlaceholders || []).filter(
+              (p: any) => p.timestamp > twentyMinutesAgo
             );
 
-            // Fetch recent videos to find any completed during refresh
-            const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-            const res = await fetch('/api/my-videos?limit=20');
+            // Resume polling for any placeholders that have a saved requestId
+            for (const placeholder of loadingPlaceholders) {
+              if (placeholder.requestId && placeholder.falEndpoint) {
+                setGenerationQueue(prev => prev + 1);
+                startPolling(
+                  placeholder.id,
+                  placeholder.requestId,
+                  placeholder.falEndpoint,
+                  placeholder.prompt,
+                  placeholder.model || 'wan-2.5',
+                  placeholder.duration || '5',
+                  placeholder.resolution || '1080p',
+                  placeholder.ticketCost || 0,
+                  placeholder.savedThumbnailUrl || '',
+                  user.id,
+                );
+              }
+            }
+
+            // Fetch recent videos to surface any that completed while the page was away
+            // Use a 2-hour window so slow generations (Kling) are included
+            const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
+            const res = await fetch('/api/my-videos?limit=30');
             if (res.ok) {
               const data = await res.json();
               if (data.success && data.videos) {
-                const recentNewVideos = data.videos
+                const recentNewVideos: GeneratedVideo[] = data.videos
                   .filter((vid: any) => {
                     const vidTime = new Date(vid.createdAt).getTime();
-                    return vidTime >= fiveMinutesAgo && !existingVideoIds.has(vid.id.toString());
+                    return vidTime >= twoHoursAgo && !existingVideoIds.has(vid.id.toString());
                   })
                   .map((vid: any) => ({
                     id: vid.id.toString(),
                     prompt: vid.prompt,
                     videoUrl: vid.videoUrl,
                     thumbnailUrl: vid.thumbnailUrl,
-                    model: 'wan-2.5',
+                    model: vid.model || 'wan-2.5',
                     duration: vid.duration || '5',
-                    resolution: vid.resolution || '1080p',
+                    resolution: (vid.resolution as '480p' | '720p' | '1080p') || '1080p',
                     timestamp: new Date(vid.createdAt).getTime(),
                     loading: false,
                   }));
 
-                // Remove loading placeholders that now have completed videos
-                // Match by timestamp proximity (within 2 minutes) and prompt similarity
-                const stillLoadingPlaceholders = loadingPlaceholders.filter((placeholder: any) => {
-                  return !recentNewVideos.some((video: any) => {
+                // Remove loading placeholders whose video has now completed
+                // Match by requestId already resumed above, or by prompt + timestamp proximity
+                const twoMinutes = 2 * 60 * 1000;
+                const stillLoading = loadingPlaceholders.filter((placeholder) => {
+                  return !recentNewVideos.some((video) => {
                     const timeDiff = Math.abs(video.timestamp - placeholder.timestamp);
-                    const twoMinutes = 2 * 60 * 1000;
                     return timeDiff < twoMinutes && video.prompt === placeholder.prompt;
                   });
                 });
 
-                // Combine: new videos + still loading placeholders + restored videos
-                const combinedVideos = [...recentNewVideos, ...stillLoadingPlaceholders, ...restoredVideos].slice(0, MAX_FEED_SIZE);
-                setGeneratedVideos(combinedVideos);
+                const combined = [...recentNewVideos, ...stillLoading, ...restoredVideos].slice(0, MAX_FEED_SIZE);
+                setGeneratedVideos(combined);
               } else {
-                // No new videos, restore all including loading placeholders
                 setGeneratedVideos([...loadingPlaceholders, ...restoredVideos].slice(0, MAX_FEED_SIZE));
               }
             } else {
-              // API failed, restore all including loading placeholders
               setGeneratedVideos([...loadingPlaceholders, ...restoredVideos].slice(0, MAX_FEED_SIZE));
             }
-            return; // Session restored, don't fetch initial videos
+            return;
           }
         }
 
-        // No saved session or expired - fetch initial videos
+        // No saved session or session expired — fetch from API
         const videosRes = await fetch('/api/my-videos?limit=50');
         const videosData = await videosRes.json();
         if (videosData.success && videosData.videos) {
@@ -252,9 +363,9 @@ export default function VideoScanner() {
             prompt: vid.prompt,
             videoUrl: vid.videoUrl,
             thumbnailUrl: vid.thumbnailUrl,
-            model: 'wan-2.5',
+            model: vid.model || 'wan-2.5',
             duration: vid.duration || '5',
-            resolution: vid.resolution || '1080p',
+            resolution: (vid.resolution as '480p' | '720p' | '1080p') || '1080p',
             timestamp: new Date(vid.createdAt).getTime(),
             loading: false,
           }));
@@ -266,6 +377,13 @@ export default function VideoScanner() {
     };
 
     restoreSession();
+
+    // Cleanup: clear all polling intervals when component unmounts
+    return () => {
+      activePollingIntervals.current.forEach(interval => clearInterval(interval));
+      activePollingIntervals.current.clear();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -347,19 +465,26 @@ export default function VideoScanner() {
     setGenerationQueue(prev => prev + 1);
     setGenerationError(null);
 
-    // Add loading placeholder
+    // Add loading placeholder (thumbnailUrl uses blob URL for immediate preview)
     const loadingPlaceholder: GeneratedVideo = {
       id: generationId,
-      prompt: prompt,
+      prompt,
       videoUrl: '',
       thumbnailUrl: imagePreviewUrl,
       model: videoModel,
-      duration: duration,
+      duration,
       resolution: videoModel === 'kling-v3' ? '1080p' : resolution,
       timestamp: Date.now(),
       loading: true,
     };
     setGeneratedVideos(prev => [loadingPlaceholder, ...prev].slice(0, MAX_FEED_SIZE));
+
+    // Capture current settings for use in polling closure
+    const capturedPrompt = prompt;
+    const capturedModel = videoModel;
+    const capturedDuration = duration;
+    const capturedResolution = videoModel === 'kling-v3' ? '1080p' : resolution;
+    const capturedUserId = user.id;
 
     try {
       // Upload image (compress first to stay under Vercel's 4.5MB payload limit)
@@ -371,81 +496,92 @@ export default function VideoScanner() {
         body: imageFormData
       });
       const imageUploadData = await imageUploadRes.json();
+      const uploadedImageUrl: string = imageUploadData.url;
 
-      let audioUrl = undefined;
+      let audioUrl: string | undefined;
       if (audioFile && videoModel === 'wan-2.5') {
         const audioFormData = new FormData();
         audioFormData.append('file', audioFile);
-        const audioUploadRes = await fetch('/api/upload-audio', {
-          method: 'POST',
-          body: audioFormData
-        });
+        const audioUploadRes = await fetch('/api/upload-audio', { method: 'POST', body: audioFormData });
         const audioUploadData = await audioUploadRes.json();
         if (audioUploadData.url) audioUrl = audioUploadData.url;
       }
 
-      let endImageUrl = undefined;
+      let endImageUrl: string | undefined;
       if (endImageFile && videoModel === 'kling-v3') {
-        const compressedEndImageFile = await compressImage(endImageFile);
-        const endImageFormData = new FormData();
-        endImageFormData.append('file', compressedEndImageFile);
-        const endImageUploadRes = await fetch('/api/upload-reference', {
-          method: 'POST',
-          body: endImageFormData
-        });
-        const endImageUploadData = await endImageUploadRes.json();
-        if (endImageUploadData.url) endImageUrl = endImageUploadData.url;
+        const compressedEnd = await compressImage(endImageFile);
+        const endFormData = new FormData();
+        endFormData.append('file', compressedEnd);
+        const endUploadRes = await fetch('/api/upload-reference', { method: 'POST', body: endFormData });
+        const endUploadData = await endUploadRes.json();
+        if (endUploadData.url) endImageUrl = endUploadData.url;
       }
 
-      // Generate video
-      const requestBody = {
-        userId: user.id,
-        prompt: prompt,
-        imageUrl: imageUploadData.url,
-        duration: duration,
-        resolution: resolution,
-        audioUrl: audioUrl,
-        model: videoModel,
-        generateAudio: generateAudio,
-        klingAspectRatio: klingAspectRatio,
-        endImageUrl: endImageUrl,
-        hasDevTier: hasPromptStudioDev,
-      };
-
+      // Submit video generation to FAL async queue (returns requestId immediately, no timeout risk)
       const res = await fetch('/api/video/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify({
+          userId: capturedUserId,
+          prompt: capturedPrompt,
+          imageUrl: uploadedImageUrl,
+          duration: capturedDuration,
+          resolution: capturedResolution,
+          audioUrl,
+          model: capturedModel,
+          generateAudio,
+          klingAspectRatio,
+          endImageUrl,
+          hasDevTier: hasPromptStudioDev,
+        }),
       });
 
       const data = await res.json();
 
-      if (data.success && data.videoUrl) {
-        setGeneratedVideos(prev =>
-          prev.map(vid =>
-            vid.id === generationId
-              ? { ...vid, videoUrl: data.videoUrl, thumbnailUrl: data.thumbnailUrl || vid.thumbnailUrl, loading: false }
-              : vid
-          ).slice(0, MAX_FEED_SIZE)
-        );
-
-        // Refresh ticket balance
-        const ticketRes = await fetch(`/api/user/tickets?userId=${user.id}`);
-        const ticketData = await ticketRes.json();
-        if (ticketData.success) {
-          setTicketBalance(ticketData.balance);
-        }
-      } else {
+      if (!data.success) {
         setGeneratedVideos(prev => prev.filter(vid => vid.id !== generationId));
-        setGenerationError(data.error || 'Video generation failed');
+        setGenerationError(data.error || 'Failed to submit video generation');
+        setGenerationQueue(prev => Math.max(0, prev - 1));
+        return;
       }
+
+      // Job submitted — update placeholder with poll metadata so it survives page refreshes
+      const { requestId, falEndpoint } = data;
+      setGeneratedVideos(prev =>
+        prev.map(vid =>
+          vid.id === generationId
+            ? { ...vid, requestId, falEndpoint, ticketCost, savedThumbnailUrl: uploadedImageUrl }
+            : vid
+        )
+      );
+
+      // Refresh ticket balance immediately (tickets were deducted on submit)
+      const ticketRes = await fetch(`/api/user/tickets?userId=${capturedUserId}`);
+      const ticketData = await ticketRes.json();
+      if (ticketData.success) setTicketBalance(ticketData.balance);
+
+      // Start polling every 15s until video is ready
+      startPolling(
+        generationId,
+        requestId,
+        falEndpoint,
+        capturedPrompt,
+        capturedModel,
+        capturedDuration,
+        capturedResolution,
+        ticketCost,
+        uploadedImageUrl,
+        capturedUserId,
+      );
+
     } catch (err) {
       console.error('Generation error:', err);
       setGeneratedVideos(prev => prev.filter(vid => vid.id !== generationId));
       setGenerationError('Generation failed. Please try again.');
-    } finally {
       setGenerationQueue(prev => Math.max(0, prev - 1));
     }
+    // Note: generationQueue is decremented inside startPolling (on completion/failure/timeout),
+    // not here — the slot stays occupied until the video finishes.
   };
 
   if (loading) {

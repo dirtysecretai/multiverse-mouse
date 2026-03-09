@@ -32,22 +32,24 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '50');
     const skip = (page - 1) * limit;
 
-    // Get total count for pagination (videos only - model: 'wan-2.5')
+    // Get total count for pagination (videos only — all video models, not deleted)
     const total = await prisma.generatedImage.count({
       where: {
         userId: user.id,
-        model: 'wan-2.5', // Filter for videos only
+        model: { in: ['wan-2.5', 'kling-v3', 'kling-o3'] },
+        isDeleted: false,
         expiresAt: {
           gt: new Date()
         }
       }
     });
 
-    // Fetch paginated user's generated videos (not expired, ordered by newest first)
+    // Fetch paginated user's generated videos (not expired, not deleted, ordered by newest first)
     const videos = await prisma.generatedImage.findMany({
       where: {
         userId: user.id,
-        model: 'wan-2.5', // Filter for videos only
+        model: { in: ['wan-2.5', 'kling-v3', 'kling-o3'] },
+        isDeleted: false,
         expiresAt: {
           gt: new Date()
         }
