@@ -36,19 +36,17 @@ export async function GET(request: Request) {
     const total = await prisma.generatedImage.count({
       where: {
         userId: user.id,
-        expiresAt: {
-          gt: new Date()
-        }
+        isDeleted: false,
+        expiresAt: { gt: new Date() },
       }
     })
 
-    // Fetch paginated user's generated images (not expired, ordered by newest first)
+    // Fetch paginated user's generated images (not expired, not deleted, newest first)
     const images = await prisma.generatedImage.findMany({
       where: {
         userId: user.id,
-        expiresAt: {
-          gt: new Date() // Only get images that haven't expired
-        }
+        isDeleted: false,
+        expiresAt: { gt: new Date() },
       },
       orderBy: {
         createdAt: 'desc'
@@ -83,5 +81,44 @@ export async function GET(request: Request) {
       { error: 'Failed to fetch images' },
       { status: 500 }
     )
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+// DELETE /api/my-images
+// Body: { ids: number[] }
+// Soft-deletes the specified images after verifying they belong to the user.
+export async function DELETE(request: Request) {
+  try {
+    const cookieStore = await cookies()
+    const token = cookieStore.get('session')?.value
+    if (!token) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+    const user = await getUserFromSession(token)
+    if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
+
+    const body = await request.json()
+    const ids: number[] = body.ids
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: 'No image IDs provided' }, { status: 400 })
+    }
+
+    // Only delete images that belong to this user — prevents any cross-user deletion
+    const result = await prisma.generatedImage.updateMany({
+      where: {
+        id: { in: ids },
+        userId: user.id,
+      },
+      data: { isDeleted: true },
+    })
+
+    return NextResponse.json({ success: true, deleted: result.count })
+  } catch (error: any) {
+    console.error('Error deleting images:', error)
+    return NextResponse.json({ error: 'Failed to delete images' }, { status: 500 })
+  } finally {
+    await prisma.$disconnect()
   }
 }
