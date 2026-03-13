@@ -11,10 +11,7 @@ export async function GET(request: Request) {
   try {
     const staleThreshold = new Date(Date.now() - STALE_MINUTES * 60 * 1000);
 
-    // Auto-clean stale processing jobs so the count is always accurate.
-    // These are rows that got stuck when a Vercel function timed out before
-    // the webhook could fire. We find affected models, reset the rows, then
-    // decrement their concurrency slots.
+    // Auto-clean stale processing jobs (mark failed only — counter sync happens below)
     const staleJobs = await prisma.generationQueue.findMany({
       where: { status: 'processing', startedAt: { lt: staleThreshold } },
       select: { id: true, modelId: true },
@@ -22,28 +19,19 @@ export async function GET(request: Request) {
 
     if (staleJobs.length > 0) {
       const staleIds = staleJobs.map(j => j.id);
-      const modelCounts: Record<string, number> = {};
-      for (const job of staleJobs) {
-        modelCounts[job.modelId] = (modelCounts[job.modelId] || 0) + 1;
-      }
-      await Promise.all([
-        prisma.generationQueue.updateMany({
-          where: { id: { in: staleIds } },
-          data: {
-            status: 'failed',
-            completedAt: new Date(),
-            errorMessage: `Auto-reset: stuck in processing for over ${STALE_MINUTES} minutes`,
-          },
-        }),
-        ...Object.entries(modelCounts).map(([modelId, count]) =>
-          prisma.modelConcurrencyLimit.updateMany({
-            where: { modelId },
-            data: { currentActive: { decrement: count } },
-          })
-        ),
-      ]);
+      await prisma.generationQueue.updateMany({
+        where: { id: { in: staleIds } },
+        data: {
+          status: 'failed',
+          completedAt: new Date(),
+          errorMessage: `Auto-reset: stuck in processing for over ${STALE_MINUTES} minutes`,
+        },
+      });
       console.log(`Auto-reset ${staleJobs.length} stale processing job(s)`);
     }
+
+    // Always recalculate currentActive from ground truth (self-heals any drift / negative values)
+    await syncActiveCounters();
 
     const [totalQueued, totalProcessing, totalCompleted, totalFailed] = await Promise.all([
       prisma.generationQueue.count({ where: { status: 'queued' } }),
@@ -57,4 +45,37 @@ export async function GET(request: Request) {
     console.error('Failed to fetch queue stats:', error);
     return NextResponse.json({ error: 'Failed to fetch queue stats' }, { status: 500 });
   }
+}
+
+// Recalculate currentActive for every model from the actual count of
+// 'processing' queue rows.  This is the only source of truth and prevents
+// the counter from going negative due to double-decrements.
+export async function syncActiveCounters() {
+  const processingByModel = await prisma.generationQueue.groupBy({
+    by: ['modelId'],
+    where: { status: 'processing' },
+    _count: { id: true },
+  });
+
+  const actualCounts: Record<string, number> = {};
+  for (const row of processingByModel) {
+    actualCounts[row.modelId] = row._count.id;
+  }
+
+  const allLimits = await prisma.modelConcurrencyLimit.findMany({
+    select: { modelId: true, currentActive: true },
+  });
+
+  await Promise.all(
+    allLimits.map(limit => {
+      const actual = actualCounts[limit.modelId] ?? 0;
+      if (limit.currentActive !== actual) {
+        return prisma.modelConcurrencyLimit.update({
+          where: { modelId: limit.modelId },
+          data: { currentActive: actual },
+        });
+      }
+      return Promise.resolve();
+    })
+  );
 }
