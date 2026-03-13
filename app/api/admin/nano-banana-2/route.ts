@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
 import { put } from '@vercel/blob'
+import { PrismaClient } from '@prisma/client'
 
 fal.config({ credentials: process.env.FAL_KEY })
+const prisma = new PrismaClient()
 
 export async function POST(req: Request) {
   try {
@@ -74,6 +76,33 @@ export async function POST(req: Request) {
       hostedImages.push({ url: blob.url, width: falImg.width, height: falImg.height })
     }
 
+    // Save to DB under the first user (admin/site owner).
+    // Admin prototype has no user session so we associate with userId=1 or
+    // the first user found in the DB.
+    try {
+      const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
+      if (adminUser) {
+        await Promise.all(hostedImages.map(img =>
+          prisma.generatedImage.create({
+            data: {
+              userId:            adminUser.id,
+              prompt:            prompt.trim(),
+              imageUrl:          img.url,
+              model:             'nano-banana-2',
+              ticketCost:        0,
+              referenceImageUrls: [],
+              quality:           resolution,
+              aspectRatio:       aspect_ratio,
+              expiresAt:         new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
+            },
+          })
+        ))
+      }
+    } catch (dbErr) {
+      // Non-fatal — log but still return the images
+      console.error('NanaBanana2: failed to save to DB:', dbErr)
+    }
+
     return NextResponse.json({
       success: true,
       images: hostedImages,
@@ -87,5 +116,7 @@ export async function POST(req: Request) {
       { error: error.message || 'Generation failed' },
       { status: 500 }
     )
+  } finally {
+    await prisma.$disconnect()
   }
 }
