@@ -1,8 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { ArrowLeft, Zap, Image, Settings, RefreshCw, Copy, ExternalLink, Globe, Layers } from "lucide-react"
+import { ArrowLeft, Zap, RefreshCw, Copy, ExternalLink, Globe, Layers, ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
 import Link from "next/link"
 
 const ASPECT_RATIOS = [
@@ -30,21 +29,25 @@ const SAFETY_LEVELS = [
   { value: "6", label: "6 — Least Strict" },
 ]
 
+const MAX_FEED = 25
+
 interface GeneratedImage {
   url: string
   width?: number
   height?: number
 }
 
-interface Result {
+interface CarouselEntry {
+  id: string
   images: GeneratedImage[]
-  description: string
+  currentIndex: number
+  prompt: string
   elapsed: number
   requestId: string
+  description?: string
 }
 
 export default function NanaBanana2PrototypePage() {
-  const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [password, setPassword] = useState("")
@@ -62,9 +65,8 @@ export default function NanaBanana2PrototypePage() {
 
   // UI state
   const [isGenerating, setIsGenerating] = useState(false)
-  const [result, setResult] = useState<Result | null>(null)
+  const [sessionFeed, setSessionFeed] = useState<CarouselEntry[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null)
 
   useEffect(() => {
     const authStatus = localStorage.getItem("multiverse-admin-auth")
@@ -99,8 +101,6 @@ export default function NanaBanana2PrototypePage() {
     if (!prompt.trim()) return
     setIsGenerating(true)
     setError(null)
-    setResult(null)
-    setSelectedImage(null)
 
     try {
       const res = await fetch('/api/admin/nano-banana-2', {
@@ -123,14 +123,43 @@ export default function NanaBanana2PrototypePage() {
       if (!res.ok || !data.success) {
         setError(data.error || 'Generation failed')
       } else {
-        setResult(data)
-        setSelectedImage(data.images[0] || null)
+        const entry: CarouselEntry = {
+          id: `gen-${Date.now()}`,
+          images: data.images,
+          currentIndex: 0,
+          prompt: prompt.trim(),
+          elapsed: data.elapsed,
+          requestId: data.requestId,
+          description: data.description,
+        }
+        setSessionFeed(prev => [entry, ...prev].slice(0, MAX_FEED))
       }
     } catch (err: any) {
       setError(err.message || 'Network error')
     } finally {
       setIsGenerating(false)
     }
+  }
+
+  const navigate = (id: string, direction: 'prev' | 'next') => {
+    setSessionFeed(prev => prev.map(c => {
+      if (c.id !== id) return c
+      const total = c.images.length
+      const newIndex = direction === 'prev'
+        ? (c.currentIndex - 1 + total) % total
+        : (c.currentIndex + 1) % total
+      return { ...c, currentIndex: newIndex }
+    }))
+  }
+
+  const goToIndex = (id: string, index: number) => {
+    setSessionFeed(prev => prev.map(c =>
+      c.id === id ? { ...c, currentIndex: index } : c
+    ))
+  }
+
+  const removeEntry = (id: string) => {
+    setSessionFeed(prev => prev.filter(c => c.id !== id))
   }
 
   const randomizeSeed = () => setSeed(String(Math.floor(Math.random() * 2147483647)))
@@ -194,7 +223,7 @@ export default function NanaBanana2PrototypePage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-6 flex gap-6">
+      <div className="max-w-7xl mx-auto px-4 py-6 flex gap-6 items-start">
 
         {/* ── Left panel: Controls ── */}
         <div className="w-80 flex-shrink-0 space-y-4">
@@ -326,7 +355,7 @@ export default function NanaBanana2PrototypePage() {
           {/* Seed */}
           <div className="p-4 rounded-xl border border-slate-800 bg-slate-900/60">
             <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-              Seed <span className="text-slate-600 normal-case font-normal">(optional — for reproducibility)</span>
+              Seed <span className="text-slate-600 normal-case font-normal">(optional)</span>
             </label>
             <div className="flex gap-2">
               <input
@@ -360,11 +389,10 @@ export default function NanaBanana2PrototypePage() {
               Options
             </label>
 
-            {/* Limit Generations */}
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-white">Limit Generations</p>
-                <p className="text-[10px] text-slate-500">Force single output per prompt, ignore multi-image instructions</p>
+                <p className="text-[10px] text-slate-500">Force single output per prompt</p>
               </div>
               <button
                 onClick={() => setLimitGenerations(v => !v)}
@@ -378,14 +406,13 @@ export default function NanaBanana2PrototypePage() {
               </button>
             </div>
 
-            {/* Web Search */}
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-white flex items-center gap-1.5">
                   <Globe size={12} className="text-cyan-400" />
                   Enable Web Search
                 </p>
-                <p className="text-[10px] text-slate-500">Let the model use live web data to inform generation</p>
+                <p className="text-[10px] text-slate-500">Use live web data to inform generation</p>
               </div>
               <button
                 onClick={() => setEnableWebSearch(v => !v)}
@@ -423,7 +450,7 @@ export default function NanaBanana2PrototypePage() {
             )}
           </button>
 
-          {/* Current params summary */}
+          {/* Params summary */}
           <div className="p-3 rounded-xl border border-slate-800 bg-slate-950/60 font-mono text-[10px] text-slate-500 space-y-1">
             <p className="text-slate-400 font-bold mb-1">Current Parameters</p>
             <p>aspect_ratio: <span className="text-yellow-400">{aspectRatio}</span></p>
@@ -437,124 +464,182 @@ export default function NanaBanana2PrototypePage() {
           </div>
         </div>
 
-        {/* ── Right panel: Output ── */}
-        <div className="flex-1 min-w-0">
+        {/* ── Right panel: Session Feed ── */}
+        <div className="flex-1 min-w-0 flex flex-col gap-3">
 
           {/* Error */}
           {error && (
-            <div className="mb-4 p-4 rounded-xl border border-red-500/40 bg-red-500/10">
+            <div className="p-4 rounded-xl border border-red-500/40 bg-red-500/10">
               <p className="text-red-400 font-bold text-sm">Generation Failed</p>
               <p className="text-red-300 text-xs mt-1">{error}</p>
             </div>
           )}
 
-          {/* Loading */}
+          {/* Loading indicator */}
           {isGenerating && (
-            <div className="flex flex-col items-center justify-center h-96 rounded-xl border border-yellow-500/20 bg-slate-900/40">
-              <Zap size={48} className="text-yellow-400 animate-pulse mb-4" />
-              <p className="text-yellow-400 font-bold">Generating with NanoBanana Pro 2...</p>
-              <p className="text-slate-500 text-xs mt-2">
-                {resolution} resolution · {numImages} image{numImages > 1 ? 's' : ''} · {aspectRatio} ratio
-              </p>
-              <div className="flex gap-1 mt-4">
-                <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
-                <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
-                <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+            <div className="flex items-center gap-4 p-4 rounded-xl border border-yellow-500/20 bg-slate-900/40">
+              <Zap size={28} className="text-yellow-400 animate-pulse flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-yellow-400 font-bold text-sm">Generating with NanoBanana Pro 2...</p>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  {resolution} · {numImages} image{numImages > 1 ? 's' : ''} · {aspectRatio} ratio
+                </p>
+              </div>
+              <div className="flex gap-1">
+                <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse" />
+                <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
               </div>
             </div>
           )}
 
-          {/* Results */}
-          {result && !isGenerating && (
-            <div className="space-y-4">
-              {/* Meta */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-green-400 font-bold bg-green-500/10 border border-green-500/30 px-2 py-1 rounded-full">
-                    ✓ {result.images.length} image{result.images.length > 1 ? 's' : ''} generated
-                  </span>
-                  <span className="text-xs text-slate-500 font-mono">
-                    {(result.elapsed / 1000).toFixed(1)}s
-                  </span>
-                  <span className="text-[10px] text-slate-600 font-mono">{result.requestId}</span>
-                </div>
-              </div>
+          {/* Feed header */}
+          {sessionFeed.length > 0 && (
+            <div className="flex items-center justify-between px-1">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Session Feed{' '}
+                <span className="text-slate-600 normal-case font-normal">
+                  {sessionFeed.length}/{MAX_FEED}
+                </span>
+              </p>
+              <button
+                onClick={() => setSessionFeed([])}
+                className="text-[10px] text-slate-600 hover:text-red-400 transition-all flex items-center gap-1"
+              >
+                <Trash2 size={10} />
+                Clear all
+              </button>
+            </div>
+          )}
 
-              {/* Description (if any) */}
-              {result.description && (
-                <div className="p-3 rounded-lg border border-slate-700 bg-slate-900/40">
-                  <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Model Description</p>
-                  <p className="text-sm text-slate-300">{result.description}</p>
-                </div>
-              )}
+          {/* Scrollable carousel feed */}
+          {sessionFeed.length > 0 && (
+            <div
+              className="overflow-y-auto space-y-4 pr-1"
+              style={{ maxHeight: 'calc(100vh - 120px)' }}
+            >
+              {sessionFeed.map(entry => {
+                const img = entry.images[entry.currentIndex]
+                return (
+                  <div
+                    key={entry.id}
+                    className="rounded-xl border border-slate-700/80 bg-slate-900/60 overflow-hidden"
+                  >
+                    {/* Image area */}
+                    <div className="relative bg-slate-950" style={{ height: '460px' }}>
+                      <img
+                        src={img.url}
+                        alt={`Generated image ${entry.currentIndex + 1}`}
+                        className="w-full h-full object-contain"
+                        loading="lazy"
+                      />
 
-              {/* Image grid */}
-              {result.images.length > 1 && (
-                <div className={`grid gap-3 ${result.images.length === 2 ? 'grid-cols-2' : result.images.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                  {result.images.map((img, i) => (
-                    <div
-                      key={i}
-                      onClick={() => setSelectedImage(img)}
-                      className={`relative rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
-                        selectedImage?.url === img.url
-                          ? 'border-yellow-500 shadow-lg shadow-yellow-500/20'
-                          : 'border-slate-700 hover:border-yellow-500/50'
-                      }`}
-                    >
-                      <img src={img.url} alt={`Generated ${i + 1}`} className="w-full object-contain bg-slate-900" />
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1 flex items-center justify-between">
-                        <span className="text-[10px] text-slate-400">#{i + 1}</span>
-                        {img.width && <span className="text-[10px] text-slate-500">{img.width}×{img.height}</span>}
+                      {/* Prev / Next arrows */}
+                      {entry.images.length > 1 && (
+                        <>
+                          <button
+                            onClick={() => navigate(entry.id, 'prev')}
+                            className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/85 text-white transition-all backdrop-blur-sm"
+                          >
+                            <ChevronLeft size={22} />
+                          </button>
+                          <button
+                            onClick={() => navigate(entry.id, 'next')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/85 text-white transition-all backdrop-blur-sm"
+                          >
+                            <ChevronRight size={22} />
+                          </button>
+
+                          {/* Dot indicators */}
+                          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+                            {entry.images.map((_, i) => (
+                              <button
+                                key={i}
+                                onClick={() => goToIndex(entry.id, i)}
+                                className={`h-1.5 rounded-full transition-all ${
+                                  i === entry.currentIndex
+                                    ? 'bg-yellow-400 w-4'
+                                    : 'bg-white/40 w-1.5 hover:bg-white/70'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Top-right badges */}
+                      <div className="absolute top-2 right-2 flex items-center gap-1.5">
+                        {entry.images.length > 1 && (
+                          <span className="px-2 py-0.5 rounded-full bg-black/65 text-[10px] text-white font-bold backdrop-blur-sm">
+                            {entry.currentIndex + 1}/{entry.images.length}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => removeEntry(entry.id)}
+                          className="p-1 rounded-full bg-black/65 text-slate-400 hover:text-red-400 transition-all backdrop-blur-sm"
+                          title="Remove"
+                        >
+                          <Trash2 size={12} />
+                        </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
 
-              {/* Selected / single image */}
-              {selectedImage && (
-                <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-900">
-                  <img
-                    src={selectedImage.url}
-                    alt="Generated image"
-                    className="w-full object-contain max-h-[70vh]"
-                  />
-                  <div className="p-3 flex items-center justify-between border-t border-slate-800">
-                    <div className="text-xs text-slate-400 font-mono">
-                      {selectedImage.width && selectedImage.height
-                        ? `${selectedImage.width} × ${selectedImage.height} · ${outputFormat.toUpperCase()}`
-                        : outputFormat.toUpperCase()}
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => navigator.clipboard.writeText(selectedImage.url)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-all"
-                      >
-                        <Copy size={12} />
-                        Copy URL
-                      </button>
-                      <a
-                        href={selectedImage.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 text-xs transition-all"
-                      >
-                        <ExternalLink size={12} />
-                        Open
-                      </a>
+                    {/* Info bar */}
+                    <div className="p-3 border-t border-slate-800 space-y-2">
+                      <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
+                        {entry.prompt}
+                      </p>
+                      {entry.description && (
+                        <p className="text-[10px] text-slate-500 italic line-clamp-1">
+                          {entry.description}
+                        </p>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] text-slate-600 font-mono">
+                            {(entry.elapsed / 1000).toFixed(1)}s
+                          </span>
+                          {img.width && img.height && (
+                            <span className="text-[10px] text-slate-600 font-mono">
+                              {img.width}×{img.height}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-slate-700 font-mono truncate max-w-[100px]">
+                            {entry.requestId}
+                          </span>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => navigator.clipboard.writeText(img.url)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] transition-all"
+                          >
+                            <Copy size={10} />
+                            Copy URL
+                          </button>
+                          <a
+                            href={img.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 text-[10px] transition-all"
+                          >
+                            <ExternalLink size={10} />
+                            Open
+                          </a>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )
+              })}
             </div>
           )}
 
           {/* Empty state */}
-          {!result && !isGenerating && !error && (
+          {sessionFeed.length === 0 && !isGenerating && !error && (
             <div className="flex flex-col items-center justify-center h-96 rounded-xl border border-slate-800 bg-slate-900/20">
               <Layers size={48} className="text-slate-700 mb-4" />
               <p className="text-slate-500 font-medium">Set your parameters and generate</p>
-              <p className="text-slate-600 text-xs mt-1">fal-ai/nano-banana-2</p>
+              <p className="text-slate-600 text-xs mt-1">fal-ai/nano-banana-2 · Results stay in session feed</p>
             </div>
           )}
         </div>
