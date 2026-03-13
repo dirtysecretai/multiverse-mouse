@@ -173,6 +173,18 @@ export default function AdminPrototypePage() {
       features: ["All Params", "4K Support", "Web Search"],
       featureColors: ["bg-yellow-500/20 text-yellow-400", "bg-orange-500/20 text-orange-400", "bg-cyan-500/20 text-cyan-400"],
     },
+    {
+      name: "NanoBanana Pro 2 — Live",
+      description: "Live version of fal-ai/nano-banana-2. Full parameter control with aspect ratio, resolution, safety tolerance, web search, and seed.",
+      href: "/admin/nano-banana-2-live",
+      status: "Live",
+      statusColor: "text-green-400 bg-green-500/20",
+      gradient: "from-green-500/20 to-emerald-500/20",
+      border: "border-green-500/30 hover:border-green-400",
+      titleColor: "text-green-400",
+      features: ["All Params", "4K Support", "Web Search"],
+      featureColors: ["bg-green-500/20 text-green-400", "bg-emerald-500/20 text-emerald-400", "bg-cyan-500/20 text-cyan-400"],
+    },
   ]
 
   return (
