@@ -58,30 +58,14 @@ interface LoadingEntry {
   aspectRatio: string
 }
 
-// Read from storage synchronously (safe on client, returns fallback on server)
-function readLocal<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback
-  try {
-    const v = localStorage.getItem(key)
-    return v ? JSON.parse(v) : fallback
-  } catch { return fallback }
-}
-function readSession(key: string, fallback: number): number {
-  if (typeof window === 'undefined') return fallback
-  try { return parseInt(sessionStorage.getItem(key) || '') || fallback } catch { return fallback }
-}
+const PROMPT_KEY = 'nb2-prompt'
 
 export default function NanaBanana2PrototypePage() {
-  // Auth — read synchronously so there's never a loading flash
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return localStorage.getItem("multiverse-admin-auth") === "true" &&
-           !!sessionStorage.getItem("admin-password")
-  })
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [password, setPassword] = useState("")
 
   // Generation params
-  const [prompt, setPrompt] = useState("")
+  const [prompt, setPromptState] = useState("")
   const [aspectRatio, setAspectRatio] = useState("auto")
   const [resolution, setResolution] = useState<"0.5K" | "1K" | "2K" | "4K">("1K")
   const [numImages, setNumImages] = useState(1)
@@ -91,23 +75,54 @@ export default function NanaBanana2PrototypePage() {
   const [limitGenerations, setLimitGenerations] = useState(true)
   const [enableWebSearch, setEnableWebSearch] = useState(false)
 
-  // Feed — lazy-initialised from localStorage so the save effect never races
-  const [sessionFeed, setSessionFeed] = useState<CarouselEntry[]>(() =>
-    readLocal<CarouselEntry[]>(FEED_KEY, []).slice(0, MAX_FEED)
-  )
+  // Feed uses a RAW setter — only the explicit saveFeed wrapper saves to
+  // localStorage. This avoids the useEffect race where the effect fires on
+  // mount with [] (before the restore runs) and wipes saved data.
+  const [sessionFeed, setSessionFeedRaw] = useState<CarouselEntry[]>([])
   const [loadingEntries, setLoadingEntries] = useState<LoadingEntry[]>([])
-  // Slots blocked because the page was refreshed mid-generation
-  const [blockedSlots, setBlockedSlots] = useState<number>(() =>
-    readSession(ACTIVE_KEY, 0)
-  )
+  const [blockedSlots, setBlockedSlots] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
-  // ── Persist feed whenever it changes (no race — state starts correct) ─────
+  // ── Restore everything from storage once on mount (client-only) ───────────
   useEffect(() => {
+    // Auth
+    const authOk = localStorage.getItem("multiverse-admin-auth") === "true" &&
+                   !!sessionStorage.getItem("admin-password")
+    if (authOk) setIsAuthenticated(true)
+
+    // Session feed
     try {
-      localStorage.setItem(FEED_KEY, JSON.stringify(sessionFeed))
+      const saved = localStorage.getItem(FEED_KEY)
+      if (saved) setSessionFeedRaw(JSON.parse(saved).slice(0, MAX_FEED))
     } catch {}
-  }, [sessionFeed])
+
+    // Blocked slots (generations that were in-flight when user refreshed)
+    try {
+      const count = parseInt(sessionStorage.getItem(ACTIVE_KEY) || '0') || 0
+      if (count > 0) setBlockedSlots(count)
+    } catch {}
+
+    // Prompt
+    try {
+      const saved = sessionStorage.getItem(PROMPT_KEY)
+      if (saved) setPromptState(saved)
+    } catch {}
+  }, [])
+
+  // ── Explicit save wrapper — saves to localStorage on every real mutation ──
+  const setSessionFeed = (updater: CarouselEntry[] | ((prev: CarouselEntry[]) => CarouselEntry[])) => {
+    setSessionFeedRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      try { localStorage.setItem(FEED_KEY, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+
+  // ── Prompt: persist to sessionStorage on every keystroke ─────────────────
+  const setPrompt = (value: string) => {
+    setPromptState(value)
+    try { sessionStorage.setItem(PROMPT_KEY, value) } catch {}
+  }
 
   // ── Track active count in sessionStorage so refreshes see the right state ─
   const bumpActiveCount = (delta: number) => {
