@@ -152,6 +152,8 @@ export default function MultiversePortalLegacy() {
     aspectRatio: string
     timestamp: number
     referenceImages: string[]  // Store reference images used for this generation
+    names?: string[]           // AI prompt name fields (dev tier)
+    enhancements?: string[]    // AI prompt enhancement fields (dev tier)
     loading?: boolean  // For loading placeholders
     isVideo?: boolean  // True for video items
     videoUrl?: string  // Actual video URL for video items
@@ -696,6 +698,8 @@ export default function MultiversePortalLegacy() {
       aspectRatio,
       timestamp: Date.now(),
       referenceImages: [...referenceImages],
+      names: [...names],
+      enhancements: [...enhancements],
       loading: true
     }, ...prev].slice(0, MAX_FEED_SIZE))
 
@@ -767,7 +771,9 @@ export default function MultiversePortalLegacy() {
                   quality,
                   aspectRatio,
                   timestamp: Date.now(),
-                  referenceImages: [...referenceImages]
+                  referenceImages: [...referenceImages],
+                  names: [...names],
+                  enhancements: [...enhancements],
                 }, ...prev.filter(item => item.id !== loadingId)].slice(0, MAX_FEED_SIZE))
                 // Refresh balance — webhook just deducted the tickets
                 const ticketRes = await fetch(`/api/user/tickets?userId=${user!.id}`)
@@ -801,7 +807,9 @@ export default function MultiversePortalLegacy() {
             quality,
             aspectRatio,
             timestamp: Date.now(),
-            referenceImages: [...referenceImages]
+            referenceImages: [...referenceImages],
+            names: [...names],
+            enhancements: [...enhancements],
           }))
           setSessionFeed(prev => [...newFeedItems, ...prev.filter(item => item.id !== loadingId)].slice(0, MAX_FEED_SIZE))
         } else {
@@ -817,7 +825,9 @@ export default function MultiversePortalLegacy() {
             quality,
             aspectRatio,
             timestamp: Date.now(),
-            referenceImages: [...referenceImages]
+            referenceImages: [...referenceImages],
+            names: [...names],
+            enhancements: [...enhancements],
           }, ...prev.filter(item => item.id !== loadingId)].slice(0, MAX_FEED_SIZE))
         }
 
@@ -2044,6 +2054,8 @@ export default function MultiversePortalLegacy() {
                       setQuality(qual)
                       setAspectRatio(ratio as '1:1' | '4:5' | '9:16' | '16:9')
                       setReferenceImages(refImages)
+                      if (selectedFeedItem?.names) setNames(selectedFeedItem.names)
+                      if (selectedFeedItem?.enhancements) setEnhancements(selectedFeedItem.enhancements)
                       setShowImageModal(false)
                       setSelectedFeedItem(null)
                       setGeneratedImage(null)
