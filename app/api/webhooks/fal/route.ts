@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { put } from '@vercel/blob'
 import prisma from '@/lib/prisma'
+import { FAL_GLOBAL_ID, promoteNextQueuedJob } from '@/lib/fal-queue'
 
 // FAL.ai calls this endpoint when an async job completes or fails.
 // We must return 200 quickly — FAL.ai will retry on non-200 responses.
@@ -65,11 +66,18 @@ export async function POST(request: Request) {
         })
       ])
 
-      // Decrement active count
-      await prisma.modelConcurrencyLimit.updateMany({
-        where: { modelId: queueItem.modelId },
-        data: { currentActive: { decrement: 1 } }
-      })
+      // Decrement active counts (per-model + global) then open a slot for the next queued job
+      await Promise.all([
+        prisma.modelConcurrencyLimit.updateMany({
+          where: { modelId: queueItem.modelId },
+          data: { currentActive: { decrement: 1 } },
+        }),
+        prisma.modelConcurrencyLimit.updateMany({
+          where: { modelId: FAL_GLOBAL_ID },
+          data: { currentActive: { decrement: 1 } },
+        }),
+      ])
+      await promoteNextQueuedJob()
 
       console.log(`Queue item #${queueItem.id} marked as failed, tickets refunded`)
       return NextResponse.json({ received: true })
@@ -99,10 +107,17 @@ export async function POST(request: Request) {
             }
           })
         ])
-        await prisma.modelConcurrencyLimit.updateMany({
-          where: { modelId: queueItem.modelId },
-          data: { currentActive: { decrement: 1 } }
-        })
+        await Promise.all([
+          prisma.modelConcurrencyLimit.updateMany({
+            where: { modelId: queueItem.modelId },
+            data: { currentActive: { decrement: 1 } },
+          }),
+          prisma.modelConcurrencyLimit.updateMany({
+            where: { modelId: FAL_GLOBAL_ID },
+            data: { currentActive: { decrement: 1 } },
+          }),
+        ])
+        await promoteNextQueuedJob()
         return NextResponse.json({ received: true })
       }
 
@@ -173,10 +188,17 @@ export async function POST(request: Request) {
             }
           })
         ])
-        await prisma.modelConcurrencyLimit.updateMany({
-          where: { modelId: queueItem.modelId },
-          data: { currentActive: { decrement: 1 } }
-        })
+        await Promise.all([
+          prisma.modelConcurrencyLimit.updateMany({
+            where: { modelId: queueItem.modelId },
+            data: { currentActive: { decrement: 1 } },
+          }),
+          prisma.modelConcurrencyLimit.updateMany({
+            where: { modelId: FAL_GLOBAL_ID },
+            data: { currentActive: { decrement: 1 } },
+          }),
+        ])
+        await promoteNextQueuedJob()
         return NextResponse.json({ received: true })
       }
 
@@ -217,11 +239,18 @@ export async function POST(request: Request) {
         }
       })
 
-      // Decrement active count
-      await prisma.modelConcurrencyLimit.updateMany({
-        where: { modelId: queueItem.modelId },
-        data: { currentActive: { decrement: 1 } }
-      })
+      // Decrement active counts (per-model + global) then promote next queued job
+      await Promise.all([
+        prisma.modelConcurrencyLimit.updateMany({
+          where: { modelId: queueItem.modelId },
+          data: { currentActive: { decrement: 1 } },
+        }),
+        prisma.modelConcurrencyLimit.updateMany({
+          where: { modelId: FAL_GLOBAL_ID },
+          data: { currentActive: { decrement: 1 } },
+        }),
+      ])
+      await promoteNextQueuedJob()
 
       console.log(`=== WEBHOOK COMPLETE: Queue #${queueItem.id} done, ${uploadedImages.length} image(s) saved ===`)
       return NextResponse.json({ received: true })

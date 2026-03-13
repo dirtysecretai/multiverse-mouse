@@ -336,6 +336,71 @@ export async function POST(request: Request) {
           const appUrl = process.env.APP_URL || `https://${process.env.VERCEL_URL}`
           const webhookUrl = `${appUrl}/api/webhooks/fal`
 
+          // Reserve tickets upfront — same for both queued and immediate paths.
+          // The actual balance deduction only happens in the FAL webhook on success.
+          if (!skipTickets) {
+            await prisma.ticket.update({
+              where: { userId: user.id },
+              data: { reserved: { increment: ticketCost } }
+            })
+            reservationMade = true
+          }
+          const updatedTicket = await prisma.ticket.findUnique({ where: { userId: user.id } })
+          const newBalance = skipTickets
+            ? (ticketRecord?.balance || 0)
+            : Math.max(0, (updatedTicket?.balance || 0) - (updatedTicket?.reserved || 0))
+
+          // ── Check global FAL concurrency limit ───────────────────────
+          const { FAL_GLOBAL_ID } = await import('@/lib/fal-queue')
+          const globalLimit = await prisma.modelConcurrencyLimit.findUnique({
+            where: { modelId: FAL_GLOBAL_ID },
+          })
+          const isAtGlobalLimit =
+            globalLimit != null && globalLimit.currentActive >= globalLimit.maxConcurrent
+
+          if (isAtGlobalLimit) {
+            // ── QUEUED PATH: hold job in our DB, submit to FAL when a slot opens ──
+            const queueEntry = await prisma.generationQueue.create({
+              data: {
+                userId: user.id,
+                modelId: model,
+                modelType: 'image',
+                prompt: prompt.trim(),
+                parameters: {
+                  source: 'main-scanner',
+                  quality,
+                  aspectRatio,
+                  model,
+                  adminMode: skipTickets,
+                  referenceImageUrls: permanentReferenceUrls,
+                  // Stored so promoteNextQueuedJob can replay this job later
+                  falEndpoint: modelEndpoint,
+                  falInput: inputParams,
+                },
+                status: 'queued',
+                ticketCost: skipTickets ? 0 : ticketCost,
+                // falRequestId and startedAt are null until the job is promoted
+              },
+            })
+
+            console.log(
+              `[global-limit] At capacity (${globalLimit.currentActive}/${globalLimit.maxConcurrent}) — job #${queueEntry.id} queued`
+            )
+
+            return NextResponse.json({
+              success: true,
+              queued: true,
+              queueId: queueEntry.id,
+              newBalance,
+              message: skipTickets
+                ? `Admin scan queued — waiting for a free generation slot.`
+                : `Universe scan queued! ${ticketCost} ticket(s) reserved — generation begins when a slot opens.`,
+              modelUsed: selectedModel.displayName,
+              ticketsUsed: skipTickets ? 0 : ticketCost,
+            })
+          }
+
+          // ── IMMEDIATE PATH: submit to FAL now ───────────────────────
           console.log(`Submitting to FAL.ai queue: ${modelEndpoint}`)
           console.log(`Webhook URL: ${webhookUrl}`)
 
@@ -345,23 +410,6 @@ export async function POST(request: Request) {
           })
 
           console.log(`FAL.ai accepted job, request_id: ${request_id}`)
-
-          // Reserve tickets — do NOT decrement balance yet.
-          // The balance is only decremented by the webhook once FAL.ai confirms
-          // the image was delivered. On failure the reservation is simply released,
-          // so no tickets are ever lost to a failed or missing webhook.
-          if (!skipTickets) {
-            await prisma.ticket.update({
-              where: { userId: user.id },
-              data: { reserved: { increment: ticketCost } }
-            })
-            reservationMade = true
-          }
-
-          // Fetch updated ticket record so we can return the current effective balance
-          const updatedTicket = await prisma.ticket.findUnique({
-            where: { userId: user.id }
-          })
 
           // Create queue entry
           const queueEntry = await prisma.generationQueue.create({
@@ -385,19 +433,20 @@ export async function POST(request: Request) {
             }
           })
 
-          // Increment active count for this model
-          await prisma.modelConcurrencyLimit.updateMany({
-            where: { modelId: model },
-            data: { currentActive: { increment: 1 } }
-          })
+          // Increment active counts — per-model AND global
+          await Promise.all([
+            prisma.modelConcurrencyLimit.updateMany({
+              where: { modelId: model },
+              data: { currentActive: { increment: 1 } },
+            }),
+            prisma.modelConcurrencyLimit.updateMany({
+              where: { modelId: FAL_GLOBAL_ID },
+              data: { currentActive: { increment: 1 } },
+            }),
+          ])
 
           console.log(`Queue entry created: #${queueEntry.id}`)
           console.log('=== FAL.AI JOB SUBMITTED — AWAITING WEBHOOK ===')
-
-          // Effective balance = balance minus all reserved tickets (including this new one)
-          const newBalance = skipTickets
-            ? (ticketRecord?.balance || 0)
-            : Math.max(0, (updatedTicket?.balance || 0) - (updatedTicket?.reserved || 0))
 
           return NextResponse.json({
             success: true,

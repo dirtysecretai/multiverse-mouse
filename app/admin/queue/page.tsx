@@ -370,9 +370,65 @@ export default function AdminQueuePage() {
 
               {falOpen && (
                 <div className="px-5 pb-5 space-y-4">
-                  {/* Image models — non-Gemini */}
+                  {/* Global FAL.ai limit — shown prominently at top */}
+                  {(() => {
+                    const modelId = 'fal-global';
+                    const existingLimit = limits.find(l => l.modelId === modelId);
+                    const currentLimit = existingLimit?.maxConcurrent;
+                    const displayLimit = currentLimit === 999 ? 'No Limit' : currentLimit ? `${currentLimit}` : 'No Limit';
+                    return (
+                      <div className="p-4 rounded-xl border-2 border-cyan-500/60 bg-cyan-500/5">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="text-sm font-black text-cyan-300">GLOBAL FAL.AI LIMIT</h3>
+                              <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 text-xs font-bold">COMBINED</span>
+                            </div>
+                            <p className="text-xs text-slate-400">Total concurrent generations across all FAL.ai models</p>
+                          </div>
+                          {existingLimit && (
+                            <span className={`px-3 py-1 rounded text-sm font-black ${
+                              currentLimit !== 999 && existingLimit.currentActive >= existingLimit.maxConcurrent
+                                ? 'bg-red-500/20 text-red-400'
+                                : 'bg-cyan-500/20 text-cyan-300'
+                            }`}>
+                              {existingLimit.currentActive}/{displayLimit}
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400 whitespace-nowrap">Current limit:</span>
+                            <span className="text-sm font-bold text-cyan-400">{displayLimit} concurrent</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              max="99"
+                              value={tempLimits[modelId] ?? ''}
+                              onChange={(e) => setTempLimits(prev => ({ ...prev, [modelId]: e.target.value }))}
+                              placeholder="0-99 (0=no limit)"
+                              className="flex-1 px-2 py-1.5 rounded bg-slate-950 border border-cyan-500/50 text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                            />
+                            <button
+                              onClick={() => saveLimit(modelId, 'image')}
+                              className="px-4 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-black"
+                            >
+                              Set
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">
+                            When this limit is reached, new scans are queued and start automatically as slots free up.
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Per-model image models — non-Gemini */}
                   <div>
-                    <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Image Models</p>
+                    <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Per-Model Limits (Individual)</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {AI_MODELS.filter(m => m.isAvailable && m.provider !== 'gemini').map((model) => {
                         const existingLimit = limits.find(l => l.modelId === model.id);

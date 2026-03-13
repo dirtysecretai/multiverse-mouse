@@ -3,7 +3,10 @@ import prisma from '@/lib/prisma';
 
 // Default model configurations
 const DEFAULT_MODELS = [
-  // Image models
+  // Global FAL.ai concurrency cap (applies to all FAL models combined)
+  { modelId: 'fal-global', modelType: 'image', maxConcurrent: 30 },
+
+  // Individual FAL.ai image models
   { modelId: 'nano-banana', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'nano-banana-pro', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'nano-banana-2', modelType: 'image', maxConcurrent: 999 },

@@ -50,17 +50,24 @@ export async function GET(request: Request) {
 // Recalculate currentActive for every model from the actual count of
 // 'processing' queue rows.  This is the only source of truth and prevents
 // the counter from going negative due to double-decrements.
+// The synthetic 'fal-global' limit tracks the total across ALL FAL models
+// (all queue entries are FAL jobs; Gemini is synchronous and has no queue rows).
 export async function syncActiveCounters() {
-  const processingByModel = await prisma.generationQueue.groupBy({
-    by: ['modelId'],
-    where: { status: 'processing' },
-    _count: { id: true },
-  });
+  const [processingByModel, totalFalProcessing] = await Promise.all([
+    prisma.generationQueue.groupBy({
+      by: ['modelId'],
+      where: { status: 'processing' },
+      _count: { id: true },
+    }),
+    prisma.generationQueue.count({ where: { status: 'processing' } }),
+  ]);
 
   const actualCounts: Record<string, number> = {};
   for (const row of processingByModel) {
     actualCounts[row.modelId] = row._count.id;
   }
+
+  const { FAL_GLOBAL_ID } = await import('@/lib/fal-queue');
 
   const allLimits = await prisma.modelConcurrencyLimit.findMany({
     select: { modelId: true, currentActive: true },
@@ -68,7 +75,11 @@ export async function syncActiveCounters() {
 
   await Promise.all(
     allLimits.map(limit => {
-      const actual = actualCounts[limit.modelId] ?? 0;
+      // fal-global uses the total processing count across all FAL models
+      const actual =
+        limit.modelId === FAL_GLOBAL_ID
+          ? totalFalProcessing
+          : (actualCounts[limit.modelId] ?? 0);
       if (limit.currentActive !== actual) {
         return prisma.modelConcurrencyLimit.update({
           where: { modelId: limit.modelId },
