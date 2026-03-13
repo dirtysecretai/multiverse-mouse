@@ -110,11 +110,35 @@ export default function SeedDream5LiteEditPage() {
       if (!file.type.startsWith('image/')) return
       const reader = new FileReader()
       reader.onload = (e) => {
-        const base64 = e.target?.result as string
-        setUploadedImages(prev => [
-          ...prev,
-          { base64, preview: base64, name: file.name },
-        ])
+        const originalDataUrl = e.target?.result as string
+        // Resize to max 2048px on the longest side before encoding.
+        // 4K images produce ~10–20 MB base64 strings that exceed Vercel's
+        // 4.5 MB serverless request body limit.
+        const img = new window.Image()
+        img.onload = () => {
+          const MAX_DIM = 2048
+          let { width, height } = img
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width >= height) {
+              height = Math.round(height * MAX_DIM / width)
+              width = MAX_DIM
+            } else {
+              width = Math.round(width * MAX_DIM / height)
+              height = MAX_DIM
+            }
+          }
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')!
+          ctx.drawImage(img, 0, 0, width, height)
+          const base64 = canvas.toDataURL('image/jpeg', 0.88)
+          setUploadedImages(prev => [
+            ...prev,
+            { base64, preview: base64, name: file.name },
+          ])
+        }
+        img.src = originalDataUrl
       }
       reader.readAsDataURL(file)
     })
