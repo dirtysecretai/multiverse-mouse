@@ -22,22 +22,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
     }
 
-    // Upload reference images to FAL temporary storage
-    const imageUrls: string[] = []
-    for (let i = 0; i < Math.min(images_base64.length, 10); i++) {
-      const base64 = images_base64[i]
-      try {
-        const base64Data = base64.split(',')[1] || base64
-        const buffer = Buffer.from(base64Data, 'base64')
-        const blob = new Blob([buffer], { type: 'image/jpeg' })
-        const url = await fal.storage.upload(blob)
-        imageUrls.push(url)
-      } catch (uploadErr) {
-        console.error(`Failed to upload image ${i + 1}:`, uploadErr)
-      }
-    }
-
-    // Build input params
+    // Build input — pass base64 data URIs directly to image_urls.
+    // The FAL API explicitly supports data URIs as file inputs, so no
+    // intermediate upload step is needed (and avoids upload failures).
     const input: Record<string, unknown> = {
       prompt: prompt.trim(),
       num_images: Math.min(Math.max(1, parseInt(String(num_images)) || 1), 8),
@@ -45,7 +32,7 @@ export async function POST(req: Request) {
       enable_safety_checker,
     }
 
-    // Image size — custom or preset enum
+    // Image size — custom object or preset enum string
     if (image_size === 'custom' && custom_width && custom_height) {
       input.image_size = {
         width: parseInt(String(custom_width)),
@@ -55,23 +42,52 @@ export async function POST(req: Request) {
       input.image_size = image_size
     }
 
-    // Add image URLs if provided
-    if (imageUrls.length > 0) {
-      input.image_urls = imageUrls
+    // Add reference images as data URIs (FAL natively handles decoding)
+    const dataUris: string[] = images_base64
+      .slice(0, 10)
+      .filter((uri: any) => typeof uri === 'string' && uri.length > 0)
+      .map((uri: string) => {
+        // Ensure the URI has a proper data: prefix
+        if (uri.startsWith('data:')) return uri
+        return `data:image/jpeg;base64,${uri}`
+      })
+
+    if (dataUris.length > 0) {
+      input.image_urls = dataUris
     }
 
     console.log('SeedDream 5 Lite Edit request:', JSON.stringify({
       ...input,
-      image_urls: `[${imageUrls.length} URLs]`,
+      image_urls: `[${dataUris.length} data URIs]`,
     }))
 
-    const start = Date.now()
-    const result = await fal.subscribe('fal-ai/bytedance/seedream/v5/lite/edit', {
-      input,
-      logs: false,
-    })
-    const elapsed = Date.now() - start
+    let result: any
+    try {
+      const start = Date.now()
+      result = await fal.subscribe('fal-ai/bytedance/seedream/v5/lite/edit', {
+        input,
+        logs: false,
+      })
+      const elapsed = Date.now() - start
+      result._elapsed = elapsed
+    } catch (falError: any) {
+      // Surface the full FAL validation detail so it's visible in logs
+      console.error('FAL API error:', {
+        message: falError.message,
+        status: falError.status,
+        body: JSON.stringify(falError.body),
+      })
+      const detail = falError.body?.detail
+      const detailMsg = Array.isArray(detail)
+        ? detail.map((d: any) => `${d.loc?.join('.')} — ${d.msg}`).join('; ')
+        : null
+      return NextResponse.json(
+        { error: detailMsg || falError.message || 'Generation failed' },
+        { status: 500 }
+      )
+    }
 
+    const elapsed: number = result._elapsed ?? 0
     const falImages: { url: string; width?: number; height?: number }[] =
       (result.data as any).images || []
     const seed: number | undefined = (result.data as any).seed
