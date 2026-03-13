@@ -22,6 +22,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
     }
 
+    if (!images_base64?.length) {
+      return NextResponse.json({ error: 'At least one reference image is required (image_urls is required by this model)' }, { status: 400 })
+    }
+
     // Build input — pass base64 data URIs directly to image_urls.
     // The FAL API explicitly supports data URIs as file inputs, so no
     // intermediate upload step is needed (and avoids upload failures).

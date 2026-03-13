@@ -344,8 +344,8 @@ export default function SeedDream5LiteEditPage() {
             )}
 
             {uploadedImages.length === 0 && (
-              <p className="text-[10px] text-slate-600 text-center">
-                No images added — model will generate from prompt only
+              <p className="text-[10px] text-amber-600 text-center">
+                At least 1 image required — this model cannot run without a reference
               </p>
             )}
           </div>
@@ -508,9 +508,9 @@ export default function SeedDream5LiteEditPage() {
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
-            disabled={isGenerating || !prompt.trim()}
+            disabled={isGenerating || !prompt.trim() || uploadedImages.length === 0}
             className={`w-full py-4 rounded-xl font-black text-sm tracking-widest transition-all ${
-              isGenerating || !prompt.trim()
+              isGenerating || !prompt.trim() || uploadedImages.length === 0
                 ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
                 : 'bg-gradient-to-r from-teal-500 to-cyan-500 text-black hover:from-teal-400 hover:to-cyan-400 shadow-lg shadow-teal-500/20'
             }`}
