@@ -118,6 +118,7 @@ export default function MultiversePortalLegacy() {
   const [aspectRatio, setAspectRatio] = useState<'1:1' | '4:5' | '9:16' | '16:9'>('16:9')
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationQueue, setGenerationQueue] = useState(0) // Track concurrent generations (max 3)
+  const generationQueueRef = useRef(0) // Synchronous gate — prevents stale-closure exploit on rapid clicks
   // 6-slot grid: each entry is { id: loadingId, prompt } while loading, or null when empty
   const [activeSlots, setActiveSlots] = useState<Array<{id: string, prompt: string} | null>>([null, null, null, null, null, null])
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
@@ -644,8 +645,8 @@ export default function MultiversePortalLegacy() {
       return
     }
 
-    // Check queue limit
-    if (generationQueue >= MAX_QUEUE_SIZE) {
+    // Check queue limit — use ref for synchronous gate (useState is stale in rapid-click closures)
+    if (generationQueueRef.current >= MAX_QUEUE_SIZE) {
       setGenerationError(`Generation queue full (max ${MAX_QUEUE_SIZE}). Please wait for current scans to complete.`)
       return
     }
@@ -659,6 +660,7 @@ export default function MultiversePortalLegacy() {
     }
 
     setIsGenerating(true)
+    generationQueueRef.current++ // Increment ref synchronously before any await
     setGenerationQueue(prev => prev + 1) // Add to queue
     setGenerationError(null)
     setGeneratedImage(null)
@@ -839,6 +841,7 @@ export default function MultiversePortalLegacy() {
       // Skip if an async FAL job is polling — that interval owns state cleanup
       if (!isQueuedAsync) {
         setIsGenerating(false)
+        generationQueueRef.current = Math.max(0, generationQueueRef.current - 1) // Decrement ref synchronously
         setGenerationQueue(prev => Math.max(0, prev - 1)) // Remove from queue
         setActiveSlots(prev => prev.map(s => s?.id === loadingId ? null : s))
       }
