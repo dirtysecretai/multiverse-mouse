@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Play, Pause, Trash2, RefreshCw, Settings, AlertCircle, CheckCircle, Clock, Zap } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Trash2, RefreshCw, Settings, AlertCircle, CheckCircle, Clock, Zap, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { AI_MODELS } from '@/config/ai-models.config';
 
@@ -55,6 +55,8 @@ export default function AdminQueuePage() {
   const [loading, setLoading] = useState(true);
   const [modelLimits, setModelLimits] = useState<Record<string, number>>({});
   const [tempLimits, setTempLimits] = useState<Record<string, number | string>>({});
+  const [falOpen, setFalOpen] = useState(false);
+  const [geminiOpen, setGeminiOpen] = useState(false);
 
   useEffect(() => {
     const authStatus = localStorage.getItem('multiverse-admin-auth');
@@ -322,133 +324,224 @@ export default function AdminQueuePage() {
             <p className="text-xs text-slate-400">Set max concurrent generations per model</p>
           </div>
 
-          <div className="space-y-6">
-            {/* Image Models */}
-            <div>
-              <h3 className="text-sm font-bold text-purple-400 mb-3 flex items-center gap-2">
-                <span className="px-2 py-1 rounded bg-purple-500/20 text-purple-300 text-xs">IMAGE MODELS</span>
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {AI_MODELS.filter(m => m.isAvailable).map((model) => {
-                  const existingLimit = limits.find(l => l.modelId === model.id);
-                  const currentLimit = existingLimit?.maxConcurrent;
-                  const displayLimit = currentLimit === 999 ? 'No Limit' : currentLimit ? `${currentLimit}` : 'No Limit';
+          <div className="space-y-3">
 
-                  return (
-                    <div
-                      key={model.id}
-                      className="p-4 rounded-lg border border-slate-700 bg-slate-800/50"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <h3 className="text-sm font-bold text-white">{model.displayName}</h3>
-                          <p className="text-xs text-slate-400">{model.id}</p>
-                          <p className="text-xs text-slate-500 mt-1">{model.ticketCost} tickets</p>
-                        </div>
-                        {existingLimit && (
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${
-                            currentLimit !== 999 && existingLimit.currentActive >= existingLimit.maxConcurrent
-                              ? 'bg-red-500/20 text-red-400'
-                              : 'bg-green-500/20 text-green-400'
-                          }`}>
-                            {existingLimit.currentActive}/{displayLimit}
-                          </span>
-                        )}
-                      </div>
+            {/* ── FAL.ai Models (collapsible) ───────────────────────────── */}
+            <div className="rounded-xl border border-orange-500/30 bg-slate-800/40 overflow-hidden">
+              <button
+                onClick={() => setFalOpen(o => !o)}
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-700/40 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="px-2 py-1 rounded bg-orange-500/20 text-orange-300 text-xs font-bold tracking-wider">FAL.AI</span>
+                  <span className="text-sm font-bold text-orange-300">
+                    FAL.ai Models
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    ({AI_MODELS.filter(m => m.isAvailable && m.provider !== 'gemini').length + 2} models incl. video)
+                  </span>
+                </div>
+                <ChevronDown
+                  size={18}
+                  className={`text-orange-400 transition-transform duration-200 ${falOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
 
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-400 whitespace-nowrap">Current:</span>
-                          <span className="text-sm font-bold text-cyan-400">{displayLimit}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <input
-                            type="number"
-                            min="0"
-                            max="99"
-                            value={tempLimits[model.id] ?? ''}
-                            onChange={(e) => setTempLimits(prev => ({ ...prev, [model.id]: e.target.value }))}
-                            placeholder="0-99 (0=no limit)"
-                            className="flex-1 px-2 py-1.5 rounded bg-slate-950 border border-cyan-500/30 text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                          />
-                          <button
-                            onClick={() => saveLimit(model.id, 'image')}
-                            className="px-4 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold"
-                          >
-                            Set
-                          </button>
-                        </div>
-                      </div>
+              {falOpen && (
+                <div className="px-5 pb-5 space-y-4">
+                  {/* Image models — non-Gemini */}
+                  <div>
+                    <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Image Models</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {AI_MODELS.filter(m => m.isAvailable && m.provider !== 'gemini').map((model) => {
+                        const existingLimit = limits.find(l => l.modelId === model.id);
+                        const currentLimit = existingLimit?.maxConcurrent;
+                        const displayLimit = currentLimit === 999 ? 'No Limit' : currentLimit ? `${currentLimit}` : 'No Limit';
+                        return (
+                          <div key={model.id} className="p-4 rounded-lg border border-slate-700 bg-slate-800/50">
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1">
+                                <h3 className="text-sm font-bold text-white">{model.displayName}</h3>
+                                <p className="text-xs text-slate-400">{model.id}</p>
+                                <p className="text-xs text-slate-500 mt-1">{model.ticketCost} tickets</p>
+                              </div>
+                              {existingLimit && (
+                                <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                  currentLimit !== 999 && existingLimit.currentActive >= existingLimit.maxConcurrent
+                                    ? 'bg-red-500/20 text-red-400'
+                                    : 'bg-green-500/20 text-green-400'
+                                }`}>
+                                  {existingLimit.currentActive}/{displayLimit}
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-400 whitespace-nowrap">Current:</span>
+                                <span className="text-sm font-bold text-cyan-400">{displayLimit}</span>
+                              </div>
+                              <div className="flex gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="99"
+                                  value={tempLimits[model.id] ?? ''}
+                                  onChange={(e) => setTempLimits(prev => ({ ...prev, [model.id]: e.target.value }))}
+                                  placeholder="0-99 (0=no limit)"
+                                  className="flex-1 px-2 py-1.5 rounded bg-slate-950 border border-cyan-500/30 text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                />
+                                <button
+                                  onClick={() => saveLimit(model.id, 'image')}
+                                  className="px-4 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold"
+                                >
+                                  Set
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+
+                  {/* Video models */}
+                  <div>
+                    <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Video Models</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {[
+                        { id: 'wan-2.5', displayName: 'Wan 2.5', ticketCost: 10 },
+                        { id: 'kling-v3', displayName: 'Kling 3.0', ticketCost: 10 },
+                      ].map((model) => {
+                        const existingLimit = limits.find(l => l.modelId === model.id);
+                        const currentLimit = existingLimit?.maxConcurrent;
+                        const displayLimit = currentLimit === 999 ? 'No Limit' : currentLimit ? `${currentLimit}` : 'No Limit';
+                        return (
+                          <div key={model.id} className="p-4 rounded-lg border border-slate-700 bg-slate-800/50">
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1">
+                                <h3 className="text-sm font-bold text-white">{model.displayName}</h3>
+                                <p className="text-xs text-slate-400">{model.id}</p>
+                                <p className="text-xs text-slate-500 mt-1">{model.ticketCost} tickets</p>
+                              </div>
+                              {existingLimit && (
+                                <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                  currentLimit !== 999 && existingLimit.currentActive >= existingLimit.maxConcurrent
+                                    ? 'bg-red-500/20 text-red-400'
+                                    : 'bg-green-500/20 text-green-400'
+                                }`}>
+                                  {existingLimit.currentActive}/{displayLimit}
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-400 whitespace-nowrap">Current:</span>
+                                <span className="text-sm font-bold text-cyan-400">{displayLimit}</span>
+                              </div>
+                              <div className="flex gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="99"
+                                  value={tempLimits[model.id] ?? ''}
+                                  onChange={(e) => setTempLimits(prev => ({ ...prev, [model.id]: e.target.value }))}
+                                  placeholder="0-99 (0=no limit)"
+                                  className="flex-1 px-2 py-1.5 rounded bg-slate-950 border border-cyan-500/30 text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                />
+                                <button
+                                  onClick={() => saveLimit(model.id, 'video')}
+                                  className="px-4 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold"
+                                >
+                                  Set
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Video Models */}
-            <div>
-              <h3 className="text-sm font-bold text-pink-400 mb-3 flex items-center gap-2">
-                <span className="px-2 py-1 rounded bg-pink-500/20 text-pink-300 text-xs">VIDEO MODELS</span>
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {[
-                  { id: 'wan-2.5', displayName: 'Wan 2.5', ticketCost: 10 },
-                  { id: 'kling-v3', displayName: 'Kling 3.0', ticketCost: 10 },
-                ].map((model) => {
-                  const existingLimit = limits.find(l => l.modelId === model.id);
-                  const currentLimit = existingLimit?.maxConcurrent;
-                  const displayLimit = currentLimit === 999 ? 'No Limit' : currentLimit ? `${currentLimit}` : 'No Limit';
+            {/* ── Gemini Models (collapsible) ───────────────────────────── */}
+            <div className="rounded-xl border border-blue-500/30 bg-slate-800/40 overflow-hidden">
+              <button
+                onClick={() => setGeminiOpen(o => !o)}
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-700/40 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="px-2 py-1 rounded bg-blue-500/20 text-blue-300 text-xs font-bold tracking-wider">GEMINI</span>
+                  <span className="text-sm font-bold text-blue-300">
+                    Gemini Models
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    (Pro Scanner v3, Flash Scanner v2.5)
+                  </span>
+                </div>
+                <ChevronDown
+                  size={18}
+                  className={`text-blue-400 transition-transform duration-200 ${geminiOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
 
-                  return (
-                    <div
-                      key={model.id}
-                      className="p-4 rounded-lg border border-slate-700 bg-slate-800/50"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <h3 className="text-sm font-bold text-white">{model.displayName}</h3>
-                          <p className="text-xs text-slate-400">{model.id}</p>
-                          <p className="text-xs text-slate-500 mt-1">{model.ticketCost} tickets</p>
+              {geminiOpen && (
+                <div className="px-5 pb-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {AI_MODELS.filter(m => m.isAvailable && m.provider === 'gemini').map((model) => {
+                      const existingLimit = limits.find(l => l.modelId === model.id);
+                      const currentLimit = existingLimit?.maxConcurrent;
+                      const displayLimit = currentLimit === 999 ? 'No Limit' : currentLimit ? `${currentLimit}` : 'No Limit';
+                      return (
+                        <div key={model.id} className="p-4 rounded-lg border border-slate-700 bg-slate-800/50">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <h3 className="text-sm font-bold text-white">{model.displayName}</h3>
+                              <p className="text-xs text-slate-400">{model.id}</p>
+                              <p className="text-xs text-slate-500 mt-1">{model.ticketCost} tickets</p>
+                            </div>
+                            {existingLimit && (
+                              <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                currentLimit !== 999 && existingLimit.currentActive >= existingLimit.maxConcurrent
+                                  ? 'bg-red-500/20 text-red-400'
+                                  : 'bg-green-500/20 text-green-400'
+                              }`}>
+                                {existingLimit.currentActive}/{displayLimit}
+                              </span>
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-400 whitespace-nowrap">Current:</span>
+                              <span className="text-sm font-bold text-cyan-400">{displayLimit}</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <input
+                                type="number"
+                                min="0"
+                                max="99"
+                                value={tempLimits[model.id] ?? ''}
+                                onChange={(e) => setTempLimits(prev => ({ ...prev, [model.id]: e.target.value }))}
+                                placeholder="0-99 (0=no limit)"
+                                className="flex-1 px-2 py-1.5 rounded bg-slate-950 border border-cyan-500/30 text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                              />
+                              <button
+                                onClick={() => saveLimit(model.id, 'image')}
+                                className="px-4 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold"
+                              >
+                                Set
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                        {existingLimit && (
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${
-                            currentLimit !== 999 && existingLimit.currentActive >= existingLimit.maxConcurrent
-                              ? 'bg-red-500/20 text-red-400'
-                              : 'bg-green-500/20 text-green-400'
-                          }`}>
-                            {existingLimit.currentActive}/{displayLimit}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-400 whitespace-nowrap">Current:</span>
-                          <span className="text-sm font-bold text-cyan-400">{displayLimit}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <input
-                            type="number"
-                            min="0"
-                            max="99"
-                            value={tempLimits[model.id] ?? ''}
-                            onChange={(e) => setTempLimits(prev => ({ ...prev, [model.id]: e.target.value }))}
-                            placeholder="0-99 (0=no limit)"
-                            className="flex-1 px-2 py-1.5 rounded bg-slate-950 border border-cyan-500/30 text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                          />
-                          <button
-                            onClick={() => saveLimit(model.id, 'video')}
-                            className="px-4 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold"
-                          >
-                            Set
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
+
           </div>
         </div>
 
