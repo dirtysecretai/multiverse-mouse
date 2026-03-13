@@ -5,7 +5,9 @@ import { put } from '@vercel/blob'
 fal.config({ credentials: process.env.FAL_KEY })
 
 export async function POST(req: Request) {
+  let step = 'init'
   try {
+    step = 'parse-body'
     const body = await req.json()
     const {
       prompt,
@@ -56,9 +58,8 @@ export async function POST(req: Request) {
     }
     // auto_2K: omit — it's FAL's default
 
-    // Upload reference images to Vercel Blob and pass HTTPS URLs.
-    // FAL's image_urls field is validated as a URL string — data URIs fail
-    // the pattern check, so we must supply real HTTPS URLs.
+    // Upload reference images to FAL's own storage so the resulting URLs
+    // are guaranteed to pass FAL's URL pattern validator.
     const validUris: string[] = (images_base64 as any[])
       .slice(0, 10)
       .filter((uri: any) => typeof uri === 'string' && uri.length > 0)
@@ -71,11 +72,12 @@ export async function POST(req: Request) {
       const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg'
       const base64Data = uri.replace(/^data:[^;]+;base64,/, '')
       const buffer = Buffer.from(base64Data, 'base64')
-      const blobResult = await put(`sd5-ref-${Date.now()}-${i}.${ext}`, buffer, {
-        access: 'public',
-        contentType: mimeType,
-      })
-      imageUrls.push(blobResult.url)
+      const file = new File([buffer], `ref-${i}.${ext}`, { type: mimeType })
+      step = `fal-storage-upload-${i}`
+      console.log(`Uploading ref image ${i + 1}/${validUris.length} to FAL storage (${buffer.length} bytes)`)
+      const falUrl = await fal.storage.upload(file)
+      console.log(`Ref image ${i + 1} uploaded: ${falUrl}`)
+      imageUrls.push(falUrl)
     }
 
     if (imageUrls.length > 0) {
@@ -84,9 +86,10 @@ export async function POST(req: Request) {
 
     console.log('SeedDream 5 Lite Edit request:', JSON.stringify({
       ...input,
-      image_urls: imageUrls.length > 0 ? imageUrls : undefined,
+      image_urls: imageUrls,
     }))
 
+    step = 'fal-subscribe'
     let result: any
     try {
       const start = Date.now()
@@ -163,9 +166,9 @@ export async function POST(req: Request) {
       requestId: result.requestId,
     })
   } catch (error: any) {
-    console.error('SeedDream 5 Lite Edit outer error:', error)
+    console.error(`SeedDream 5 Lite Edit outer error at step [${step}]:`, error)
     return NextResponse.json(
-      { error: `Outer error: ${error.message || 'Generation failed'} | stack: ${error.stack?.split('\n')[1] || ''}` },
+      { error: `[${step}] ${error.message || 'Generation failed'}` },
       { status: 500 }
     )
   }
