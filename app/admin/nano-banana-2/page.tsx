@@ -58,9 +58,26 @@ interface LoadingEntry {
   aspectRatio: string
 }
 
+// Read from storage synchronously (safe on client, returns fallback on server)
+function readLocal<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const v = localStorage.getItem(key)
+    return v ? JSON.parse(v) : fallback
+  } catch { return fallback }
+}
+function readSession(key: string, fallback: number): number {
+  if (typeof window === 'undefined') return fallback
+  try { return parseInt(sessionStorage.getItem(key) || '') || fallback } catch { return fallback }
+}
+
 export default function NanaBanana2PrototypePage() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
+  // Auth — read synchronously so there's never a loading flash
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem("multiverse-admin-auth") === "true" &&
+           !!sessionStorage.getItem("admin-password")
+  })
   const [password, setPassword] = useState("")
 
   // Generation params
@@ -74,36 +91,18 @@ export default function NanaBanana2PrototypePage() {
   const [limitGenerations, setLimitGenerations] = useState(true)
   const [enableWebSearch, setEnableWebSearch] = useState(false)
 
-  // Feed + concurrent state
-  const [sessionFeed, setSessionFeed] = useState<CarouselEntry[]>([])
+  // Feed — lazy-initialised from localStorage so the save effect never races
+  const [sessionFeed, setSessionFeed] = useState<CarouselEntry[]>(() =>
+    readLocal<CarouselEntry[]>(FEED_KEY, []).slice(0, MAX_FEED)
+  )
   const [loadingEntries, setLoadingEntries] = useState<LoadingEntry[]>([])
   // Slots blocked because the page was refreshed mid-generation
-  const [blockedSlots, setBlockedSlots] = useState(0)
+  const [blockedSlots, setBlockedSlots] = useState<number>(() =>
+    readSession(ACTIVE_KEY, 0)
+  )
   const [error, setError] = useState<string | null>(null)
 
-  // ── Restore on mount ──────────────────────────────────────────────────────
-  useEffect(() => {
-    // Auth
-    const authStatus = localStorage.getItem("multiverse-admin-auth")
-    const savedPassword = sessionStorage.getItem("admin-password")
-    if (authStatus === "true" && savedPassword) setIsAuthenticated(true)
-
-    // Restore session feed
-    try {
-      const saved = localStorage.getItem(FEED_KEY)
-      if (saved) setSessionFeed(JSON.parse(saved).slice(0, MAX_FEED))
-    } catch {}
-
-    // Restore blocked slots from a previous interrupted generation
-    try {
-      const count = parseInt(sessionStorage.getItem(ACTIVE_KEY) || '0') || 0
-      if (count > 0) setBlockedSlots(count)
-    } catch {}
-
-    setIsLoading(false)
-  }, [])
-
-  // ── Persist feed to localStorage on every change ──────────────────────────
+  // ── Persist feed whenever it changes (no race — state starts correct) ─────
   useEffect(() => {
     try {
       localStorage.setItem(FEED_KEY, JSON.stringify(sessionFeed))
@@ -210,14 +209,6 @@ export default function NanaBanana2PrototypePage() {
   const clearSeed = () => setSeed("")
 
   // ── Auth gate ─────────────────────────────────────────────────────────────
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#050810] flex items-center justify-center">
-        <div className="text-yellow-400 font-mono animate-pulse">Loading...</div>
-      </div>
-    )
-  }
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
