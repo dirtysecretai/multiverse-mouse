@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
 import { put } from '@vercel/blob'
+
 import { PrismaClient } from '@prisma/client'
 
 fal.config({ credentials: process.env.FAL_KEY })
