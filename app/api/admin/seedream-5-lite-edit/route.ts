@@ -36,12 +36,20 @@ export async function POST(req: Request) {
       enable_safety_checker,
     }
 
-    // Image size — custom object or preset enum string
+    // Image size — custom object or preset enum string.
+    // auto_2K / auto_3K use a capital letter which may fail FAL's string pattern
+    // validator. Map them to explicit custom sizes instead.
+    const AUTO_SIZE_MAP: Record<string, { width: number; height: number }> = {
+      'auto_2K': { width: 2048, height: 2048 },
+      'auto_3K': { width: 3072, height: 3072 },
+    }
     if (image_size === 'custom' && custom_width && custom_height) {
       input.image_size = {
         width: parseInt(String(custom_width)),
         height: parseInt(String(custom_height)),
       }
+    } else if (AUTO_SIZE_MAP[image_size]) {
+      input.image_size = AUTO_SIZE_MAP[image_size]
     } else {
       input.image_size = image_size
     }
@@ -94,11 +102,18 @@ export async function POST(req: Request) {
         body: JSON.stringify(falError.body),
       })
       const detail = falError.body?.detail
-      const detailMsg = Array.isArray(detail)
-        ? detail.map((d: any) => `${d.loc?.join('.')} — ${d.msg}`).join('; ')
-        : typeof detail === 'string' ? detail : null
+      let detailMsg: string | null = null
+      if (Array.isArray(detail)) {
+        detailMsg = detail.map((d: any) => `${d.loc?.join('.')} — ${d.msg}`).join('; ')
+      } else if (typeof detail === 'string') {
+        detailMsg = detail
+      } else if (detail) {
+        detailMsg = JSON.stringify(detail)
+      }
+      const rawBody = JSON.stringify(falError.body)
+      const errorMsg = detailMsg || falError.message || 'Generation failed'
       return NextResponse.json(
-        { error: detailMsg || falError.message || 'Generation failed' },
+        { error: `${errorMsg} | FAL body: ${rawBody}` },
         { status: 500 }
       )
     }
