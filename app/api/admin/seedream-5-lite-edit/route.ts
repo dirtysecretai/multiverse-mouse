@@ -42,23 +42,35 @@ export async function POST(req: Request) {
       input.image_size = image_size
     }
 
-    // Add reference images as data URIs (FAL natively handles decoding)
-    const dataUris: string[] = images_base64
+    // Upload reference images to Vercel Blob and pass HTTPS URLs.
+    // FAL's image_urls field is validated as a URL string — data URIs fail
+    // the pattern check, so we must supply real HTTPS URLs.
+    const validUris: string[] = (images_base64 as any[])
       .slice(0, 10)
       .filter((uri: any) => typeof uri === 'string' && uri.length > 0)
-      .map((uri: string) => {
-        // Ensure the URI has a proper data: prefix
-        if (uri.startsWith('data:')) return uri
-        return `data:image/jpeg;base64,${uri}`
-      })
+      .map((uri: string) => uri.startsWith('data:') ? uri : `data:image/jpeg;base64,${uri}`)
 
-    if (dataUris.length > 0) {
-      input.image_urls = dataUris
+    const imageUrls: string[] = []
+    for (let i = 0; i < validUris.length; i++) {
+      const uri = validUris[i]
+      const mimeType = uri.match(/^data:([^;]+)/)?.[1] || 'image/jpeg'
+      const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg'
+      const base64Data = uri.replace(/^data:[^;]+;base64,/, '')
+      const buffer = Buffer.from(base64Data, 'base64')
+      const blobResult = await put(`sd5-ref-${Date.now()}-${i}.${ext}`, buffer, {
+        access: 'public',
+        contentType: mimeType,
+      })
+      imageUrls.push(blobResult.url)
+    }
+
+    if (imageUrls.length > 0) {
+      input.image_urls = imageUrls
     }
 
     console.log('SeedDream 5 Lite Edit request:', JSON.stringify({
       ...input,
-      image_urls: `[${dataUris.length} data URIs]`,
+      image_urls: imageUrls.length > 0 ? imageUrls : undefined,
     }))
 
     let result: any
@@ -80,7 +92,7 @@ export async function POST(req: Request) {
       const detail = falError.body?.detail
       const detailMsg = Array.isArray(detail)
         ? detail.map((d: any) => `${d.loc?.join('.')} — ${d.msg}`).join('; ')
-        : null
+        : typeof detail === 'string' ? detail : null
       return NextResponse.json(
         { error: detailMsg || falError.message || 'Generation failed' },
         { status: 500 }
