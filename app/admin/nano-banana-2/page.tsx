@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ArrowLeft, Zap, RefreshCw, Copy, ExternalLink, Globe, Layers, ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
+import { ArrowLeft, Zap, RefreshCw, Copy, ExternalLink, Globe, Layers, ChevronLeft, ChevronRight, Trash2, AlertTriangle } from "lucide-react"
 import Link from "next/link"
 
 const ASPECT_RATIOS = [
@@ -30,6 +30,9 @@ const SAFETY_LEVELS = [
 ]
 
 const MAX_FEED = 25
+const MAX_CONCURRENT = 2
+const FEED_KEY = 'nb2-session-feed'
+const ACTIVE_KEY = 'nb2-active-count'
 
 interface GeneratedImage {
   url: string
@@ -45,6 +48,14 @@ interface CarouselEntry {
   elapsed: number
   requestId: string
   description?: string
+}
+
+interface LoadingEntry {
+  id: string
+  prompt: string
+  numImages: number
+  resolution: string
+  aspectRatio: string
 }
 
 export default function NanaBanana2PrototypePage() {
@@ -63,43 +74,74 @@ export default function NanaBanana2PrototypePage() {
   const [limitGenerations, setLimitGenerations] = useState(true)
   const [enableWebSearch, setEnableWebSearch] = useState(false)
 
-  // UI state
-  const [isGenerating, setIsGenerating] = useState(false)
+  // Feed + concurrent state
   const [sessionFeed, setSessionFeed] = useState<CarouselEntry[]>([])
+  const [loadingEntries, setLoadingEntries] = useState<LoadingEntry[]>([])
+  // Slots blocked because the page was refreshed mid-generation
+  const [blockedSlots, setBlockedSlots] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
+  // ── Restore on mount ──────────────────────────────────────────────────────
   useEffect(() => {
+    // Auth
     const authStatus = localStorage.getItem("multiverse-admin-auth")
     const savedPassword = sessionStorage.getItem("admin-password")
-    if (authStatus === "true" && savedPassword) {
-      setIsAuthenticated(true)
-    }
+    if (authStatus === "true" && savedPassword) setIsAuthenticated(true)
+
+    // Restore session feed
+    try {
+      const saved = localStorage.getItem(FEED_KEY)
+      if (saved) setSessionFeed(JSON.parse(saved).slice(0, MAX_FEED))
+    } catch {}
+
+    // Restore blocked slots from a previous interrupted generation
+    try {
+      const count = parseInt(sessionStorage.getItem(ACTIVE_KEY) || '0') || 0
+      if (count > 0) setBlockedSlots(count)
+    } catch {}
+
     setIsLoading(false)
   }, [])
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // ── Persist feed to localStorage on every change ──────────────────────────
+  useEffect(() => {
     try {
-      const res = await fetch('/api/admin/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      })
-      if (res.ok) {
-        sessionStorage.setItem("admin-password", password)
-        localStorage.setItem("multiverse-admin-auth", "true")
-        setIsAuthenticated(true)
-      } else {
-        alert("Invalid password")
-      }
-    } catch {
-      alert("Authentication failed")
-    }
+      localStorage.setItem(FEED_KEY, JSON.stringify(sessionFeed))
+    } catch {}
+  }, [sessionFeed])
+
+  // ── Track active count in sessionStorage so refreshes see the right state ─
+  const bumpActiveCount = (delta: number) => {
+    try {
+      const current = parseInt(sessionStorage.getItem(ACTIVE_KEY) || '0') || 0
+      sessionStorage.setItem(ACTIVE_KEY, String(Math.max(0, current + delta)))
+    } catch {}
   }
 
+  const resetBlockedSlots = () => {
+    setBlockedSlots(0)
+    try { sessionStorage.setItem(ACTIVE_KEY, '0') } catch {}
+  }
+
+  // ── Derived queue state ───────────────────────────────────────────────────
+  const totalActive = loadingEntries.length + blockedSlots
+  const canGenerate = totalActive < MAX_CONCURRENT && prompt.trim().length > 0
+
+  // ── Generate ──────────────────────────────────────────────────────────────
   const handleGenerate = async () => {
-    if (!prompt.trim()) return
-    setIsGenerating(true)
+    if (!canGenerate) return
+
+    const loadingId = `loading-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const entry: LoadingEntry = {
+      id: loadingId,
+      prompt: prompt.trim(),
+      numImages,
+      resolution,
+      aspectRatio,
+    }
+
+    setLoadingEntries(prev => [...prev, entry])
+    bumpActiveCount(+1)
     setError(null)
 
     try {
@@ -123,8 +165,8 @@ export default function NanaBanana2PrototypePage() {
       if (!res.ok || !data.success) {
         setError(data.error || 'Generation failed')
       } else {
-        const entry: CarouselEntry = {
-          id: `gen-${Date.now()}`,
+        const carousel: CarouselEntry = {
+          id: `gen-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           images: data.images,
           currentIndex: 0,
           prompt: prompt.trim(),
@@ -132,15 +174,17 @@ export default function NanaBanana2PrototypePage() {
           requestId: data.requestId,
           description: data.description,
         }
-        setSessionFeed(prev => [entry, ...prev].slice(0, MAX_FEED))
+        setSessionFeed(prev => [carousel, ...prev].slice(0, MAX_FEED))
       }
     } catch (err: any) {
       setError(err.message || 'Network error')
     } finally {
-      setIsGenerating(false)
+      setLoadingEntries(prev => prev.filter(e => e.id !== loadingId))
+      bumpActiveCount(-1)
     }
   }
 
+  // ── Carousel navigation ───────────────────────────────────────────────────
   const navigate = (id: string, direction: 'prev' | 'next') => {
     setSessionFeed(prev => prev.map(c => {
       if (c.id !== id) return c
@@ -165,12 +209,33 @@ export default function NanaBanana2PrototypePage() {
   const randomizeSeed = () => setSeed(String(Math.floor(Math.random() * 2147483647)))
   const clearSeed = () => setSeed("")
 
+  // ── Auth gate ─────────────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#050810] flex items-center justify-center">
         <div className="text-yellow-400 font-mono animate-pulse">Loading...</div>
       </div>
     )
+  }
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const res = await fetch('/api/admin/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      })
+      if (res.ok) {
+        sessionStorage.setItem("admin-password", password)
+        localStorage.setItem("multiverse-admin-auth", "true")
+        setIsAuthenticated(true)
+      } else {
+        alert("Invalid password")
+      }
+    } catch {
+      alert("Authentication failed")
+    }
   }
 
   if (!isAuthenticated) {
@@ -365,18 +430,11 @@ export default function NanaBanana2PrototypePage() {
                 placeholder="Leave blank for random"
                 className="flex-1 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 focus:border-yellow-500 text-white text-sm placeholder:text-slate-600 focus:outline-none"
               />
-              <button
-                onClick={randomizeSeed}
-                className="px-2 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all"
-                title="Random seed"
-              >
+              <button onClick={randomizeSeed} className="px-2 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all" title="Random seed">
                 <RefreshCw size={14} />
               </button>
               {seed && (
-                <button
-                  onClick={clearSeed}
-                  className="px-2 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all text-xs"
-                >
+                <button onClick={clearSeed} className="px-2 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all text-xs">
                   ✕
                 </button>
               )}
@@ -385,10 +443,7 @@ export default function NanaBanana2PrototypePage() {
 
           {/* Toggles */}
           <div className="p-4 rounded-xl border border-slate-800 bg-slate-900/60 space-y-3">
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-              Options
-            </label>
-
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Options</label>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-white">Limit Generations</p>
@@ -396,16 +451,11 @@ export default function NanaBanana2PrototypePage() {
               </div>
               <button
                 onClick={() => setLimitGenerations(v => !v)}
-                className={`relative w-11 h-6 rounded-full transition-all flex-shrink-0 ${
-                  limitGenerations ? 'bg-yellow-500' : 'bg-slate-700'
-                }`}
+                className={`relative w-11 h-6 rounded-full transition-all flex-shrink-0 ${limitGenerations ? 'bg-yellow-500' : 'bg-slate-700'}`}
               >
-                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${
-                  limitGenerations ? 'left-6' : 'left-1'
-                }`} />
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${limitGenerations ? 'left-6' : 'left-1'}`} />
               </button>
             </div>
-
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-white flex items-center gap-1.5">
@@ -416,13 +466,9 @@ export default function NanaBanana2PrototypePage() {
               </div>
               <button
                 onClick={() => setEnableWebSearch(v => !v)}
-                className={`relative w-11 h-6 rounded-full transition-all flex-shrink-0 ${
-                  enableWebSearch ? 'bg-cyan-500' : 'bg-slate-700'
-                }`}
+                className={`relative w-11 h-6 rounded-full transition-all flex-shrink-0 ${enableWebSearch ? 'bg-cyan-500' : 'bg-slate-700'}`}
               >
-                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${
-                  enableWebSearch ? 'left-6' : 'left-1'
-                }`} />
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${enableWebSearch ? 'left-6' : 'left-1'}`} />
               </button>
             </div>
           </div>
@@ -430,24 +476,26 @@ export default function NanaBanana2PrototypePage() {
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
-            disabled={isGenerating || !prompt.trim()}
+            disabled={!canGenerate}
             className={`w-full py-4 rounded-xl font-black text-sm tracking-widest transition-all ${
-              isGenerating || !prompt.trim()
+              !canGenerate
                 ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
                 : 'bg-gradient-to-r from-yellow-500 to-orange-500 text-black hover:from-yellow-400 hover:to-orange-400 shadow-lg shadow-yellow-500/20'
             }`}
           >
-            {isGenerating ? (
-              <span className="flex items-center justify-center gap-2">
-                <Zap size={16} className="animate-pulse" />
-                GENERATING...
+            <span className="flex items-center justify-center gap-2">
+              <Zap size={16} className={loadingEntries.length > 0 ? 'animate-pulse' : ''} />
+              GENERATE
+              <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                totalActive >= MAX_CONCURRENT
+                  ? 'bg-slate-700 text-slate-500'
+                  : totalActive > 0
+                    ? 'bg-black/30 text-black/70'
+                    : 'bg-black/20 text-black/60'
+              }`}>
+                {totalActive}/{MAX_CONCURRENT}
               </span>
-            ) : (
-              <span className="flex items-center justify-center gap-2">
-                <Zap size={16} />
-                GENERATE ({numImages} image{numImages > 1 ? 's' : ''})
-              </span>
-            )}
+            </span>
           </button>
 
           {/* Params summary */}
@@ -467,6 +515,22 @@ export default function NanaBanana2PrototypePage() {
         {/* ── Right panel: Session Feed ── */}
         <div className="flex-1 min-w-0 flex flex-col gap-3">
 
+          {/* Interrupted generations warning */}
+          {blockedSlots > 0 && (
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-amber-500/40 bg-amber-500/10">
+              <AlertTriangle size={16} className="text-amber-400 flex-shrink-0" />
+              <p className="text-amber-300 text-xs flex-1">
+                <span className="font-bold">{blockedSlots} generation{blockedSlots > 1 ? 's' : ''}</span> {blockedSlots > 1 ? 'were' : 'was'} interrupted by a page refresh and cannot be recovered.
+              </p>
+              <button
+                onClick={resetBlockedSlots}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 transition-all flex-shrink-0"
+              >
+                Reset
+              </button>
+            </div>
+          )}
+
           {/* Error */}
           {error && (
             <div className="p-4 rounded-xl border border-red-500/40 bg-red-500/10">
@@ -475,32 +539,31 @@ export default function NanaBanana2PrototypePage() {
             </div>
           )}
 
-          {/* Loading indicator */}
-          {isGenerating && (
-            <div className="flex items-center gap-4 p-4 rounded-xl border border-yellow-500/20 bg-slate-900/40">
-              <Zap size={28} className="text-yellow-400 animate-pulse flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-yellow-400 font-bold text-sm">Generating with NanoBanana Pro 2...</p>
-                <p className="text-slate-500 text-xs mt-0.5">
-                  {resolution} · {numImages} image{numImages > 1 ? 's' : ''} · {aspectRatio} ratio
-                </p>
+          {/* Active loading entries */}
+          {loadingEntries.map(entry => (
+            <div key={entry.id} className="flex items-center gap-4 p-4 rounded-xl border border-yellow-500/20 bg-slate-900/40">
+              <Zap size={22} className="text-yellow-400 animate-pulse flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-yellow-400 font-bold text-sm">Generating...</p>
+                <p className="text-slate-500 text-xs truncate mt-0.5">{entry.prompt}</p>
               </div>
-              <div className="flex gap-1">
+              <div className="text-right flex-shrink-0">
+                <p className="text-[10px] text-slate-500 font-mono">{entry.resolution} · {entry.numImages} img · {entry.aspectRatio}</p>
+              </div>
+              <div className="flex gap-1 flex-shrink-0">
                 <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse" />
                 <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
                 <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
               </div>
             </div>
-          )}
+          ))}
 
           {/* Feed header */}
           {sessionFeed.length > 0 && (
             <div className="flex items-center justify-between px-1">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                 Session Feed{' '}
-                <span className="text-slate-600 normal-case font-normal">
-                  {sessionFeed.length}/{MAX_FEED}
-                </span>
+                <span className="text-slate-600 normal-case font-normal">{sessionFeed.length}/{MAX_FEED}</span>
               </p>
               <button
                 onClick={() => setSessionFeed([])}
@@ -514,17 +577,11 @@ export default function NanaBanana2PrototypePage() {
 
           {/* Scrollable carousel feed */}
           {sessionFeed.length > 0 && (
-            <div
-              className="overflow-y-auto space-y-4 pr-1"
-              style={{ maxHeight: 'calc(100vh - 120px)' }}
-            >
+            <div className="overflow-y-auto space-y-4 pr-1" style={{ maxHeight: 'calc(100vh - 120px)' }}>
               {sessionFeed.map(entry => {
                 const img = entry.images[entry.currentIndex]
                 return (
-                  <div
-                    key={entry.id}
-                    className="rounded-xl border border-slate-700/80 bg-slate-900/60 overflow-hidden"
-                  >
+                  <div key={entry.id} className="rounded-xl border border-slate-700/80 bg-slate-900/60 overflow-hidden">
                     {/* Image area */}
                     <div className="relative bg-slate-950" style={{ height: '460px' }}>
                       <img
@@ -586,27 +643,17 @@ export default function NanaBanana2PrototypePage() {
 
                     {/* Info bar */}
                     <div className="p-3 border-t border-slate-800 space-y-2">
-                      <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
-                        {entry.prompt}
-                      </p>
+                      <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">{entry.prompt}</p>
                       {entry.description && (
-                        <p className="text-[10px] text-slate-500 italic line-clamp-1">
-                          {entry.description}
-                        </p>
+                        <p className="text-[10px] text-slate-500 italic line-clamp-1">{entry.description}</p>
                       )}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <span className="text-[10px] text-slate-600 font-mono">
-                            {(entry.elapsed / 1000).toFixed(1)}s
-                          </span>
+                          <span className="text-[10px] text-slate-600 font-mono">{(entry.elapsed / 1000).toFixed(1)}s</span>
                           {img.width && img.height && (
-                            <span className="text-[10px] text-slate-600 font-mono">
-                              {img.width}×{img.height}
-                            </span>
+                            <span className="text-[10px] text-slate-600 font-mono">{img.width}×{img.height}</span>
                           )}
-                          <span className="text-[10px] text-slate-700 font-mono truncate max-w-[100px]">
-                            {entry.requestId}
-                          </span>
+                          <span className="text-[10px] text-slate-700 font-mono truncate max-w-[100px]">{entry.requestId}</span>
                         </div>
                         <div className="flex gap-1.5">
                           <button
@@ -635,11 +682,11 @@ export default function NanaBanana2PrototypePage() {
           )}
 
           {/* Empty state */}
-          {sessionFeed.length === 0 && !isGenerating && !error && (
+          {sessionFeed.length === 0 && loadingEntries.length === 0 && !error && blockedSlots === 0 && (
             <div className="flex flex-col items-center justify-center h-96 rounded-xl border border-slate-800 bg-slate-900/20">
               <Layers size={48} className="text-slate-700 mb-4" />
               <p className="text-slate-500 font-medium">Set your parameters and generate</p>
-              <p className="text-slate-600 text-xs mt-1">fal-ai/nano-banana-2 · Results stay in session feed</p>
+              <p className="text-slate-600 text-xs mt-1">fal-ai/nano-banana-2 · Feed persists across refreshes</p>
             </div>
           )}
         </div>
