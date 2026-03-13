@@ -6,6 +6,7 @@ const DEFAULT_MODELS = [
   // Image models
   { modelId: 'nano-banana', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'nano-banana-pro', modelType: 'image', maxConcurrent: 999 },
+  { modelId: 'nano-banana-2', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'seedream-4.5', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'flux-2', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'gemini-3-pro-image', modelType: 'image', maxConcurrent: 999 },

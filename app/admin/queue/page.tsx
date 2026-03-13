@@ -359,7 +359,7 @@ export default function AdminQueuePage() {
                     FAL.ai Models
                   </span>
                   <span className="text-xs text-slate-400">
-                    ({AI_MODELS.filter(m => m.isAvailable && m.provider !== 'gemini').length + 2} models incl. video)
+                    ({AI_MODELS.filter(m => m.isAvailable && m.provider !== 'gemini').length + 3} models incl. video)
                   </span>
                 </div>
                 <ChevronDown
@@ -422,6 +422,56 @@ export default function AdminQueuePage() {
                           </div>
                         );
                       })}
+                      {/* NanoBanana 2 — admin prototype, not in AI_MODELS config */}
+                      {(() => {
+                        const modelId = 'nano-banana-2';
+                        const existingLimit = limits.find(l => l.modelId === modelId);
+                        const currentLimit = existingLimit?.maxConcurrent;
+                        const displayLimit = currentLimit === 999 ? 'No Limit' : currentLimit ? `${currentLimit}` : 'No Limit';
+                        return (
+                          <div className="p-4 rounded-lg border border-slate-700 bg-slate-800/50">
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1">
+                                <h3 className="text-sm font-bold text-white">NanoBanana 2</h3>
+                                <p className="text-xs text-slate-400">{modelId}</p>
+                                <p className="text-xs text-slate-500 mt-1">Admin prototype</p>
+                              </div>
+                              {existingLimit && (
+                                <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                  currentLimit !== 999 && existingLimit.currentActive >= existingLimit.maxConcurrent
+                                    ? 'bg-red-500/20 text-red-400'
+                                    : 'bg-green-500/20 text-green-400'
+                                }`}>
+                                  {existingLimit.currentActive}/{displayLimit}
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-400 whitespace-nowrap">Current:</span>
+                                <span className="text-sm font-bold text-cyan-400">{displayLimit}</span>
+                              </div>
+                              <div className="flex gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="99"
+                                  value={tempLimits[modelId] ?? ''}
+                                  onChange={(e) => setTempLimits(prev => ({ ...prev, [modelId]: e.target.value }))}
+                                  placeholder="0-99 (0=no limit)"
+                                  className="flex-1 px-2 py-1.5 rounded bg-slate-950 border border-cyan-500/30 text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                />
+                                <button
+                                  onClick={() => saveLimit(modelId, 'image')}
+                                  className="px-4 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold"
+                                >
+                                  Set
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
