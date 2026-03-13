@@ -26,21 +26,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'At least one reference image is required (image_urls is required by this model)' }, { status: 400 })
     }
 
-    // Build input — pass base64 data URIs directly to image_urls.
-    // The FAL API explicitly supports data URIs as file inputs, so no
-    // intermediate upload step is needed (and avoids upload failures).
+    // Minimal input — only send fields we know FAL accepts.
+    // num_images / max_images / image_size are sent optionally to avoid
+    // triggering unknown-field or pattern-validation errors.
     const input: Record<string, unknown> = {
       prompt: prompt.trim(),
-      num_images: Math.min(Math.max(1, parseInt(String(num_images)) || 1), 8),
-      max_images: Math.min(Math.max(1, parseInt(String(max_images)) || 1), 8),
       enable_safety_checker,
     }
 
-    // Image size — custom object or preset enum string.
-    // auto_2K / auto_3K use a capital letter which may fail FAL's string pattern
-    // validator. Map them to explicit custom sizes instead.
-    const AUTO_SIZE_MAP: Record<string, { width: number; height: number }> = {
-      'auto_2K': { width: 2048, height: 2048 },
+    // Only add num_images if > 1
+    const parsedNumImages = Math.min(Math.max(1, parseInt(String(num_images)) || 1), 8)
+    if (parsedNumImages > 1) input.num_images = parsedNumImages
+
+    // Image size — omit auto_2K (FAL default) to avoid pattern issues.
+    // auto_3K and others: map to explicit custom objects.
+    const IMAGE_SIZE_CUSTOM_MAP: Record<string, { width: number; height: number }> = {
       'auto_3K': { width: 3072, height: 3072 },
     }
     if (image_size === 'custom' && custom_width && custom_height) {
@@ -48,11 +48,13 @@ export async function POST(req: Request) {
         width: parseInt(String(custom_width)),
         height: parseInt(String(custom_height)),
       }
-    } else if (AUTO_SIZE_MAP[image_size]) {
-      input.image_size = AUTO_SIZE_MAP[image_size]
-    } else {
+    } else if (IMAGE_SIZE_CUSTOM_MAP[image_size]) {
+      input.image_size = IMAGE_SIZE_CUSTOM_MAP[image_size]
+    } else if (image_size !== 'auto_2K') {
+      // Pass standard presets (square_hd, landscape_16_9, etc.) as-is
       input.image_size = image_size
     }
+    // auto_2K: omit — it's FAL's default
 
     // Upload reference images to Vercel Blob and pass HTTPS URLs.
     // FAL's image_urls field is validated as a URL string — data URIs fail
@@ -161,9 +163,9 @@ export async function POST(req: Request) {
       requestId: result.requestId,
     })
   } catch (error: any) {
-    console.error('SeedDream 5 Lite Edit error:', error)
+    console.error('SeedDream 5 Lite Edit outer error:', error)
     return NextResponse.json(
-      { error: error.message || 'Generation failed' },
+      { error: `Outer error: ${error.message || 'Generation failed'} | stack: ${error.stack?.split('\n')[1] || ''}` },
       { status: 500 }
     )
   }
