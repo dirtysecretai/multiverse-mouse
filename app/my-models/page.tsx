@@ -89,6 +89,43 @@ export default function MyModelsPage() {
     setNewModelPreviewUrls(prev => prev.filter((_, i) => i !== index))
   }
 
+  const compressImage = (file: File): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const img = new Image()
+        img.onload = () => {
+          const MAX_SIZE = 1920
+          let width = img.width
+          let height = img.height
+          if (width > MAX_SIZE || height > MAX_SIZE) {
+            if (width > height) {
+              height = (height / width) * MAX_SIZE
+              width = MAX_SIZE
+            } else {
+              width = (width / height) * MAX_SIZE
+              height = MAX_SIZE
+            }
+          }
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')
+          ctx?.drawImage(img, 0, 0, width, height)
+          canvas.toBlob(
+            (blob) => { if (blob) resolve(blob); else reject(new Error('Compression failed')) },
+            'image/jpeg',
+            0.85
+          )
+        }
+        img.onerror = () => reject(new Error('Failed to load image'))
+        img.src = e.target?.result as string
+      }
+      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.readAsDataURL(file)
+    })
+  }
+
   const handleCreate = async () => {
     if (!newModelName.trim()) { setCreateError('Please enter a model name.'); return }
     if (newModelImages.length === 0) { setCreateError('Please upload at least one reference image.'); return }
@@ -97,14 +134,20 @@ export default function MyModelsPage() {
     setCreateError(null)
 
     try {
-      // Upload images to Vercel Blob
+      // Compress and upload images to Vercel Blob
       const referenceImageUrls: string[] = []
       for (const file of newModelImages) {
+        const compressed = await compressImage(file)
         const formData = new FormData()
-        formData.append('file', file)
+        formData.append('file', compressed, 'reference.jpg')
         const res = await fetch('/api/upload-reference', { method: 'POST', body: formData })
+        if (!res.ok) {
+          const text = await res.text().catch(() => 'Unknown error')
+          throw new Error(`Upload failed (${res.status}): ${text.substring(0, 120)}`)
+        }
         const data = await res.json()
-        if (data.url) referenceImageUrls.push(data.url)
+        if (!data.url) throw new Error('Upload returned no URL')
+        referenceImageUrls.push(data.url)
       }
 
       // Save model record
@@ -125,8 +168,8 @@ export default function MyModelsPage() {
       } else {
         setCreateError(data.error || 'Failed to create model.')
       }
-    } catch {
-      setCreateError('Something went wrong. Please try again.')
+    } catch (err: any) {
+      setCreateError(err?.message || 'Something went wrong. Please try again.')
     } finally {
       setIsCreating(false)
     }
