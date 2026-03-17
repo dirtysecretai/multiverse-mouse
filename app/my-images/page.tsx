@@ -206,14 +206,18 @@ export default function MyImagesGalleryPage() {
     return model
   }
 
-  const downloadImage = async (imageUrl: string, prompt: string) => {
+  const downloadImage = async (image: GeneratedImage) => {
     try {
-      const response = await fetch(imageUrl)
+      const isVideo = !!image.videoMetadata?.isVideo
+      // Videos use direct URL (needs Range request support for seeking); images use proxy
+      const src = isVideo ? image.imageUrl : `/api/images/${image.id}?download=1`
+      const response = await fetch(src)
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${prompt.substring(0, 50)}.png`
+      const ext = isVideo ? 'mp4' : 'png'
+      a.download = `${image.prompt.substring(0, 50)}.${ext}`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -374,7 +378,7 @@ export default function MyImagesGalleryPage() {
                       </>
                     ) : (
                       <img
-                        src={image.imageUrl}
+                        src={`/api/images/${image.id}`}
                         alt={image.prompt}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
@@ -447,7 +451,7 @@ export default function MyImagesGalleryPage() {
               />
             ) : (
               <img
-                src={selectedImage.imageUrl}
+                src={`/api/images/${selectedImage.id}`}
                 alt={selectedImage.prompt}
                 className="max-w-full max-h-full object-contain"
               />
@@ -472,7 +476,7 @@ export default function MyImagesGalleryPage() {
 
               <div className="grid grid-cols-4 gap-2">
                 <button
-                  onClick={() => downloadImage(selectedImage.imageUrl, selectedImage.prompt)}
+                  onClick={() => downloadImage(selectedImage)}
                   className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 text-sm"
                 >
                   <Download size={16} />
@@ -504,7 +508,7 @@ export default function MyImagesGalleryPage() {
                 </button>
 
                 <a
-                  href={selectedImage.imageUrl}
+                  href={selectedImage.videoMetadata?.isVideo ? selectedImage.imageUrl : `/api/images/${selectedImage.id}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 text-sm"

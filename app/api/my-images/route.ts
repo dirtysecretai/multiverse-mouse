@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
+import { del } from '@vercel/blob'
 
 const prisma = new PrismaClient()
 
@@ -105,14 +106,26 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'No image IDs provided' }, { status: 400 })
     }
 
+    // Fetch blob URLs before soft-deleting so we can remove them from Vercel Blob
+    const images = await prisma.generatedImage.findMany({
+      where: { id: { in: ids }, userId: user.id, isDeleted: false },
+      select: { id: true, imageUrl: true },
+    })
+
     // Only delete images that belong to this user — prevents any cross-user deletion
     const result = await prisma.generatedImage.updateMany({
-      where: {
-        id: { in: ids },
-        userId: user.id,
-      },
+      where: { id: { in: ids }, userId: user.id },
       data: { isDeleted: true },
     })
+
+    // Hard-delete the actual files from Vercel Blob storage (non-fatal if it fails)
+    if (images.length > 0) {
+      try {
+        await del(images.map(img => img.imageUrl))
+      } catch (blobErr) {
+        console.error('Blob deletion failed (non-fatal):', blobErr)
+      }
+    }
 
     return NextResponse.json({ success: true, deleted: result.count })
   } catch (error: any) {
