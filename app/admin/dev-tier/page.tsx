@@ -53,6 +53,8 @@ export default function DevTierAnalytics() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [processingId, setProcessingId] = useState<number | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<{ synced: number; failed: number; results: any[] } | null>(null)
 
   const fetchSubscriptions = async () => {
     setLoading(true)
@@ -183,6 +185,27 @@ export default function DevTierAnalytics() {
     }
   }
 
+  const syncLsCancellations = async () => {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const res = await fetch('/api/admin/subscriptions/sync-ls-cancellations', {
+        method: 'POST',
+        headers: { 'x-admin-password': sessionStorage.getItem('admin-password') || '' },
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSyncResult({ synced: data.synced, failed: data.failed, results: data.results })
+      } else {
+        alert(data.error || 'Sync failed')
+      }
+    } catch {
+      alert('Sync request failed')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A'
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -287,6 +310,50 @@ export default function DevTierAnalytics() {
             </div>
             <div className="text-sm text-slate-400">Total Revenue (Initial Payments)</div>
           </div>
+        </div>
+
+        {/* LemonSqueezy Sync Tool */}
+        <div className="mb-8 p-5 rounded-xl border border-orange-500/30 bg-orange-500/5">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-orange-400 uppercase tracking-wider mb-1">Sync Cancelled Subscriptions → LemonSqueezy</h2>
+              <p className="text-xs text-slate-500">Finds all subscriptions cancelled on this site but not yet cancelled on LS, and cancels them now.</p>
+            </div>
+            <button
+              onClick={syncLsCancellations}
+              disabled={syncing}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-orange-900 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
+            >
+              <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Syncing...' : 'Sync Now'}
+            </button>
+          </div>
+
+          {syncResult && (
+            <div className="mt-4 pt-4 border-t border-orange-500/20">
+              <div className="flex items-center gap-4 mb-3">
+                <span className="text-sm text-green-400 font-bold">✓ {syncResult.synced} synced</span>
+                {syncResult.failed > 0 && <span className="text-sm text-red-400 font-bold">✗ {syncResult.failed} failed</span>}
+                {syncResult.synced === 0 && syncResult.failed === 0 && (
+                  <span className="text-sm text-slate-400">No unsynced cancellations found.</span>
+                )}
+              </div>
+              {syncResult.results.length > 0 && (
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {syncResult.results.map((r, i) => (
+                    <div key={i} className="flex items-center gap-3 text-xs font-mono">
+                      <span className={r.status === 'synced' ? 'text-green-400' : 'text-red-400'}>
+                        {r.status === 'synced' ? '✓' : '✗'}
+                      </span>
+                      <span className="text-slate-400">{r.email}</span>
+                      <span className="text-slate-600">ls:{r.lsId}</span>
+                      {r.error && <span className="text-red-400">{r.error}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Loading State */}

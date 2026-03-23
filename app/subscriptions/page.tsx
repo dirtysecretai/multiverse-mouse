@@ -303,6 +303,30 @@ export default function SubscriptionsPage() {
             })}
           </div>
         )}
+        {/* Store Link */}
+        <div className="mt-8 p-5 rounded-xl border border-slate-700 bg-slate-900/50 flex items-start gap-4">
+          <AlertTriangle className="text-yellow-400 flex-shrink-0 mt-0.5" size={18} />
+          <div>
+            <p className="text-sm text-slate-300 font-medium mb-1">
+              Please double-check your subscription status on the store page.
+            </p>
+            <p className="text-xs text-slate-500 mb-3">
+              If something looks off — or if you need to update your payment method, view invoices, or manage billing — you can do it directly on our store page.
+            </p>
+            <a
+              href="https://aidesignstudio.lemonsqueezy.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white text-sm font-medium transition-colors"
+            >
+              <CreditCard size={14} />
+              Open Store Page
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
+              </svg>
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   );
