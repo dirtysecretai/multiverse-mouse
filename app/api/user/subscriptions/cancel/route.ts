@@ -88,6 +88,36 @@ export async function POST(req: NextRequest) {
                     subscription.nextBillingDate ||
                     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
+    // Cancel with LemonSqueezy if this is a LS subscription
+    if (subscription.lsSubscriptionId) {
+      try {
+        const lsApiKey = process.env.LEMONSQUEEZY_API_KEY;
+        if (!lsApiKey) throw new Error('LEMONSQUEEZY_API_KEY not configured');
+
+        const lsResponse = await fetch(
+          `https://api.lemonsqueezy.com/v1/subscriptions/${subscription.lsSubscriptionId}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${lsApiKey}`,
+              'Accept': 'application/vnd.api+json',
+            },
+          }
+        );
+
+        if (!lsResponse.ok) {
+          const errorText = await lsResponse.text();
+          console.error('LemonSqueezy cancellation failed:', lsResponse.status, errorText);
+          // Continue anyway — still cancel in our DB
+        } else {
+          console.log(`✅ LemonSqueezy subscription cancelled: ${subscription.lsSubscriptionId}`);
+        }
+      } catch (lsError) {
+        console.error('LemonSqueezy API error:', lsError);
+        // Continue anyway - still cancel in our system
+      }
+    }
+
     // Cancel with PayPal if this is a PayPal subscription
     if (subscription.paypalSubscriptionId) {
       try {
