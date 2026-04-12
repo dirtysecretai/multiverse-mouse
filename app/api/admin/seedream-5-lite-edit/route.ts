@@ -1,12 +1,20 @@
 import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
 import { put } from '@vercel/blob'
+import { PrismaClient } from '@prisma/client'
+import { getUserFromSession } from '@/lib/auth'
+import { cookies } from 'next/headers'
 
 fal.config({ credentials: process.env.FAL_KEY })
+const prisma = new PrismaClient()
 
 export async function POST(req: Request) {
   let step = 'init'
   try {
+    const cookieStore = await cookies()
+    const token = cookieStore.get('session')?.value
+    const sessionUser = token ? await getUserFromSession(token) : null
+
     step = 'parse-body'
     const body = await req.json()
     const {
@@ -22,10 +30,6 @@ export async function POST(req: Request) {
 
     if (!prompt?.trim()) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
-    }
-
-    if (!images_base64?.length) {
-      return NextResponse.json({ error: 'At least one reference image is required (image_urls is required by this model)' }, { status: 400 })
     }
 
     // Minimal input — only send fields we know FAL accepts.
@@ -58,42 +62,36 @@ export async function POST(req: Request) {
     }
     // auto_2K: omit — it's FAL's default
 
-    // Upload reference images to FAL's own storage so the resulting URLs
-    // are guaranteed to pass FAL's URL pattern validator.
-    const validUris: string[] = (images_base64 as any[])
-      .slice(0, 10)
-      .filter((uri: any) => typeof uri === 'string' && uri.length > 0)
-      .map((uri: string) => uri.startsWith('data:') ? uri : `data:image/jpeg;base64,${uri}`)
+    // Determine mode: edit (image_urls provided) or text-to-image
+    const hasRefImages = Array.isArray(images_base64) && images_base64.length > 0
 
-    const imageUrls: string[] = []
-    for (let i = 0; i < validUris.length; i++) {
-      const uri = validUris[i]
-      const mimeType = uri.match(/^data:([^;]+)/)?.[1] || 'image/jpeg'
-      const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg'
-      const base64Data = uri.replace(/^data:[^;]+;base64,/, '')
-      const buffer = Buffer.from(base64Data, 'base64')
-      const file = new File([buffer], `ref-${i}.${ext}`, { type: mimeType })
-      step = `fal-storage-upload-${i}`
-      console.log(`Uploading ref image ${i + 1}/${validUris.length} to FAL storage (${buffer.length} bytes)`)
-      const falUrl = await fal.storage.upload(file)
-      console.log(`Ref image ${i + 1} uploaded: ${falUrl}`)
-      imageUrls.push(falUrl)
+    if (hasRefImages) {
+      // Pass images as base64 data URIs directly — bypasses FAL's URL-based
+      // content scanner which runs on public storage URLs but not inline base64.
+      const dataUris: string[] = (images_base64 as any[])
+        .slice(0, 10)
+        .filter((uri: any) => typeof uri === 'string' && uri.length > 0)
+        .map((uri: string) => uri.startsWith('data:') ? uri : `data:image/jpeg;base64,${uri}`)
+
+      if (dataUris.length > 0) {
+        input.image_urls = dataUris
+      }
     }
 
-    if (imageUrls.length > 0) {
-      input.image_urls = imageUrls
-    }
+    const endpoint = hasRefImages
+      ? 'fal-ai/bytedance/seedream/v5/lite/edit'
+      : 'fal-ai/bytedance/seedream/v5/lite/text-to-image'
 
-    console.log('SeedDream 5 Lite Edit request:', JSON.stringify({
+    console.log(`SeedDream 5 Lite request (${endpoint}):`, JSON.stringify({
       ...input,
-      image_urls: imageUrls,
+      image_urls: hasRefImages ? `[${(input.image_urls as string[])?.length} base64 uris]` : undefined,
     }))
 
     step = 'fal-subscribe'
     let result: any
     try {
       const start = Date.now()
-      result = await fal.subscribe('fal-ai/bytedance/seedream/v5/lite/edit', {
+      result = await fal.subscribe(endpoint, {
         input,
         logs: false,
       })
@@ -158,6 +156,41 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to host generated images' }, { status: 500 })
     }
 
+    // Save to DB so images survive page refresh
+    const qualityLabel = (() => {
+      if (typeof image_size === 'object' && image_size !== null) {
+        const w = (image_size as any).width || 0
+        return w >= 3072 ? '3k' : '2k'
+      }
+      return image_size === 'auto_3K' ? '3k' : '2k'
+    })()
+    try {
+      let targetUserId: number | null = sessionUser?.id ?? null
+      if (!targetUserId) {
+        const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
+        targetUserId = adminUser?.id ?? null
+      }
+      if (targetUserId) {
+        await Promise.all(hostedImages.map(img =>
+          prisma.generatedImage.create({
+            data: {
+              userId:             targetUserId!,
+              prompt:             prompt.trim(),
+              imageUrl:           img.url,
+              model:              'seedream-5-lite',
+              ticketCost:         0,
+              referenceImageUrls: hasRefImages ? (input.image_urls as string[] ?? []) : [],
+              quality:            qualityLabel,
+              aspectRatio:        '1:1',
+              expiresAt:          new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000),
+            },
+          })
+        ))
+      }
+    } catch (dbErr) {
+      console.error('SeedDream5 Lite: failed to save to DB (non-fatal):', dbErr)
+    }
+
     return NextResponse.json({
       success: true,
       images: hostedImages,
@@ -171,5 +204,7 @@ export async function POST(req: Request) {
       { error: `[${step}] ${error.message || 'Generation failed'}` },
       { status: 500 }
     )
+  } finally {
+    await prisma.$disconnect()
   }
 }

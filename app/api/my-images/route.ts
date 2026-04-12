@@ -32,23 +32,26 @@ export async function GET(request: Request) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
     const skip = (page - 1) * limit
+    const type = searchParams.get('type') // 'image' | 'video' | null (all)
 
-    // Get total count for pagination
-    const total = await prisma.generatedImage.count({
-      where: {
-        userId: user.id,
-        isDeleted: false,
-        expiresAt: { gt: new Date() },
-      }
-    })
+    const VIDEO_MODELS = ['wan-2.5', 'kling-v3', 'kling-o3', 'kling-v3-motion', 'seedance-1.5', 'seedance-2.0', 'seedance-2.0-fast', 'lipsync-v3']
+    const typeFilter = type === 'image'
+      ? { model: { notIn: VIDEO_MODELS } }
+      : type === 'video'
+      ? { model: { in: VIDEO_MODELS } }
+      : {}
+
+    const baseWhere = {
+      userId: user.id,
+      isDeleted: false,
+      ...typeFilter,
+    }
+
+    const total = await prisma.generatedImage.count({ where: baseWhere })
 
     // Fetch paginated user's generated images (not expired, not deleted, newest first)
     const images = await prisma.generatedImage.findMany({
-      where: {
-        userId: user.id,
-        isDeleted: false,
-        expiresAt: { gt: new Date() },
-      },
+      where: baseWhere,
       orderBy: {
         createdAt: 'desc'
       },
@@ -63,10 +66,12 @@ export async function GET(request: Request) {
         prompt: img.prompt,
         imageUrl: img.imageUrl,
         model: img.model,
-        referenceImageUrls: img.referenceImageUrls || [], // Reference images used for this generation
+        referenceImageUrls: img.referenceImageUrls || [],
         createdAt: img.createdAt,
         expiresAt: img.expiresAt,
-        videoMetadata: img.videoMetadata || null, // Video metadata for video items
+        quality: img.quality || null,
+        aspectRatio: img.aspectRatio || null,
+        videoMetadata: img.videoMetadata || null,
       })),
       pagination: {
         page,

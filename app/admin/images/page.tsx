@@ -190,7 +190,7 @@ export default function AdminImagesPage() {
                 {/* Image */}
                 <div className="aspect-square bg-slate-950 relative overflow-hidden">
                   <img
-                    src={image.imageUrl}
+                    src={`/api/admin/images/thumb?id=${image.id}`}
                     alt={image.prompt}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />

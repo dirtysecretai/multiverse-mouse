@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Bell, Plus, Edit, Trash2, Power, PowerOff } from "lucide-react"
+import { Bell, Plus, Edit, Trash2, Power, PowerOff, Monitor, Layers, Scan, Lock, Unlock } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -16,15 +16,23 @@ interface Notification {
   id: number
   message: string
   type: string
+  target: string
   isActive: boolean
+  locked: boolean
   createdAt: string
 }
 
 const TYPE_COLORS = {
-  info: { bg: 'bg-cyan-500/10', border: 'border-cyan-500/30', text: 'text-cyan-400', badge: 'bg-cyan-500' },
-  warning: { bg: 'bg-yellow-500/10', border: 'border-yellow-500/30', text: 'text-yellow-400', badge: 'bg-yellow-500' },
-  success: { bg: 'bg-green-500/10', border: 'border-green-500/30', text: 'text-green-400', badge: 'bg-green-500' },
-  update: { bg: 'bg-fuchsia-500/10', border: 'border-fuchsia-500/30', text: 'text-fuchsia-400', badge: 'bg-fuchsia-500' }
+  info:    { bg: 'bg-cyan-500/10',    border: 'border-cyan-500/30',    text: 'text-cyan-400',    badge: 'bg-cyan-500' },
+  warning: { bg: 'bg-yellow-500/10',  border: 'border-yellow-500/30',  text: 'text-yellow-400',  badge: 'bg-yellow-500' },
+  success: { bg: 'bg-green-500/10',   border: 'border-green-500/30',   text: 'text-green-400',   badge: 'bg-green-500' },
+  update:  { bg: 'bg-fuchsia-500/10', border: 'border-fuchsia-500/30', text: 'text-fuchsia-400', badge: 'bg-fuchsia-500' }
+}
+
+const TARGET_LABELS: Record<string, { label: string; color: string }> = {
+  main:   { label: 'Main Page',  color: 'bg-slate-600 text-slate-200' },
+  portal: { label: 'Portal V2',  color: 'bg-violet-700 text-violet-200' },
+  all:    { label: 'Both Pages', color: 'bg-orange-700 text-orange-200' },
 }
 
 export function NotificationManager() {
@@ -34,7 +42,9 @@ export function NotificationManager() {
   const [formData, setFormData] = useState({
     message: '',
     type: 'info',
-    isActive: true
+    target: 'main',
+    isActive: true,
+    locked: false,
   })
 
   useEffect(() => {
@@ -58,29 +68,19 @@ export function NotificationManager() {
 
     try {
       if (editingId) {
-        // Update existing
         const res = await fetch('/api/notifications', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: editingId, ...formData })
         })
-        
-        if (res.ok) {
-          await fetchNotifications()
-          resetForm()
-        }
+        if (res.ok) { await fetchNotifications(); resetForm() }
       } else {
-        // Create new
         const res = await fetch('/api/notifications', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData)
         })
-        
-        if (res.ok) {
-          await fetchNotifications()
-          resetForm()
-        }
+        if (res.ok) { await fetchNotifications(); resetForm() }
       }
     } catch (error) {
       console.error('Error saving notification:', error)
@@ -92,22 +92,18 @@ export function NotificationManager() {
     setFormData({
       message: notification.message,
       type: notification.type,
-      isActive: notification.isActive
+      target: notification.target || 'main',
+      isActive: notification.isActive,
+      locked: notification.locked ?? false,
     })
     setShowForm(true)
   }
 
   const handleDelete = async (id: number) => {
     if (!confirm('Delete this notification?')) return
-
     try {
-      const res = await fetch(`/api/notifications?id=${id}`, {
-        method: 'DELETE'
-      })
-      
-      if (res.ok) {
-        await fetchNotifications()
-      }
+      const res = await fetch(`/api/notifications?id=${id}`, { method: 'DELETE' })
+      if (res.ok) await fetchNotifications()
     } catch (error) {
       console.error('Error deleting notification:', error)
     }
@@ -118,22 +114,29 @@ export function NotificationManager() {
       const res = await fetch('/api/notifications', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: notification.id,
-          isActive: !notification.isActive
-        })
+        body: JSON.stringify({ id: notification.id, isActive: !notification.isActive })
       })
-      
-      if (res.ok) {
-        await fetchNotifications()
-      }
+      if (res.ok) await fetchNotifications()
     } catch (error) {
       console.error('Error toggling notification:', error)
     }
   }
 
+  const handleToggleLocked = async (notification: Notification) => {
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: notification.id, locked: !notification.locked })
+      })
+      if (res.ok) await fetchNotifications()
+    } catch (error) {
+      console.error('Error toggling lock:', error)
+    }
+  }
+
   const resetForm = () => {
-    setFormData({ message: '', type: 'info', isActive: true })
+    setFormData({ message: '', type: 'info', target: 'main', isActive: true, locked: false })
     setEditingId(null)
     setShowForm(false)
   }
@@ -163,19 +166,41 @@ export function NotificationManager() {
             rows={3}
           />
 
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex flex-wrap items-center gap-3 mb-3">
+            {/* Type */}
             <Select
               value={formData.type}
               onValueChange={(value) => setFormData({ ...formData, type: value })}
             >
-              <SelectTrigger className="w-40 bg-slate-950 border-slate-700 text-white">
-                <SelectValue />
+              <SelectTrigger className="w-44 bg-slate-950 border-slate-700 text-white">
+                <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="info">Info (Blue)</SelectItem>
                 <SelectItem value="warning">Warning (Yellow)</SelectItem>
                 <SelectItem value="success">Success (Green)</SelectItem>
                 <SelectItem value="update">Update (Purple)</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Target */}
+            <Select
+              value={formData.target}
+              onValueChange={(value) => setFormData({ ...formData, target: value })}
+            >
+              <SelectTrigger className="w-44 bg-slate-950 border-slate-700 text-white">
+                <SelectValue placeholder="Target page" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="main">
+                  <span className="flex items-center gap-2"><Monitor size={13} /> Main Page</span>
+                </SelectItem>
+                <SelectItem value="portal">
+                  <span className="flex items-center gap-2"><Scan size={13} /> Portal V2 (News)</span>
+                </SelectItem>
+                <SelectItem value="all">
+                  <span className="flex items-center gap-2"><Layers size={13} /> Both Pages</span>
+                </SelectItem>
               </SelectContent>
             </Select>
 
@@ -187,6 +212,18 @@ export function NotificationManager() {
                 className="w-4 h-4 rounded"
               />
               Active
+            </label>
+            <label className="flex items-center gap-2 text-sm text-white">
+              <input
+                type="checkbox"
+                checked={formData.locked}
+                onChange={(e) => setFormData({ ...formData, locked: e.target.checked })}
+                className="w-4 h-4 rounded"
+              />
+              <span className="flex items-center gap-1.5">
+                <Lock size={12} className="text-amber-400" />
+                Locked
+              </span>
             </label>
           </div>
 
@@ -208,30 +245,44 @@ export function NotificationManager() {
       {/* Notifications List */}
       <div className="space-y-3">
         {notifications.map((notification) => {
-          const colors = TYPE_COLORS[notification.type as keyof typeof TYPE_COLORS]
-          
+          const colors = TYPE_COLORS[notification.type as keyof typeof TYPE_COLORS] || TYPE_COLORS.info
+          const targetInfo = TARGET_LABELS[notification.target || 'main'] || TARGET_LABELS.main
+
           return (
             <div
               key={notification.id}
               className={`p-4 rounded-xl border ${colors.border} ${colors.bg}`}
             >
               <div className="flex items-start justify-between mb-2">
-                <div className="flex items-start gap-2 flex-1">
+                <div className="flex items-start gap-2 flex-wrap flex-1">
                   <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${colors.badge} text-black`}>
                     {notification.type}
+                  </span>
+                  <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${targetInfo.color}`}>
+                    {targetInfo.label}
                   </span>
                   {!notification.isActive && (
                     <span className="px-2 py-1 rounded text-[10px] font-bold bg-slate-700 text-slate-400">
                       INACTIVE
                     </span>
                   )}
+                  {notification.locked && (
+                    <span className="px-2 py-1 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 flex items-center gap-1">
+                      <Lock size={9} /> LOCKED
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => handleToggleLocked(notification)}
+                    title={notification.locked ? "Unlock (users can dismiss)" : "Lock (users cannot dismiss)"}
+                    className={`p-1 rounded hover:bg-slate-800 transition-colors ${notification.locked ? 'text-amber-400' : 'text-slate-600'}`}
+                  >
+                    {notification.locked ? <Lock size={14} /> : <Unlock size={14} />}
+                  </button>
                   <button
                     onClick={() => handleToggleActive(notification)}
-                    className={`p-1 rounded hover:bg-slate-800 transition-colors ${
-                      notification.isActive ? 'text-green-400' : 'text-slate-600'
-                    }`}
+                    className={`p-1 rounded hover:bg-slate-800 transition-colors ${notification.isActive ? 'text-green-400' : 'text-slate-600'}`}
                   >
                     {notification.isActive ? <Power size={14} /> : <PowerOff size={14} />}
                   </button>
@@ -259,7 +310,7 @@ export function NotificationManager() {
 
         {notifications.length === 0 && (
           <div className="text-center py-8 text-slate-600">
-            No notifications yet. Create one to show on the homepage!
+            No notifications yet. Create one to show on the main page or Portal V2!
           </div>
         )}
       </div>

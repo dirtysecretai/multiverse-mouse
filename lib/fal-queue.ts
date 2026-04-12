@@ -73,16 +73,12 @@ export async function promoteNextQueuedJob(): Promise<void> {
       return
     }
 
-    // Also bump the per-model counter
-    await prisma.modelConcurrencyLimit.updateMany({
-      where: { modelId: nextJob.modelId },
-      data: { currentActive: { increment: 1 } },
-    })
-
     // Extract stored FAL submission data
     const params = nextJob.parameters as any
     const falEndpoint: string | undefined = params.falEndpoint
     const falInput: Record<string, unknown> | undefined = params.falInput
+    // Polling-based jobs (NB2, Kling, Video): skip webhook so only the status route handles completion
+    const usePolling: boolean = params.usePolling === true
 
     if (!falEndpoint || !falInput) {
       console.error(`Queued job #${nextJob.id} missing falEndpoint/falInput — failing it`)
@@ -94,38 +90,70 @@ export async function promoteNextQueuedJob(): Promise<void> {
           errorMessage: 'Queued job missing stored FAL endpoint or input',
         },
       })
-      // Release both counters
-      await Promise.all([
-        prisma.modelConcurrencyLimit.updateMany({
-          where: { modelId: FAL_GLOBAL_ID },
-          data: { currentActive: { decrement: 1 } },
-        }),
-        prisma.modelConcurrencyLimit.updateMany({
-          where: { modelId: nextJob.modelId },
-          data: { currentActive: { decrement: 1 } },
-        }),
-      ])
+      // Release global counter (no per-model bump was done yet)
+      await prisma.modelConcurrencyLimit.updateMany({
+        where: { modelId: FAL_GLOBAL_ID },
+        data: { currentActive: { decrement: 1 } },
+      })
       return
     }
 
-    // Submit to FAL
+    // Bump per-model counter only for webhook-based jobs (polling routes handle their own cleanup)
+    if (!usePolling) {
+      await prisma.modelConcurrencyLimit.updateMany({
+        where: { modelId: nextJob.modelId },
+        data: { currentActive: { increment: 1 } },
+      })
+    }
+
+    // Submit to FAL — webhook-based jobs get a webhookUrl; polling-based jobs don't
     const appUrl = process.env.APP_URL || `https://${process.env.VERCEL_URL}`
-    const webhookUrl = `${appUrl}/api/webhooks/fal`
+    const submitOptions: Parameters<typeof fal.queue.submit>[1] = { input: falInput }
+    if (!usePolling) {
+      submitOptions.webhookUrl = `${appUrl}/api/webhooks/fal`
+    }
 
-    const { request_id } = await fal.queue.submit(falEndpoint, {
-      input: falInput,
-      webhookUrl,
-    })
+    // Wrap FAL submit so that a transient error doesn't leave the job stuck in
+    // 'processing' forever with no falRequestId and the counter permanently incremented.
+    try {
+      const { request_id } = await fal.queue.submit(falEndpoint, submitOptions)
 
-    // Record the FAL request ID so the webhook can find this job
-    await prisma.generationQueue.update({
-      where: { id: nextJob.id },
-      data: { falRequestId: request_id },
-    })
+      // Record the FAL request ID so the webhook/status-poller can find this job
+      await prisma.generationQueue.update({
+        where: { id: nextJob.id },
+        data: { falRequestId: request_id },
+      })
 
-    console.log(
-      `[fal-queue] Promoted job #${nextJob.id} (${nextJob.modelId}) → FAL ${falEndpoint} (request_id: ${request_id})`
-    )
+      console.log(
+        `[fal-queue] Promoted job #${nextJob.id} (${nextJob.modelId}) → FAL ${falEndpoint} (request_id: ${request_id})`
+      )
+    } catch (submitErr) {
+      console.error(`[fal-queue] FAL submit failed for promoted job #${nextJob.id} (${nextJob.modelId}):`, submitErr)
+
+      // Mark the job as failed so it doesn't stay stuck in 'processing'
+      await prisma.generationQueue.update({
+        where: { id: nextJob.id },
+        data: {
+          status: 'failed',
+          completedAt: new Date(),
+          errorMessage: 'FAL submission failed during queue promotion',
+        },
+      }).catch(e => console.error('[fal-queue] Failed to mark job as failed:', e))
+
+      // Release the global slot we claimed at the start of this function
+      await prisma.modelConcurrencyLimit.updateMany({
+        where: { modelId: FAL_GLOBAL_ID },
+        data: { currentActive: { decrement: 1 } },
+      }).catch(e => console.error('[fal-queue] Failed to decrement global counter:', e))
+
+      // Also undo the per-model bump if we did one
+      if (!usePolling) {
+        await prisma.modelConcurrencyLimit.updateMany({
+          where: { modelId: nextJob.modelId },
+          data: { currentActive: { decrement: 1 } },
+        }).catch(e => console.error('[fal-queue] Failed to decrement per-model counter:', e))
+      }
+    }
   } catch (err) {
     console.error('[fal-queue] promoteNextQueuedJob error:', err)
   }

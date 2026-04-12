@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
+import sharp from 'sharp'
 
 const prisma = new PrismaClient()
 
@@ -34,11 +35,28 @@ export async function GET(
     const blobRes = await fetch(image.imageUrl)
     if (!blobRes.ok) return new NextResponse('Image unavailable', { status: 404 })
 
-    const isDownload = new URL(request.url).searchParams.get('download') === '1'
+    const searchParams = new URL(request.url).searchParams
+    const isDownload = searchParams.get('download') === '1'
+    const isThumb = searchParams.get('thumb') === '1'
     const contentType = blobRes.headers.get('content-type') || 'image/png'
     const ext = contentType.includes('jpeg') ? 'jpg'
               : contentType.includes('webp') ? 'webp'
               : 'png'
+
+    if (isThumb) {
+      const buffer = Buffer.from(await blobRes.arrayBuffer())
+      const thumb = await sharp(buffer)
+        .resize({ width: 600, withoutEnlargement: true })
+        .webp({ quality: 75 })
+        .toBuffer()
+      return new NextResponse(thumb, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/webp',
+          'Cache-Control': 'private, max-age=86400',
+        },
+      })
+    }
 
     const headers: HeadersInit = {
       'Content-Type': contentType,

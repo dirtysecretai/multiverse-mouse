@@ -1,5 +1,9 @@
-import MultiversePortal from "@/components/multiverse-portal"
+"use client"
+
+import dynamic from "next/dynamic"
+
+const PortalV2 = dynamic(() => import("@/app/admin/portal-v2/page"), { ssr: false })
 
 export default function Page() {
-  return <MultiversePortal />
+  return <PortalV2 />
 }

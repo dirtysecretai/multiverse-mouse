@@ -93,7 +93,7 @@ export async function POST(req: Request) {
               referenceImageUrls: [],
               quality:           resolution,
               aspectRatio:       aspect_ratio,
-              expiresAt:         new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
+              expiresAt:         new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000), // 90 days
             },
           })
         ))

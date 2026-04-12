@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
-  Terminal, MessageSquare, Wrench, Image as ImageIcon, Sparkles, Tag, Bell, Users, CreditCard, ListOrdered, FlaskConical
+  Terminal, MessageSquare, Wrench, Image as ImageIcon, Sparkles, Tag, Bell, Users, CreditCard, ListOrdered, FlaskConical, Home, LayoutDashboard
 } from "lucide-react"
 
 export default function AdminPage() {
@@ -160,6 +160,24 @@ export default function AdminPage() {
       icon: FlaskConical,
       gradient: "from-violet-500 to-purple-500",
       hoverGradient: "hover:from-violet-400 hover:to-purple-400",
+      textColor: "text-white"
+    },
+    {
+      name: "Home",
+      description: "Go to the Portal V2 generation page",
+      href: "/admin/portal-v2",
+      icon: Home,
+      gradient: "from-slate-500 to-slate-600",
+      hoverGradient: "hover:from-slate-400 hover:to-slate-500",
+      textColor: "text-white"
+    },
+    {
+      name: "Dashboard",
+      description: "Go to the main user dashboard",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+      gradient: "from-slate-500 to-slate-600",
+      hoverGradient: "hover:from-slate-400 hover:to-slate-500",
       textColor: "text-white"
     },
   ]

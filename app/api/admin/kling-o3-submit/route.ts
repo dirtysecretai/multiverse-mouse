@@ -1,0 +1,164 @@
+import { NextResponse } from 'next/server'
+import { fal } from '@fal-ai/client'
+import { put } from '@vercel/blob'
+import prisma from '@/lib/prisma'
+import { FAL_GLOBAL_ID } from '@/lib/fal-queue'
+import { getUserFromSession } from '@/lib/auth'
+import { cookies } from 'next/headers'
+
+fal.config({ credentials: process.env.FAL_KEY })
+
+// POST /api/admin/kling-o3-submit
+// Submits a Kling O3 (Omni Image) job to the FAL async queue.
+// Chooses text-to-image or image-to-image based on whether image_urls is provided.
+// Returns immediately with { requestId, falEndpoint } — client polls /api/admin/kling-o3-status.
+export async function POST(req: Request) {
+  try {
+    const {
+      prompt,
+      image_urls,
+      num_images = 1,
+      aspect_ratio = '16:9',
+      output_format = 'png',
+      resolution = '1K',
+    } = await req.json()
+
+    if (!prompt?.trim()) {
+      return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
+    }
+
+    const hasRefImages = Array.isArray(image_urls) && image_urls.length > 0
+
+    // Upload any base64 data URIs to FAL storage; also persist to Vercel Blob for DB
+    let hostedImageUrls: string[] = []
+    const permanentReferenceUrls: string[] = []
+    if (hasRefImages) {
+      for (let i = 0; i < image_urls.slice(0, 10).length; i++) {
+        const url = image_urls[i]
+        try {
+          if (url.startsWith('data:')) {
+            const [meta, b64] = url.split(',')
+            const mimeType = meta.split(':')[1]?.split(';')[0] || 'image/jpeg'
+            const buffer = Buffer.from(b64, 'base64')
+            const falBlob = new Blob([buffer], { type: mimeType })
+            const falUrl = await fal.storage.upload(falBlob)
+            hostedImageUrls.push(falUrl)
+            const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg'
+            const vBlob = await put(`reference-kling-o3-${Date.now()}-${i}.${ext}`, buffer, {
+              access: 'public',
+              contentType: mimeType,
+            })
+            permanentReferenceUrls.push(vBlob.url)
+          } else {
+            // Already a permanent https:// URL
+            hostedImageUrls.push(url)
+            permanentReferenceUrls.push(url)
+          }
+        } catch { continue }
+      }
+    }
+
+    const endpoint = hostedImageUrls.length > 0
+      ? 'fal-ai/kling-image/o3/image-to-image'
+      : 'fal-ai/kling-image/o3/text-to-image'
+
+    // If "auto" is selected, omit aspect_ratio and let the model use its default
+    const resolvedAspectRatio = aspect_ratio === 'auto' ? undefined : aspect_ratio
+
+    const input: Record<string, unknown> = {
+      prompt: prompt.trim(),
+      num_images: Math.min(Math.max(1, parseInt(num_images) || 1), 9),
+      output_format,
+      resolution,
+    }
+    if (resolvedAspectRatio) input.aspect_ratio = resolvedAspectRatio
+
+    if (hostedImageUrls.length > 0) {
+      input.image_urls = hostedImageUrls
+    }
+
+    console.log(`Kling O3 submit (${endpoint}):`, JSON.stringify({
+      ...input,
+      image_urls: input.image_urls ? `[${(input.image_urls as string[]).length} urls]` : undefined,
+    }))
+
+    const cookieStore = await cookies()
+    const token = cookieStore.get('session')?.value
+    const sessionUser = token ? await getUserFromSession(token) : null
+    let targetUserId: number | null = sessionUser?.id ?? null
+    if (!targetUserId) {
+      const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
+      targetUserId = adminUser?.id ?? null
+    }
+    if (!targetUserId) return NextResponse.json({ error: 'No user found' }, { status: 500 })
+
+    // Atomically claim a global FAL slot (prevents race conditions when multiple requests arrive simultaneously)
+    const globalLimit = await prisma.modelConcurrencyLimit.findUnique({ where: { modelId: FAL_GLOBAL_ID } })
+    let isAtCapacity = false
+    if (globalLimit) {
+      const claimed = await prisma.modelConcurrencyLimit.updateMany({
+        where: { modelId: FAL_GLOBAL_ID, currentActive: { lt: globalLimit.maxConcurrent } },
+        data: { currentActive: { increment: 1 } },
+      })
+      isAtCapacity = claimed.count === 0
+    }
+
+    if (isAtCapacity) {
+      // Slot could not be claimed — queue for later (counter was NOT incremented)
+      const queueEntry = await prisma.generationQueue.create({
+        data: {
+          userId:    targetUserId!,
+          modelId:   'kling-o3-image',
+          modelType: 'image',
+          prompt:    (prompt as string).trim(),
+          parameters: { falEndpoint: endpoint, falInput: input, usePolling: true, permanentReferenceUrls },
+          status:    'queued',
+          ticketCost: 0,
+        },
+      })
+      console.log(`Kling O3 queued (at capacity ${globalLimit!.currentActive}/${globalLimit!.maxConcurrent}) → queueId #${queueEntry.id}`)
+      return NextResponse.json({ success: true, queued: true, queueId: queueEntry.id, permanentReferenceUrls })
+    }
+
+    // Slot claimed (counter already incremented) — submit to FAL
+    try {
+      const submitted = await fal.queue.submit(endpoint, { input })
+
+      const queueEntry = await prisma.generationQueue.create({
+        data: {
+          userId:      targetUserId!,
+          modelId:     'kling-o3-image',
+          modelType:   'image',
+          prompt:      (prompt as string).trim(),
+          parameters:  { falEndpoint: endpoint, falInput: input, usePolling: true, permanentReferenceUrls },
+          status:      'processing',
+          ticketCost:  0,
+          falRequestId: submitted.request_id,
+          startedAt:   new Date(),
+        },
+      })
+
+      return NextResponse.json({
+        success: true,
+        requestId: submitted.request_id,
+        falEndpoint: endpoint,
+        queueId: queueEntry.id,
+        permanentReferenceUrls,
+      })
+    } catch (submitError: any) {
+      // FAL submit failed — release the slot we claimed
+      if (globalLimit) {
+        await prisma.modelConcurrencyLimit.updateMany({
+          where: { modelId: FAL_GLOBAL_ID },
+          data: { currentActive: { decrement: 1 } },
+        }).catch(() => {})
+      }
+      throw submitError
+    }
+  } catch (error: any) {
+    console.error('Kling O3 submit error:', error)
+    return NextResponse.json({ error: error.message || 'Submission failed' }, { status: 500 })
+  } finally {
+    await prisma.$disconnect()
+  }
+}

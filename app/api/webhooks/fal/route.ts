@@ -126,7 +126,7 @@ export async function POST(request: Request) {
       const isAdminMode = params?.adminMode === true
 
       const expiresAt = new Date()
-      expiresAt.setDate(expiresAt.getDate() + 30)
+      expiresAt.setFullYear(expiresAt.getFullYear() + 100)
 
       for (let i = 0; i < images.length; i++) {
         const falImageUrl = images[i].url
@@ -161,6 +161,8 @@ export async function POST(request: Request) {
               model: queueItem.modelId,
               ticketCost: isAdminMode ? 0 : ticketCostForThisImage,
               referenceImageUrls: (params?.referenceImageUrls as string[]) || [],
+              quality: (params?.quality as string) || null,
+              aspectRatio: (params?.aspectRatio as string) || null,
               expiresAt,
             }
           })

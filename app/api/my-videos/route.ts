@@ -38,21 +38,15 @@ export async function GET(request: Request) {
         userId: user.id,
         model: { in: ['wan-2.5', 'kling-v3', 'kling-o3'] },
         isDeleted: false,
-        expiresAt: {
-          gt: new Date()
-        }
       }
     });
 
-    // Fetch paginated user's generated videos (not expired, not deleted, ordered by newest first)
+    // Fetch paginated user's generated videos (not deleted, ordered by newest first)
     const videos = await prisma.generatedImage.findMany({
       where: {
         userId: user.id,
         model: { in: ['wan-2.5', 'kling-v3', 'kling-o3'] },
         isDeleted: false,
-        expiresAt: {
-          gt: new Date()
-        }
       },
       orderBy: {
         createdAt: 'desc'

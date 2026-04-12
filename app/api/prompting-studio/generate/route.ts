@@ -786,7 +786,7 @@ export async function POST(req: NextRequest) {
     // Save all images to GeneratedImage table
     console.log('💾 Saving to GeneratedImage table...');
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
+    expiresAt.setFullYear(expiresAt.getFullYear() + 100);
     const savePrompt = `${celebrityName ? celebrityName + ' - ' : ''}${enhancement ? enhancement + ' - ' : ''}${prompt}`;
 
     for (let i = 0; i < allBlobUrls.length; i++) {

@@ -78,6 +78,18 @@ export default function AdminPrototypePage() {
 
   const prototypes = [
     {
+      name: "Scanner Canvas",
+      description: "Canvas-based AI image scanner with infinite canvas, 3 view modes (Canvas/Fullscreen/Studio), 6 scanners, reference panel, and session saving. Temporarily moved from the user dashboard.",
+      href: "/prompting-studio/canvas",
+      status: "Updating",
+      statusColor: "text-fuchsia-400 bg-fuchsia-500/20",
+      gradient: "from-fuchsia-500/20 to-purple-500/20",
+      border: "border-fuchsia-500/30 hover:border-fuchsia-400",
+      titleColor: "text-fuchsia-400",
+      features: ["Infinite Canvas", "3 View Modes", "Session Saving"],
+      featureColors: ["bg-fuchsia-500/20 text-fuchsia-400", "bg-purple-500/20 text-purple-400", "bg-pink-500/20 text-pink-400"],
+    },
+    {
       name: "Multiverse Portal V1",
       description: "Original Multiverse Portal design with cyan/purple color scheme, preserved as an archive before the AI Design Studio rebrand.",
       href: "/admin/portal-original",
@@ -172,6 +184,18 @@ export default function AdminPrototypePage() {
       titleColor: "text-yellow-400",
       features: ["All Params", "4K Support", "Web Search"],
       featureColors: ["bg-yellow-500/20 text-yellow-400", "bg-orange-500/20 text-orange-400", "bg-cyan-500/20 text-cyan-400"],
+    },
+    {
+      name: "Portal V2",
+      description: "New main page redesign. Taskbar with Image/Video/Text/Audio model dropdowns and profile bubble. Empty canvas — work in progress.",
+      href: "/",
+      status: "In Development",
+      statusColor: "text-cyan-400 bg-cyan-500/20",
+      gradient: "from-cyan-500/20 to-fuchsia-500/20",
+      border: "border-cyan-500/30 hover:border-cyan-400",
+      titleColor: "text-cyan-400",
+      features: ["New UI", "Taskbar", "Model Dropdowns"],
+      featureColors: ["bg-cyan-500/20 text-cyan-400", "bg-fuchsia-500/20 text-fuchsia-400", "bg-slate-500/20 text-slate-400"],
     },
     {
       name: "NanoBanana Pro 2 — Live",

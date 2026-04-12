@@ -1,9 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Download, ExternalLink, Copy, Sparkles, AlertTriangle, Trash2, X, CheckSquare, Square } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, ExternalLink, Copy, Sparkles, AlertTriangle, Trash2, X, CheckSquare, Square, Image as ImageIcon, LayoutDashboard } from "lucide-react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 
 interface GeneratedImage {
   id: number
@@ -28,67 +28,6 @@ interface PaginationInfo {
   totalPages: number
 }
 
-// Pagination Controls Component
-function PaginationControls({
-  pagination,
-  onPageChange,
-  isLoading
-}: {
-  pagination: PaginationInfo
-  onPageChange: (page: number) => void
-  isLoading: boolean
-}) {
-  const { page, totalPages, total } = pagination
-
-  if (totalPages <= 1) return null
-
-  return (
-    <div className="flex items-center justify-center gap-4 py-4">
-      <Button
-        onClick={() => onPageChange(page - 1)}
-        disabled={page <= 1 || isLoading}
-        className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50"
-      >
-        <ChevronLeft size={16} className="mr-1" />
-        Previous
-      </Button>
-
-      <div className="flex items-center gap-2">
-        {page > 2 && (
-          <>
-            <button onClick={() => onPageChange(1)} className="w-8 h-8 rounded bg-slate-800 hover:bg-slate-700 text-sm">1</button>
-            {page > 3 && <span className="text-slate-500">...</span>}
-          </>
-        )}
-        {page > 1 && (
-          <button onClick={() => onPageChange(page - 1)} className="w-8 h-8 rounded bg-slate-800 hover:bg-slate-700 text-sm">{page - 1}</button>
-        )}
-        <button className="w-8 h-8 rounded bg-cyan-500 text-black font-bold text-sm">{page}</button>
-        {page < totalPages && (
-          <button onClick={() => onPageChange(page + 1)} className="w-8 h-8 rounded bg-slate-800 hover:bg-slate-700 text-sm">{page + 1}</button>
-        )}
-        {page < totalPages - 1 && (
-          <>
-            {page < totalPages - 2 && <span className="text-slate-500">...</span>}
-            <button onClick={() => onPageChange(totalPages)} className="w-8 h-8 rounded bg-slate-800 hover:bg-slate-700 text-sm">{totalPages}</button>
-          </>
-        )}
-      </div>
-
-      <Button
-        onClick={() => onPageChange(page + 1)}
-        disabled={page >= totalPages || isLoading}
-        className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50"
-      >
-        Next
-        <ChevronRight size={16} className="ml-1" />
-      </Button>
-
-      <span className="text-xs text-slate-500 ml-2">{total} total images</span>
-    </div>
-  )
-}
-
 export default function MyImagesGalleryPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
@@ -96,7 +35,8 @@ export default function MyImagesGalleryPage() {
   const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null)
   const [user, setUser] = useState<any>(null)
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false)
-  const [pagination, setPagination] = useState<PaginationInfo>({ page: 1, limit: 50, total: 0, totalPages: 0 })
+  const [pagination, setPagination] = useState<PaginationInfo>({ page: 1, limit: 8, total: 0, totalPages: 0 })
+  const [typeFilter, setTypeFilter] = useState<'all' | 'image' | 'video'>('all')
 
   // Multi-select & delete state
   const [isSelectMode, setIsSelectMode] = useState(false)
@@ -107,8 +47,12 @@ export default function MyImagesGalleryPage() {
   useEffect(() => {
     checkAuth()
     fetchMaintenanceStatus()
-    fetchImages(1)
+    fetchImages(1, typeFilter)
   }, [])
+
+  useEffect(() => {
+    fetchImages(1, typeFilter)
+  }, [typeFilter])
 
   const checkAuth = async () => {
     try {
@@ -131,10 +75,11 @@ export default function MyImagesGalleryPage() {
     } catch {}
   }
 
-  const fetchImages = async (page: number) => {
+  const fetchImages = async (page: number, type: 'all' | 'image' | 'video' = typeFilter) => {
     setIsLoading(true)
     try {
-      const res = await fetch(`/api/my-images?page=${page}&limit=50`)
+      const typeParam = type !== 'all' ? `&type=${type}` : ''
+      const res = await fetch(`/api/my-images?page=${page}&limit=8${typeParam}`)
       if (res.ok) {
         const data = await res.json()
         setImages(data.images)
@@ -145,11 +90,9 @@ export default function MyImagesGalleryPage() {
   }
 
   const handlePageChange = (newPage: number) => {
-    fetchImages(newPage)
+    fetchImages(newPage, typeFilter)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
-
-  // ── Select mode helpers ────────────────────────────────────────────────────
 
   const exitSelectMode = () => {
     setIsSelectMode(false)
@@ -164,9 +107,7 @@ export default function MyImagesGalleryPage() {
     })
   }
 
-  const selectAll = () => {
-    setSelectedIds(new Set(images.map(img => img.id)))
-  }
+  const selectAll = () => setSelectedIds(new Set(images.map(img => img.id)))
 
   const handleDeleteConfirmed = async () => {
     if (selectedIds.size === 0) return
@@ -178,7 +119,6 @@ export default function MyImagesGalleryPage() {
         body: JSON.stringify({ ids: Array.from(selectedIds) }),
       })
       if (res.ok) {
-        // Remove deleted images from local state immediately
         setImages(prev => prev.filter(img => !selectedIds.has(img.id)))
         setPagination(prev => ({ ...prev, total: prev.total - selectedIds.size }))
         exitSelectMode()
@@ -190,17 +130,19 @@ export default function MyImagesGalleryPage() {
     }
   }
 
-  // ── Utilities ──────────────────────────────────────────────────────────────
-
-  const formatDate = (dateString: string) => new Date(dateString).toLocaleString()
+  const formatDate = (dateString: string) => {
+    const d = new Date(dateString)
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
 
   const getModelDisplayName = (model: string) => {
-    if (model === 'nano-banana') return 'NanaBanana Cluster'
+    if (model === 'nano-banana') return 'NanaBanana'
     if (model === 'nano-banana-pro') return 'NanaBanana Pro'
     if (model === 'seedream-4.5') return 'SeeDream 4.5'
-    if (model === 'wan-2.5') return 'WAN 2.5 Video'
-    if (model === 'kling-v3') return 'Kling 3.0 Video'
-    if (model === 'kling-o3') return 'Kling O3 Video'
+    if (model === 'wan-2.5') return 'WAN 2.5'
+    if (model === 'kling-v3') return 'Kling 3.0'
+    if (model === 'kling-o3') return 'Kling O3'
+    if (model === 'seedance-1.5') return 'SeeDance 1.5'
     if (model.includes('gemini') && model.includes('pro')) return 'Gemini Pro'
     if (model.includes('gemini') && model.includes('flash')) return 'Gemini Flash'
     return model
@@ -209,15 +151,13 @@ export default function MyImagesGalleryPage() {
   const downloadImage = async (image: GeneratedImage) => {
     try {
       const isVideo = !!image.videoMetadata?.isVideo
-      // Videos use direct URL (needs Range request support for seeking); images use proxy
       const src = isVideo ? image.imageUrl : `/api/images/${image.id}?download=1`
       const response = await fetch(src)
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      const ext = isVideo ? 'mp4' : 'png'
-      a.download = `${image.prompt.substring(0, 50)}.${ext}`
+      a.download = `${image.prompt.substring(0, 50)}.${isVideo ? 'mp4' : 'png'}`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -228,21 +168,16 @@ export default function MyImagesGalleryPage() {
   const copyPrompt = async (prompt: string) => {
     try {
       await navigator.clipboard.writeText(prompt)
-      alert('Prompt copied to clipboard!')
     } catch {
       try {
-        const textArea = document.createElement('textarea')
-        textArea.value = prompt
-        textArea.style.cssText = 'position:fixed;left:-999999px;top:-999999px'
-        document.body.appendChild(textArea)
-        textArea.focus()
-        textArea.select()
+        const ta = document.createElement('textarea')
+        ta.value = prompt
+        ta.style.cssText = 'position:fixed;left:-999999px'
+        document.body.appendChild(ta)
+        ta.focus(); ta.select()
         document.execCommand('copy')
-        document.body.removeChild(textArea)
-        alert('Prompt copied to clipboard!')
-      } catch {
-        alert('Copy failed. Please copy manually.')
-      }
+        document.body.removeChild(ta)
+      } catch {}
     }
   }
 
@@ -251,244 +186,315 @@ export default function MyImagesGalleryPage() {
   if (isMaintenanceMode && !isAdmin) {
     return (
       <div className="min-h-screen bg-[#050810] flex items-center justify-center p-6">
-        <div className="text-center p-12 rounded-2xl border-2 border-yellow-500/30 bg-yellow-500/5 backdrop-blur-sm max-w-md">
-          <AlertTriangle className="mx-auto text-yellow-500 mb-4 animate-pulse" size={64} />
-          <h1 className="text-2xl font-black text-yellow-400 mb-3">MAINTENANCE MODE</h1>
-          <p className="text-slate-400 text-sm">The image gallery is temporarily offline. We'll be back soon!</p>
+        <div className="text-center p-12 rounded-2xl border border-yellow-500/30 bg-yellow-500/5 max-w-md">
+          <AlertTriangle className="mx-auto text-yellow-500 mb-4 animate-pulse" size={48} />
+          <h1 className="text-xl font-black text-yellow-400 mb-2">MAINTENANCE MODE</h1>
+          <p className="text-slate-400 text-sm">The gallery is temporarily offline. We'll be back soon!</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white p-6">
+    <div className="min-h-screen bg-[#050810] text-white">
+      {/* Subtle grid */}
+      <div className="fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
+      {/* Ambient glows */}
+      <div className="fixed top-0 left-1/4 w-[500px] h-[300px] bg-fuchsia-500/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="fixed bottom-0 right-1/4 w-[400px] h-[300px] bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Back to Dashboard — always visible, even over modal */}
-      <button
-        onClick={() => { window.location.href = '/dashboard' }}
-        className="fixed top-4 right-4 z-[9999] inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer shadow-lg border border-slate-700"
-      >
-        <ChevronLeft size={16} />
-        Back to Dashboard
-      </button>
+      <div className="relative z-10 max-w-6xl mx-auto px-4 py-6 sm:py-10">
 
-      {/* Header */}
-      <div className="max-w-7xl mx-auto mb-4">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        {/* Header — stacked on mobile, side-by-side on desktop */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-8">
           <div>
-            <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500 mb-2">
-              MY IMAGE GALLERY
-            </h1>
-            <p className="text-slate-400 text-sm">{pagination.total} total images generated</p>
+            <p className="text-[11px] font-mono text-slate-600 uppercase tracking-widest mb-1">AI Design Studio</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">MY GENERATIONS</h1>
+            <p className="text-slate-500 text-sm mt-0.5">
+              {pagination.total > 0 ? `${pagination.total.toLocaleString()} total` : 'Your generated images & videos'}
+            </p>
           </div>
 
-          {/* Select / Delete controls */}
-          {images.length > 0 && (
-            <div className="flex items-center gap-2">
-              {isSelectMode ? (
-                <>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Type filter */}
+            <div className="flex items-center gap-0.5 p-1 rounded-lg border border-white/6 bg-black/30">
+              {(['all', 'image', 'video'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTypeFilter(t)}
+                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                    typeFilter === t
+                      ? 'bg-white/10 text-white'
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  {t === 'all' ? 'All' : t === 'image' ? 'Images' : 'Videos'}
+                </button>
+              ))}
+            </div>
+
+            {/* Select / Delete controls */}
+            {images.length > 0 && (
+              isSelectMode ? (
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <button
                     onClick={selectAll}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/8 bg-white/3 hover:bg-white/6 text-slate-300 text-xs transition-all"
                   >
-                    <CheckSquare size={14} />
-                    Select All
+                    <CheckSquare size={12} />
+                    All
                   </button>
                   {selectedIds.size > 0 && (
                     <button
                       onClick={() => setShowDeleteConfirm(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/50 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm font-semibold transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold transition-all"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={12} />
                       Delete ({selectedIds.size})
                     </button>
                   )}
                   <button
                     onClick={exitSelectMode}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-400 text-sm transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 text-xs transition-all"
                   >
-                    <X size={14} />
+                    <X size={12} />
                     Cancel
                   </button>
-                </>
+                </div>
               ) : (
                 <button
                   onClick={() => setIsSelectMode(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white text-sm transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 hover:text-white text-xs transition-all"
                 >
-                  <Square size={14} />
+                  <Square size={12} />
                   Select
                 </button>
-              )}
+              )
+            )}
+
+            {/* Dashboard link */}
+            <Link href="/dashboard">
+              <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/6 bg-white/2 hover:border-white/15 hover:bg-white/5 text-xs text-slate-400 hover:text-white transition-all">
+                <LayoutDashboard size={12} />
+                Dashboard
+              </button>
+            </Link>
+          </div>
+        </div>
+
+        {/* Grid */}
+        {isLoading ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="rounded-2xl border border-white/4 bg-white/2 overflow-hidden animate-pulse">
+                <div className="aspect-square bg-white/5" />
+                <div className="p-3 space-y-2">
+                  <div className="h-2.5 bg-white/5 rounded w-3/4" />
+                  <div className="h-2.5 bg-white/5 rounded w-1/2" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : images.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-4">
+            <div className="w-16 h-16 rounded-2xl border border-white/6 bg-white/2 flex items-center justify-center">
+              <ImageIcon size={28} className="text-slate-600" />
             </div>
-          )}
-        </div>
-
-        <PaginationControls pagination={pagination} onPageChange={handlePageChange} isLoading={isLoading} />
-      </div>
-
-      {/* Images Grid */}
-      {isLoading ? (
-        <div className="text-center text-slate-500 py-12">Loading images...</div>
-      ) : images.length === 0 ? (
-        <div className="max-w-7xl mx-auto text-center py-12">
-          <p className="text-slate-500 mb-4">No images generated yet</p>
-          <Button onClick={() => router.push('/')} className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold">
-            Start Generating
-          </Button>
-        </div>
-      ) : (
-        <>
-          <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {images.map((image) => {
-              const isSelected = selectedIds.has(image.id)
-              return (
-                <div
-                  key={image.id}
-                  onClick={() => {
-                    if (isSelectMode) {
-                      toggleSelect(image.id)
-                    } else {
-                      setSelectedImage(image)
-                    }
-                  }}
-                  className={`group cursor-pointer rounded-xl border overflow-hidden transition-all ${
-                    isSelectMode && isSelected
-                      ? 'border-cyan-400 ring-2 ring-cyan-400/50 bg-slate-900/60'
-                      : isSelectMode
-                      ? 'border-slate-700 bg-slate-900/60 hover:border-slate-500'
-                      : 'border-slate-800 bg-slate-900/60 hover:border-cyan-500/50'
-                  }`}
-                >
-                  {/* Image / Video thumbnail */}
-                  <div className="aspect-square bg-slate-950 relative overflow-hidden">
-                    {image.videoMetadata?.isVideo ? (
-                      <>
+            <p className="text-slate-500 text-sm">No generations yet</p>
+            <Link href="/">
+              <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-semibold hover:bg-cyan-500/25 transition-all">
+                <Sparkles size={12} />
+                Start Generating
+              </button>
+            </Link>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {images.map((image) => {
+                const isSelected = selectedIds.has(image.id)
+                return (
+                  <div
+                    key={image.id}
+                    onClick={() => isSelectMode ? toggleSelect(image.id) : setSelectedImage(image)}
+                    className={`group cursor-pointer rounded-2xl border overflow-hidden transition-all duration-200 ${
+                      isSelectMode && isSelected
+                        ? 'border-cyan-400/60 ring-2 ring-cyan-400/20 bg-white/3'
+                        : isSelectMode
+                        ? 'border-white/6 bg-white/2 hover:border-white/15'
+                        : 'border-white/6 bg-white/2 hover:border-fuchsia-500/30 hover:shadow-lg hover:shadow-fuchsia-500/5'
+                    }`}
+                  >
+                    {/* Thumbnail */}
+                    <div className="aspect-square bg-black/40 relative overflow-hidden">
+                      {image.videoMetadata?.isVideo ? (
+                        <>
+                          <img
+                            src={image.videoMetadata.thumbnailUrl || image.imageUrl}
+                            alt={image.prompt}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/70 backdrop-blur-sm rounded-md px-1.5 py-0.5">
+                            <svg className="w-2.5 h-2.5 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                            <span className="text-orange-400 text-[9px] font-mono font-bold">VIDEO</span>
+                          </div>
+                        </>
+                      ) : (
                         <img
-                          src={image.videoMetadata.thumbnailUrl || image.imageUrl}
+                          src={`/api/images/${image.id}?thumb=1`}
                           alt={image.prompt}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
-                        <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/70 rounded px-1.5 py-0.5">
-                          <svg className="w-3 h-3 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
-                            <polygon points="5 3 19 12 5 21 5 3" />
-                          </svg>
-                          <span className="text-orange-400 text-[10px] font-mono">VIDEO</span>
-                        </div>
-                      </>
-                    ) : (
-                      <img
-                        src={`/api/images/${image.id}`}
-                        alt={image.prompt}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                    )}
+                      )}
 
-                    {/* Model badge */}
-                    <div className="absolute top-2 right-2">
-                      <span className="px-2 py-1 rounded-lg bg-black/80 text-xs text-cyan-400 font-mono">
-                        {getModelDisplayName(image.model)}
-                      </span>
-                    </div>
-
-                    {/* Select mode checkbox overlay */}
-                    {isSelectMode && (
-                      <div className="absolute top-2 left-2">
-                        {isSelected ? (
-                          <div className="w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center shadow-lg">
-                            <svg className="w-4 h-4 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                            </svg>
-                          </div>
-                        ) : (
-                          <div className="w-6 h-6 rounded-full border-2 border-white/60 bg-black/40" />
-                        )}
+                      {/* Model badge */}
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="px-1.5 py-0.5 rounded-md bg-black/80 backdrop-blur-sm text-[9px] text-cyan-400 font-mono">
+                          {getModelDisplayName(image.model)}
+                        </span>
                       </div>
-                    )}
-                  </div>
 
-                  {/* Info */}
-                  <div className="p-3">
-                    <p className="text-xs text-slate-400 line-clamp-2 mb-2">{image.prompt}</p>
-                    <div className="flex items-center justify-between text-[10px] text-slate-500">
-                      <span>{formatDate(image.createdAt)}</span>
+                      {/* Select checkbox */}
+                      {isSelectMode && (
+                        <div className="absolute top-2 left-2">
+                          {isSelected ? (
+                            <div className="w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center shadow-lg">
+                              <svg className="w-3 h-3 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          ) : (
+                            <div className="w-5 h-5 rounded-full border-2 border-white/50 bg-black/40" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Info */}
+                    <div className="p-3">
+                      <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed mb-1.5">{image.prompt}</p>
+                      <p className="text-[10px] text-slate-600 font-mono">{formatDate(image.createdAt)}</p>
                     </div>
                   </div>
+                )
+              })}
+            </div>
+
+            {/* Pagination */}
+            {pagination.totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-8">
+                <button
+                  onClick={() => handlePageChange(pagination.page - 1)}
+                  disabled={pagination.page <= 1 || isLoading}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 hover:text-white text-xs disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                >
+                  <ChevronLeft size={13} />
+                  Prev
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {pagination.page > 2 && (
+                    <>
+                      <button onClick={() => handlePageChange(1)} className="w-8 h-8 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 text-xs transition-all">1</button>
+                      {pagination.page > 3 && <span className="text-slate-600 text-xs px-1">…</span>}
+                    </>
+                  )}
+                  {pagination.page > 1 && (
+                    <button onClick={() => handlePageChange(pagination.page - 1)} className="w-8 h-8 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 text-xs transition-all">{pagination.page - 1}</button>
+                  )}
+                  <button className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 font-bold text-xs">{pagination.page}</button>
+                  {pagination.page < pagination.totalPages && (
+                    <button onClick={() => handlePageChange(pagination.page + 1)} className="w-8 h-8 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 text-xs transition-all">{pagination.page + 1}</button>
+                  )}
+                  {pagination.page < pagination.totalPages - 1 && (
+                    <>
+                      {pagination.page < pagination.totalPages - 2 && <span className="text-slate-600 text-xs px-1">…</span>}
+                      <button onClick={() => handlePageChange(pagination.totalPages)} className="w-8 h-8 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 text-xs transition-all">{pagination.totalPages}</button>
+                    </>
+                  )}
                 </div>
-              )
-            })}
-          </div>
 
-          {/* Bottom Pagination */}
-          <div className="max-w-7xl mx-auto mt-8">
-            <PaginationControls pagination={pagination} onPageChange={handlePageChange} isLoading={isLoading} />
-          </div>
-        </>
-      )}
+                <button
+                  onClick={() => handlePageChange(pagination.page + 1)}
+                  disabled={pagination.page >= pagination.totalPages || isLoading}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 hover:text-white text-xs disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                >
+                  Next
+                  <ChevronRight size={13} />
+                </button>
 
-      {/* ── Image Preview Modal ─────────────────────────────────────────────── */}
+                <span className="hidden sm:inline text-[10px] text-slate-600 font-mono ml-2">{pagination.total} total</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Image / Video Preview Modal ─────────────────────────────────────── */}
       {selectedImage && (
-        <div className="fixed inset-0 bg-black z-50 flex flex-col" onClick={() => setSelectedImage(null)}>
+        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col" onClick={() => setSelectedImage(null)}>
 
-          {/* X — close preview, stay on gallery */}
+          {/* Close */}
           <button
             onClick={(e) => { e.stopPropagation(); setSelectedImage(null) }}
-            className="absolute top-4 left-4 z-20 flex items-center gap-1.5 text-white/80 hover:text-white transition-colors bg-black/60 hover:bg-black/90 px-3 py-2 rounded-lg text-sm font-medium"
+            className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/10 bg-black/60 backdrop-blur-sm text-slate-300 hover:text-white text-xs font-medium transition-all"
           >
-            <X size={16} />
-            Back to Gallery
+            <X size={13} />
+            Close
           </button>
 
-          {/* Full image / video area */}
-          <div className="flex-1 flex items-center justify-center p-4 min-h-0" onClick={(e) => e.stopPropagation()}>
+          {/* Full image / video */}
+          <div className="flex-1 flex items-center justify-center p-4 pt-14 min-h-0" onClick={(e) => e.stopPropagation()}>
             {selectedImage.videoMetadata?.isVideo ? (
               <video
                 src={selectedImage.imageUrl}
-                controls
-                autoPlay
-                loop
-                className="max-w-full max-h-full object-contain rounded-lg"
+                controls autoPlay loop
+                className="max-w-full max-h-full object-contain rounded-xl"
               />
             ) : (
               <img
                 src={`/api/images/${selectedImage.id}`}
                 alt={selectedImage.prompt}
-                className="max-w-full max-h-full object-contain"
+                className="max-w-full max-h-full object-contain rounded-xl"
               />
             )}
           </div>
 
           {/* Bottom info panel */}
-          <div className="bg-slate-900/95 backdrop-blur-sm border-t border-slate-700 p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="border-t border-white/6 bg-black/80 backdrop-blur-sm px-3 py-3 sm:p-4" onClick={(e) => e.stopPropagation()}>
             <div className="max-w-4xl mx-auto">
-              <div className="flex items-start gap-3 mb-3">
-                <Sparkles className="text-cyan-400 flex-shrink-0 mt-0.5" size={16} />
+              {/* Prompt + meta — compact on mobile */}
+              <div className="flex items-start gap-2 mb-3">
+                <Sparkles className="text-cyan-400 flex-shrink-0 mt-0.5" size={13} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm line-clamp-2">{selectedImage.prompt}</p>
-                  <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
-                    <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-mono">
+                  <p className="text-white text-xs sm:text-sm line-clamp-2">{selectedImage.prompt}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/20 text-cyan-400 text-[10px] font-mono">
                       {getModelDisplayName(selectedImage.model)}
                     </span>
-                    <span>{formatDate(selectedImage.createdAt)}</span>
+                    <span className="text-[10px] text-slate-500">{formatDate(selectedImage.createdAt)}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-4 gap-2">
+              {/* Action buttons — 2 cols on mobile, 4 on desktop */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <button
                   onClick={() => downloadImage(selectedImage)}
-                  className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 text-sm"
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-xs font-semibold hover:bg-cyan-500/30 transition-all"
                 >
-                  <Download size={16} />
-                  <span className="hidden sm:inline">Download</span>
+                  <Download size={13} />
+                  Download
                 </button>
 
                 <button
                   onClick={() => copyPrompt(selectedImage.prompt)}
-                  className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 text-sm"
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-semibold hover:bg-purple-500/30 transition-all"
                 >
-                  <Copy size={16} />
-                  <span className="hidden sm:inline">Copy Prompt</span>
+                  <Copy size={13} />
+                  Copy Prompt
                 </button>
 
                 <button
@@ -501,20 +507,20 @@ export default function MyImagesGalleryPage() {
                     }
                     router.push('/')
                   }}
-                  className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 text-sm"
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-fuchsia-500/20 border border-fuchsia-500/30 text-fuchsia-300 text-xs font-semibold hover:bg-fuchsia-500/30 transition-all"
                 >
-                  <Sparkles size={16} />
-                  <span className="hidden sm:inline">Rescan</span>
+                  <Sparkles size={13} />
+                  Rescan
                 </button>
 
                 <a
                   href={selectedImage.videoMetadata?.isVideo ? selectedImage.imageUrl : `/api/images/${selectedImage.id}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 text-sm"
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-semibold hover:bg-white/10 transition-all"
                 >
-                  <ExternalLink size={16} />
-                  <span className="hidden sm:inline">Open</span>
+                  <ExternalLink size={13} />
+                  Open
                 </a>
               </div>
             </div>
@@ -522,43 +528,43 @@ export default function MyImagesGalleryPage() {
         </div>
       )}
 
-      {/* ── Delete Confirmation Dialog ──────────────────────────────────────── */}
+      {/* ── Delete Confirmation ─────────────────────────────────────────────── */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div
-            className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+            className="rounded-2xl border border-white/8 bg-[#0a0f1a] p-6 max-w-sm w-full shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-500/15 flex items-center justify-center flex-shrink-0">
-                <Trash2 className="text-red-400" size={20} />
+              <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="text-red-400" size={18} />
               </div>
               <div>
-                <h2 className="text-white font-bold text-lg leading-tight">Delete {selectedIds.size} image{selectedIds.size !== 1 ? 's' : ''}?</h2>
-                <p className="text-slate-400 text-sm mt-0.5">This cannot be undone.</p>
+                <h2 className="text-white font-bold text-base">Delete {selectedIds.size} item{selectedIds.size !== 1 ? 's' : ''}?</h2>
+                <p className="text-slate-500 text-xs mt-0.5">This cannot be undone.</p>
               </div>
             </div>
 
-            <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+            <p className="text-slate-400 text-sm mb-5 leading-relaxed">
               {selectedIds.size === 1
-                ? 'Are you sure you want to permanently delete this image from your gallery?'
-                : `Are you sure you want to permanently delete these ${selectedIds.size} images from your gallery?`}
+                ? 'Permanently delete this generation from your gallery?'
+                : `Permanently delete these ${selectedIds.size} generations from your gallery?`}
             </p>
 
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <button
                 onClick={() => setShowDeleteConfirm(false)}
                 disabled={isDeleting}
-                className="flex-1 py-2.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-sm transition-colors disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl border border-white/8 bg-white/3 hover:bg-white/6 text-slate-300 font-semibold text-xs transition-all disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteConfirmed}
                 disabled={isDeleting}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-bold text-sm transition-colors"
+                className="flex-1 py-2.5 rounded-xl bg-red-600/80 hover:bg-red-600 border border-red-500/30 disabled:opacity-50 text-white font-bold text-xs transition-all"
               >
-                {isDeleting ? 'Deleting...' : `Delete ${selectedIds.size === 1 ? 'Image' : `${selectedIds.size} Images`}`}
+                {isDeleting ? 'Deleting...' : `Delete ${selectedIds.size === 1 ? 'Item' : `${selectedIds.size} Items`}`}
               </button>
             </div>
           </div>

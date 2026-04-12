@@ -134,13 +134,13 @@ export default function SubscribePage() {
             <h2 className="text-3xl font-bold text-green-400 mb-3">You're Already Subscribed!</h2>
             <p className="text-slate-300 mb-6 text-lg">You have full access to the Development Tier.</p>
             <div className="flex gap-4 justify-center">
-              <Link href="/prompting-studio/canvas">
-                <Button className="bg-green-600 hover:bg-green-500 font-bold">
-                  Open Canvas Scanner
+              <Link href="/dashboard">
+                <Button className="bg-green-600 hover:bg-green-500 text-white font-bold">
+                  Back to Dashboard
                 </Button>
               </Link>
               <Link href="/subscriptions">
-                <Button variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-800">
+                <Button className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-semibold">
                   Manage Subscription
                 </Button>
               </Link>
@@ -154,8 +154,7 @@ export default function SubscribePage() {
   const devTierFeatures = [
     { text: '30% off all ticket package purchases', highlight: true },
     { text: '250–500 tickets auto-delivered each billing cycle', highlight: true },
-    { text: 'Up to 6 concurrent generations (vs 2 on free tier)', highlight: true },
-    { text: 'AI Design Studio — Canvas Scanner & advanced tools', highlight: false },
+    { text: 'Up to 8 concurrent generations — 6 image + 2 video (vs 2 on free tier)', highlight: true },
     { text: 'AI-powered prompt generation (Gemini models)', highlight: false },
     { text: 'Early access to new experimental features', highlight: false },
   ];
@@ -180,7 +179,7 @@ export default function SubscribePage() {
                 DEVELOPMENT TIER
               </h1>
             </div>
-            <p className="text-slate-400 text-lg">Discounted tickets, auto delivery, 6 concurrent generations, and the full AI Design Studio.</p>
+            <p className="text-slate-400 text-lg">Discounted tickets, auto delivery, 8 concurrent generations, and the full AI Design Studio.</p>
           </div>
 
           {/* Logged in account info */}
@@ -214,7 +213,7 @@ export default function SubscribePage() {
                   <div className="text-[10px] text-slate-500 leading-tight">off tickets</div>
                 </div>
                 <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-center">
-                  <div className="text-xl font-black text-cyan-400">6×</div>
+                  <div className="text-xl font-black text-cyan-400">8×</div>
                   <div className="text-[10px] text-slate-500 leading-tight">concurrent gens</div>
                 </div>
                 <div className="p-2.5 rounded-lg bg-green-500/10 border border-green-500/20 text-center">

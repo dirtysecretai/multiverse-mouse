@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
           quality: resolution || '1080p',
           aspectRatio: '16:9',
           ticketCost: ticketCost || 0,
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+          expiresAt: new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000),
           videoMetadata: {
             duration: duration || '5',
             resolution: resolution || '1080p',

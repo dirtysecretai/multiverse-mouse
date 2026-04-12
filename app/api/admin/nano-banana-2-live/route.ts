@@ -1,14 +1,22 @@
 import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
 import { put } from '@vercel/blob'
-
-import { PrismaClient } from '@prisma/client'
+import prisma from '@/lib/prisma'
+import { FAL_GLOBAL_ID } from '@/lib/fal-queue'
+import { getUserFromSession } from '@/lib/auth'
+import { cookies } from 'next/headers'
 
 fal.config({ credentials: process.env.FAL_KEY })
-const prisma = new PrismaClient()
 
+// POST /api/admin/nano-banana-2-live
+// Uploads reference images to FAL storage, then submits to FAL async queue.
+// Returns immediately with { requestId, falEndpoint } — client polls /api/admin/nb2-status.
 export async function POST(req: Request) {
   try {
+    const cookieStore = await cookies()
+    const token = cookieStore.get('session')?.value
+    const sessionUser = token ? await getUserFromSession(token) : null
+
     const body = await req.json()
     const {
       prompt,
@@ -20,6 +28,7 @@ export async function POST(req: Request) {
       limit_generations = true,
       enable_web_search = false,
       seed,
+      image_urls,
     } = body
 
     if (!prompt?.trim()) {
@@ -37,84 +46,135 @@ export async function POST(req: Request) {
       enable_web_search,
     }
 
-    // Only include seed if provided
     if (seed !== undefined && seed !== null && seed !== '') {
       input.seed = parseInt(seed)
     }
 
-    console.log('NanoBanana 2 live request:', JSON.stringify(input))
-    const start = Date.now()
-
-    const result = await fal.subscribe('fal-ai/nano-banana-2', {
-      input,
-      logs: false,
-    })
-
-    const elapsed = Date.now() - start
-    const falImages: { url: string; width?: number; height?: number; file_size?: number }[] =
-      (result.data as any).images || []
-
-    if (falImages.length === 0) {
-      return NextResponse.json({ error: 'No images returned from model' }, { status: 500 })
-    }
-
-    // Download from FAL temporary storage and re-host on Vercel Blob
-    const hostedImages: { url: string; width?: number; height?: number }[] = []
-    for (let i = 0; i < falImages.length; i++) {
-      const falImg = falImages[i]
-      const res = await fetch(falImg.url)
-      if (!res.ok) {
-        console.error(`Failed to download image ${i + 1}: ${res.status}`)
-        continue
-      }
-      const buffer = Buffer.from(await res.arrayBuffer())
-      const ext = output_format === 'jpeg' ? 'jpg' : output_format
-      const filename = `nb2-live-${Date.now()}-${i}.${ext}`
-      const blob = await put(filename, buffer, {
-        access: 'public',
-        contentType: `image/${output_format === 'jpeg' ? 'jpeg' : output_format}`,
-      })
-      hostedImages.push({ url: blob.url, width: falImg.width, height: falImg.height })
-    }
-
-    // Save to DB under the first user (admin/site owner).
-    // Admin live page has no user session so we associate with userId=1 or
-    // the first user found in the DB.
-    try {
-      const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
-      if (adminUser) {
-        await Promise.all(hostedImages.map(img =>
-          prisma.generatedImage.create({
-            data: {
-              userId:            adminUser.id,
-              prompt:            prompt.trim(),
-              imageUrl:          img.url,
-              model:             'nano-banana-2',
-              ticketCost:        0,
-              referenceImageUrls: [],
-              quality:           resolution,
-              aspectRatio:       aspect_ratio,
-              expiresAt:         new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
-            },
+    // Upload reference images to FAL storage if provided; also save to Vercel Blob for permanent DB storage
+    const hasReferenceImages = Array.isArray(image_urls) && image_urls.length > 0
+    const permanentReferenceUrls: string[] = []
+    if (hasReferenceImages) {
+      const falUrls: string[] = []
+      const urlsToProcess = image_urls.slice(0, 14)
+      for (let i = 0; i < urlsToProcess.length; i++) {
+        const url = urlsToProcess[i]
+        try {
+          // Detect MIME from data URI prefix before fetching
+          let mimeType = 'image/jpeg'
+          if (url.startsWith('data:')) {
+            mimeType = url.split(',')[0].split(':')[1]?.split(';')[0] || 'image/jpeg'
+          }
+          const imgRes = await fetch(url)
+          if (!imgRes.ok) continue
+          const arrayBuffer = await imgRes.arrayBuffer()
+          const buffer = Buffer.from(arrayBuffer)
+          if (!url.startsWith('data:')) {
+            mimeType = imgRes.headers.get('content-type') || 'image/jpeg'
+          }
+          // Upload to FAL for model use
+          const falBlob = new Blob([buffer], { type: mimeType })
+          const falUrl = await fal.storage.upload(falBlob)
+          falUrls.push(falUrl)
+          // Also upload to Vercel Blob for permanent DB reference
+          const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg'
+          const vBlob = await put(`reference-nb2-${Date.now()}-${i}.${ext}`, buffer, {
+            access: 'public',
+            contentType: mimeType,
           })
-        ))
+          permanentReferenceUrls.push(vBlob.url)
+        } catch { continue }
       }
-    } catch (dbErr) {
-      // Non-fatal — log but still return the images
-      console.error('NanaBanana2 live: failed to save to DB:', dbErr)
+      if (falUrls.length > 0) {
+        input.image_urls = falUrls
+      }
     }
 
-    return NextResponse.json({
-      success: true,
-      images: hostedImages,
-      description: (result.data as any).description || '',
-      elapsed,
-      requestId: result.requestId,
-    })
+    const endpoint = hasReferenceImages && (input.image_urls as string[])?.length > 0
+      ? 'fal-ai/nano-banana-2/edit'
+      : 'fal-ai/nano-banana-2'
+
+    console.log(`NanoBanana 2 submit (${endpoint}):`, JSON.stringify({
+      ...input,
+      image_urls: input.image_urls ? `[${(input.image_urls as string[]).length} urls]` : undefined,
+    }))
+
+    // Prefer the authenticated session user; fall back to first admin user
+    let targetUserId: number | null = sessionUser?.id ?? null
+    if (!targetUserId) {
+      const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
+      targetUserId = adminUser?.id ?? null
+    }
+    if (!targetUserId) return NextResponse.json({ error: 'No user found' }, { status: 500 })
+
+    // Atomically claim a global FAL slot (prevents race conditions when multiple requests arrive simultaneously)
+    const globalLimit = await prisma.modelConcurrencyLimit.findUnique({ where: { modelId: FAL_GLOBAL_ID } })
+    let isAtCapacity = false
+    if (globalLimit) {
+      const claimed = await prisma.modelConcurrencyLimit.updateMany({
+        where: { modelId: FAL_GLOBAL_ID, currentActive: { lt: globalLimit.maxConcurrent } },
+        data: { currentActive: { increment: 1 } },
+      })
+      isAtCapacity = claimed.count === 0
+    }
+
+    if (isAtCapacity) {
+      // Slot could not be claimed — queue for later (counter was NOT incremented)
+      const queueEntry = await prisma.generationQueue.create({
+        data: {
+          userId:    targetUserId,
+          modelId:   'nano-banana-pro-2',
+          modelType: 'image',
+          prompt:    (prompt as string).trim(),
+          parameters: { falEndpoint: endpoint, falInput: input, usePolling: true, permanentReferenceUrls },
+          status:    'queued',
+          ticketCost: 0,
+        },
+      })
+      console.log(`NanoBanana 2 queued (at capacity ${globalLimit!.currentActive}/${globalLimit!.maxConcurrent}) → queueId #${queueEntry.id}`)
+      return NextResponse.json({ success: true, queued: true, queueId: queueEntry.id, permanentReferenceUrls })
+    }
+
+    // Slot claimed (counter already incremented) — submit to FAL
+    try {
+      const submitted = await fal.queue.submit(endpoint, { input })
+
+      const queueEntry = await prisma.generationQueue.create({
+        data: {
+          userId:      targetUserId,
+          modelId:     'nano-banana-pro-2',
+          modelType:   'image',
+          prompt:      (prompt as string).trim(),
+          parameters:  { falEndpoint: endpoint, falInput: input, usePolling: true, permanentReferenceUrls },
+          status:      'processing',
+          ticketCost:  0,
+          falRequestId: submitted.request_id,
+          startedAt:   new Date(),
+        },
+      })
+
+      console.log(`NanaBanana 2 submitted (${endpoint}) requestId=${submitted.request_id} queueId=#${queueEntry.id}`)
+
+      return NextResponse.json({
+        success: true,
+        requestId: submitted.request_id,
+        falEndpoint: endpoint,
+        queueId: queueEntry.id,
+        permanentReferenceUrls,
+      })
+    } catch (submitError: any) {
+      // FAL submit failed — release the slot we claimed
+      if (globalLimit) {
+        await prisma.modelConcurrencyLimit.updateMany({
+          where: { modelId: FAL_GLOBAL_ID },
+          data: { currentActive: { decrement: 1 } },
+        }).catch(() => {})
+      }
+      throw submitError
+    }
   } catch (error: any) {
-    console.error('NanoBanana 2 live error:', error)
+    console.error('NanoBanana 2 submit error:', error)
     return NextResponse.json(
-      { error: error.message || 'Generation failed' },
+      { error: error.message || 'Submission failed' },
       { status: 500 }
     )
   } finally {

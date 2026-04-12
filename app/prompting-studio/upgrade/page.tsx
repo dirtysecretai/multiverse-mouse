@@ -62,7 +62,7 @@ export default function PromptStudioUpgradePage() {
             Unlock More. Spend Less.
           </h1>
           <p className="text-slate-400 text-lg max-w-xl mx-auto">
-            Dev Tier gives you discounted tickets, auto delivery, 3× more concurrent generations, and access to the full AI Design Studio.
+            Dev Tier gives you discounted tickets, auto delivery, 8 concurrent generations, and access to the full AI Design Studio.
           </p>
         </div>
 
@@ -85,9 +85,9 @@ export default function PromptStudioUpgradePage() {
                 <div className="text-[11px] text-slate-500">30% off every ticket package — consistent across all bundles</div>
               </div>
               <div className="p-5 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 text-center">
-                <div className="text-3xl font-black text-cyan-400 mb-1">6×</div>
+                <div className="text-3xl font-black text-cyan-400 mb-1">8×</div>
                 <div className="text-xs font-bold text-slate-300 mb-1">CONCURRENT GENS</div>
-                <div className="text-[11px] text-slate-500">Run 6 generations at once vs 2 on the free tier</div>
+                <div className="text-[11px] text-slate-500">Run 8 generations at once (6 image + 2 video) vs 2 on the free tier</div>
               </div>
               <div className="p-5 rounded-2xl border border-green-500/30 bg-green-500/10 text-center">
                 <div className="text-3xl font-black text-green-400 mb-1">500</div>
@@ -121,7 +121,7 @@ export default function PromptStudioUpgradePage() {
                   {[
                     'Ticket discount on purchases',
                     'Auto ticket delivery',
-                    'Up to 6 concurrent generations',
+                    'Up to 8 concurrent generations (6 image + 2 video)',
                     'AI Design Studio sections',
                   ].map((f) => (
                     <li key={f} className="flex items-start gap-2.5 text-sm text-slate-600">
@@ -163,8 +163,7 @@ export default function PromptStudioUpgradePage() {
                   {[
                     { text: '30% off all ticket packages', highlight: true },
                     { text: '250–500 tickets auto-delivered each billing cycle', highlight: true },
-                    { text: 'Up to 6 concurrent generations (3× more)', highlight: true },
-                    { text: 'AI Design Studio — Canvas Scanner, advanced prompting tools', highlight: false },
+                    { text: 'Up to 8 concurrent generations — 6 image + 2 video (vs 2 on free tier)', highlight: true },
                     { text: 'AI-powered prompt generation (Gemini models)', highlight: false },
                     { text: 'Early access to new features and experimental tools', highlight: false },
                   ].map((f) => (
@@ -256,7 +255,7 @@ export default function PromptStudioUpgradePage() {
                   },
                   {
                     q: 'What does Dev Tier add on top of that?',
-                    a: 'Dev Tier unlocks the AI Design Studio sections — most importantly the Canvas Scanner, an infinite multi-panel workspace for serious generation sessions. You also get AI-powered prompt generation, 6 concurrent generations (vs 2), and early access to new experimental features.',
+                    a: 'Dev Tier unlocks the AI Design Studio sections — most importantly the Canvas Scanner, an infinite multi-panel workspace for serious generation sessions. You also get AI-powered prompt generation, 8 concurrent generations (vs 2), and early access to new experimental features.',
                   },
                   {
                     q: 'How does the ticket discount work?',

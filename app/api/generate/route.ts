@@ -302,7 +302,7 @@ export async function POST(request: Request) {
 
           // Save to database
           const expiresAt = new Date()
-          expiresAt.setDate(expiresAt.getDate() + 30)
+          expiresAt.setFullYear(expiresAt.getFullYear() + 100)
           await prisma.generatedImage.create({
             data: {
               userId: user.id,
@@ -311,6 +311,8 @@ export async function POST(request: Request) {
               model,
               ticketCost: skipTickets ? 0 : ticketCost,
               referenceImageUrls: permanentReferenceUrls,
+              quality,
+              aspectRatio,
               expiresAt,
             },
           })
@@ -324,9 +326,9 @@ export async function POST(request: Request) {
             })
           }
 
-          const newBalance = skipTickets
-            ? (ticketRecord?.balance || 0)
-            : (syncUpdatedTicket?.balance || 0)
+          const syncRawBalance = skipTickets ? (ticketRecord?.balance || 0) : (syncUpdatedTicket?.balance || 0)
+          const syncRawReserved = skipTickets ? (ticketRecord?.reserved || 0) : (syncUpdatedTicket?.reserved || 0)
+          const newBalance = Math.max(0, syncRawBalance - syncRawReserved)
 
           console.log('=== FAL.AI SYNC GENERATION COMPLETE ===')
           return NextResponse.json({ imageUrl: blob.url, newBalance, modelUsed: selectedModel.displayName })
@@ -728,7 +730,7 @@ export async function POST(request: Request) {
       
       // Save each image to database
       const expiresAt = new Date()
-      expiresAt.setDate(expiresAt.getDate() + 30)
+      expiresAt.setFullYear(expiresAt.getFullYear() + 100)
 
       const savedImage = await prisma.generatedImage.create({
         data: {
@@ -738,6 +740,8 @@ export async function POST(request: Request) {
           model,
           ticketCost: skipTickets ? 0 : (isMultiImage ? 0 : ticketCost), // 0 for admin mode, only charge for first image in multi-gen
           referenceImageUrls: permanentReferenceUrls, // Save reference images used
+          quality,
+          aspectRatio,
           expiresAt,
         },
       })
@@ -767,7 +771,11 @@ export async function POST(request: Request) {
     const generateTime = Date.now() - generateStart
 
     // Return appropriate response based on single or multi-image
-    const finalBalance = skipTickets ? (ticketRecord?.balance || 0) : (updatedTicket?.balance || 0)
+    // Use effective balance (balance - reserved) to match what /api/user/tickets returns,
+    // preventing a visual spike when reserved tickets from in-flight FAL jobs inflate the raw balance.
+    const rawBalance = skipTickets ? (ticketRecord?.balance || 0) : (updatedTicket?.balance || 0)
+    const rawReserved = skipTickets ? (ticketRecord?.reserved || 0) : (updatedTicket?.reserved || 0)
+    const finalBalance = Math.max(0, rawBalance - rawReserved)
     const ticketsActuallyUsed = skipTickets ? 0 : ticketCost
 
     if (isMultiImage) {

@@ -226,8 +226,8 @@ export default function MultiversePortalLegacy() {
             const isVideo = img.model === 'wan-2.5' || !!(img.videoMetadata?.isVideo)
             return {
               id: img.id.toString(),
-              // For videos, use the thumbnail (input image). For images, use the image URL.
-              url: isVideo ? (img.videoMetadata?.thumbnailUrl || '') : img.imageUrl,
+              // For videos, use the thumbnail (input image). For images, use the proxy thumb.
+              url: isVideo ? (img.videoMetadata?.thumbnailUrl || '') : `/api/images/${img.id}?thumb=1`,
               prompt: img.prompt,
               model: img.model,
               quality: '2k' as '2k' | '4k',
@@ -394,7 +394,7 @@ export default function MultiversePortalLegacy() {
                     const isVideo = img.model === 'wan-2.5' || !!(img.videoMetadata?.isVideo)
                     return {
                       id: img.id.toString(),
-                      url: isVideo ? (img.videoMetadata?.thumbnailUrl || '') : img.imageUrl,
+                      url: isVideo ? (img.videoMetadata?.thumbnailUrl || '') : `/api/images/${img.id}?thumb=1`,
                       prompt: img.prompt,
                       model: img.model,
                       quality: '2k' as '2k' | '4k',
@@ -1043,40 +1043,6 @@ export default function MultiversePortalLegacy() {
               </div>
             </div>
           )}
-
-          {/* Scanner Canvas Promo */}
-          <Link href="/prompting-studio/canvas">
-            <div className="rounded-xl border-2 border-fuchsia-500/30 bg-gradient-to-br from-fuchsia-500/5 to-slate-900/50 backdrop-blur-sm overflow-hidden hover:border-fuchsia-500/50 hover:shadow-lg hover:shadow-fuchsia-500/10 transition-all cursor-pointer group">
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-fuchsia-500 to-purple-500 text-white text-[10px] font-black uppercase tracking-wider shadow-lg shadow-fuchsia-500/30">
-                    <Sparkles size={10} />
-                    Dev
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-fuchsia-500/20 border border-fuchsia-500/30 text-fuchsia-400 text-[9px] font-bold uppercase tracking-wider">
-                    3 Modes
-                  </span>
-                </div>
-                <div className="mb-3">
-                  <h3 className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-400 to-purple-400 mb-1">
-                    Scanner Canvas
-                  </h3>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Canvas, Fullscreen &amp; Studio modes with 6 scanners and reference panel
-                  </p>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-fuchsia-400 font-medium group-hover:text-fuchsia-300 transition-colors">
-                    Open Canvas →
-                  </span>
-                  <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                    <Zap size={10} />
-                    <span>6 Scanners</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Link>
 
           {/* Video Scanner Promo */}
           <Link href="/video-scanner">

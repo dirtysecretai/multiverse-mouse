@@ -1,0 +1,222 @@
+import { NextResponse, after } from 'next/server'
+import { PrismaClient } from '@prisma/client'
+import { cookies } from 'next/headers'
+import { getUserFromSession } from '@/lib/auth'
+import { put } from '@vercel/blob'
+import prisma from '@/lib/prisma'
+import { getTicketCost, getModelById } from '@/config/ai-models.config'
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY
+const GEMINI_IMAGE_MODELS = ['gemini-3-pro-image', 'gemini-2.5-flash-image']
+
+// POST /api/admin/gemini-submit
+// Accepts a Gemini image generation job, reserves tickets, creates a queue entry,
+// and returns queueId immediately so the client can poll — same UX as NB2/Kling.
+// The actual Gemini API call runs in the background via after().
+export async function POST(req: Request) {
+  try {
+    const cookieStore = await cookies()
+    const token = cookieStore.get('session')?.value
+    if (!token) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+    const user = await getUserFromSession(token)
+    if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
+
+    const body = await req.json()
+    const {
+      prompt,
+      model,
+      quality = '2k',
+      aspectRatio = '16:9',
+      referenceImages = [],      // base64 strings (for inline Gemini request)
+      referenceImageUrls = [],   // permanent Blob URLs (for DB record)
+    } = body
+
+    if (!prompt?.trim()) return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
+    if (!GEMINI_IMAGE_MODELS.includes(model)) return NextResponse.json({ error: 'Invalid model' }, { status: 400 })
+
+    const modelConfig = getModelById(model)
+    if (!modelConfig?.isAvailable) {
+      return NextResponse.json({ error: `Model ${model} is not available` }, { status: 400 })
+    }
+
+    const ticketCost = getTicketCost(model, quality)
+
+    // Check available balance and reserve tickets
+    const ticket = await prisma.ticket.findUnique({ where: { userId: user.id } })
+    const availableBalance = (ticket?.balance ?? 0) - (ticket?.reserved ?? 0)
+    if (availableBalance < ticketCost) {
+      return NextResponse.json(
+        { error: `Insufficient tickets. Need ${ticketCost}, have ${availableBalance}.` },
+        { status: 402 }
+      )
+    }
+
+    const updatedTicket = await prisma.ticket.update({
+      where: { userId: user.id },
+      data: { reserved: { increment: ticketCost } },
+      select: { balance: true, reserved: true },
+    })
+    const newBalance = Math.max(0, updatedTicket.balance - updatedTicket.reserved)
+
+    // Create queue entry (polling picks this up immediately)
+    const queueEntry = await prisma.generationQueue.create({
+      data: {
+        userId:    user.id,
+        modelId:   model,
+        modelType: 'image',
+        prompt:    prompt.trim(),
+        parameters: {
+          source: 'main-scanner',
+          adminMode: false,
+          quality,
+          aspectRatio,
+          referenceImageUrls,
+        },
+        status:     'processing',
+        ticketCost,
+        startedAt:  new Date(),
+      },
+    })
+
+    // Capture all values needed by the background task before after() runs
+    const queueId     = queueEntry.id
+    const userId      = user.id
+    const modelName   = modelConfig.name  // actual Gemini API model name
+    const promptStr   = prompt.trim()
+
+    // Run Gemini generation after the response is sent so the client unlocks immediately
+    after(async () => {
+      // Use a fresh Prisma client — the main handler's client may be disconnected
+      const bgPrisma = new PrismaClient()
+      try {
+        // ── Build Gemini request ────────────────────────────────────────
+        const contentParts: any[] = []
+
+        for (const imageBase64 of referenceImages as string[]) {
+          const base64Data = imageBase64.split(',')[1] || imageBase64
+          contentParts.push({ inlineData: { mimeType: 'image/jpeg', data: base64Data } })
+        }
+
+        const qualityPrefix = quality === '4k'
+          ? 'Generate in ultra-high resolution 4K quality with maximum detail and clarity. '
+          : ''
+        const fullPrompt = qualityPrefix + `Aspect ratio must be ${aspectRatio}. ` + promptStr
+        contentParts.push({ text: fullPrompt })
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: contentParts }],
+            generationConfig: { temperature: 1.0, topP: 0.95, topK: 40 },
+          }),
+        })
+
+        if (!response.ok) {
+          const errText = await response.text()
+          throw new Error(`Gemini API error ${response.status}: ${errText.substring(0, 200)}`)
+        }
+
+        const result = await response.json()
+
+        if (result.promptFeedback?.blockReason) {
+          throw new Error(`Prompt blocked: ${result.promptFeedback.blockReason}`)
+        }
+
+        const candidate = result.candidates?.[0]
+        if (!candidate) throw new Error('No candidates in Gemini response')
+        if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+          throw new Error(`Generation blocked: ${candidate.finishReason}`)
+        }
+
+        // Extract image bytes
+        let imageBytes: string | undefined
+        for (const part of (candidate.content?.parts ?? [])) {
+          if (part.inlineData?.data) { imageBytes = part.inlineData.data; break }
+        }
+        if (!imageBytes) throw new Error('No image data in Gemini response')
+
+        // ── Upload to Vercel Blob ───────────────────────────────────────
+        const buffer = Buffer.from(imageBytes, 'base64')
+        const filename = `universe-scan-${userId}-${Date.now()}.png`
+        const blob = await put(filename, buffer, { access: 'public', contentType: 'image/png' })
+
+        // ── Save GeneratedImage ─────────────────────────────────────────
+        const expiresAt = new Date()
+        expiresAt.setFullYear(expiresAt.getFullYear() + 100)
+        const savedImage = await bgPrisma.generatedImage.create({
+          data: {
+            userId,
+            prompt: promptStr,
+            imageUrl: blob.url,
+            model,
+            ticketCost,
+            referenceImageUrls,
+            quality,
+            aspectRatio,
+            expiresAt,
+          },
+        })
+
+        // ── Deduct tickets ──────────────────────────────────────────────
+        await bgPrisma.ticket.update({
+          where: { userId },
+          data: {
+            balance:   { decrement: ticketCost },
+            reserved:  { decrement: ticketCost },
+            totalUsed: { increment: ticketCost },
+          },
+        })
+
+        // ── Mark queue completed ────────────────────────────────────────
+        await bgPrisma.generationQueue.update({
+          where: { id: queueId },
+          data: {
+            status:       'completed',
+            completedAt:  new Date(),
+            resultUrl:    blob.url,
+            resultImageId: savedImage.id,
+            parameters: {
+              source: 'main-scanner',
+              adminMode: false,
+              quality,
+              aspectRatio,
+              referenceImageUrls,
+              completedImageUrls: [blob.url],
+              completedImageIds:  [savedImage.id],
+            },
+          },
+        })
+
+        console.log(`Gemini queue #${queueId} completed — image #${savedImage.id}`)
+      } catch (err: any) {
+        console.error(`Gemini queue #${queueId} failed:`, err.message)
+        await Promise.all([
+          bgPrisma.ticket.update({
+            where: { userId },
+            data: { reserved: { decrement: ticketCost } },
+          }).catch(() => {}),
+          bgPrisma.generationQueue.update({
+            where: { id: queueId },
+            data: {
+              status:      'failed',
+              completedAt: new Date(),
+              errorMessage: err.message || 'Generation failed',
+            },
+          }).catch(() => {}),
+        ])
+      } finally {
+        await bgPrisma.$disconnect()
+      }
+    })
+
+    return NextResponse.json({ success: true, queueId, newBalance })
+  } catch (err: any) {
+    console.error('Gemini submit error:', err)
+    return NextResponse.json({ error: err.message || 'Submission failed' }, { status: 500 })
+  } finally {
+    await prisma.$disconnect()
+  }
+}

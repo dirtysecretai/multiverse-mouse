@@ -129,6 +129,40 @@ export default function PromptingStudio() {
   const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
   const refImageInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Admin gate ---
+  const [adminAuthed, setAdminAuthed] = useState(false);
+  const [adminGateLoading, setAdminGateLoading] = useState(true);
+  const [adminPassword, setAdminPassword] = useState('');
+
+  useEffect(() => {
+    const auth = localStorage.getItem('multiverse-admin-auth');
+    const pass = sessionStorage.getItem('admin-password');
+    if (auth === 'true' && pass) setAdminAuthed(true);
+    setAdminGateLoading(false);
+  }, []);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/admin/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword }),
+      });
+      if (res.ok) {
+        sessionStorage.setItem('admin-password', adminPassword);
+        localStorage.setItem('multiverse-admin-auth', 'true');
+        setAdminAuthed(true);
+      } else {
+        alert('Invalid password');
+      }
+    } catch {
+      alert('Authentication failed');
+    }
+  };
+  // --- End admin gate ---
+
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [ticketBalance, setTicketBalance] = useState<number | null>(null);
@@ -2468,6 +2502,44 @@ export default function PromptingStudio() {
 
     alert(newGemStatus ? 'Marked as gem!' : 'Unmarked as gem');
   };
+
+  if (adminGateLoading) {
+    return (
+      <div className="min-h-screen bg-[#050810] flex items-center justify-center">
+        <div className="text-cyan-400 text-xl font-mono">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!adminAuthed) {
+    return (
+      <div className="min-h-screen bg-[#050810] flex items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <div className="mb-8 text-center">
+            <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-400 to-purple-500 mb-2">
+              SCANNER CANVAS
+            </h1>
+            <p className="text-slate-500 text-sm">Admin access required</p>
+          </div>
+          <form onSubmit={handleAdminLogin} className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm">
+            <input
+              type="password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              placeholder="Enter admin password"
+              className="w-full p-3 rounded-lg bg-slate-950 border border-slate-700 text-white focus:border-fuchsia-500 focus:outline-none mb-4"
+            />
+            <button
+              type="submit"
+              className="w-full py-2.5 rounded-lg bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-bold transition-all"
+            >
+              Enter
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

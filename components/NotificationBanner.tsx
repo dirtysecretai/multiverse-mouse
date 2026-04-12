@@ -8,6 +8,7 @@ interface Notification {
   message: string
   type: string
   isActive: boolean
+  locked: boolean
 }
 
 const TYPE_CONFIG = {
@@ -54,7 +55,7 @@ export function NotificationBanner() {
 
   const fetchNotifications = async () => {
     try {
-      const res = await fetch('/api/notifications')
+      const res = await fetch('/api/notifications?target=main')
       if (res.ok) {
         const data = await res.json()
         setNotifications(data)
@@ -92,12 +93,14 @@ export function NotificationBanner() {
               <p className={`flex-1 text-sm ${config.text} font-medium`}>
                 {notification.message}
               </p>
-              <button
-                onClick={() => handleDismiss(notification.id)}
-                className={`${config.text} hover:opacity-70 transition-opacity flex-shrink-0`}
-              >
-                <X size={18} />
-              </button>
+              {!notification.locked && (
+                <button
+                  onClick={() => handleDismiss(notification.id)}
+                  className={`${config.text} hover:opacity-70 transition-opacity flex-shrink-0`}
+                >
+                  <X size={18} />
+                </button>
+              )}
             </div>
           </div>
         )

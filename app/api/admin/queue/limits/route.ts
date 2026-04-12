@@ -10,13 +10,21 @@ const DEFAULT_MODELS = [
   { modelId: 'nano-banana', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'nano-banana-pro', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'nano-banana-2', modelType: 'image', maxConcurrent: 999 },
+  { modelId: 'nano-banana-pro-2', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'seedream-4.5', modelType: 'image', maxConcurrent: 999 },
+  { modelId: 'seedream-5-lite', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'flux-2', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'gemini-3-pro-image', modelType: 'image', maxConcurrent: 999 },
   { modelId: 'gemini-2.5-flash-image', modelType: 'image', maxConcurrent: 999 },
+  { modelId: 'kling-v3-image', modelType: 'image', maxConcurrent: 999 },
+  { modelId: 'kling-o3-image', modelType: 'image', maxConcurrent: 999 },
 
   // Video models
   { modelId: 'wan-2.5', modelType: 'video', maxConcurrent: 999 },
+  { modelId: 'kling-v3', modelType: 'video', maxConcurrent: 999 },
+  { modelId: 'kling-o3', modelType: 'video', maxConcurrent: 999 },
+  { modelId: 'kling-v3-motion', modelType: 'video', maxConcurrent: 999 },
+  { modelId: 'seedance-1.5', modelType: 'video', maxConcurrent: 999 },
 ];
 
 // GET - Fetch all model limits

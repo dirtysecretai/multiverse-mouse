@@ -40,8 +40,8 @@ export const AI_MODELS: AIModel[] = [
     id: 'nano-banana-pro',
     name: 'fal-ai/nano-banana-pro',
     displayName: 'NanoBanana Pro',
-    description: 'Premium quality - 5 tickets (2K) or 10 tickets (4K)',
-    ticketCost: 5,
+    description: 'Premium quality - 6 tickets (2K) or 12 tickets (4K)',
+    ticketCost: 6,
     category: 'premium',
     rateLimit: {
       rpm: 0, // No rate limit on FAL.ai
@@ -222,8 +222,13 @@ export function getTicketCost(modelId: string, quality?: '2k' | '4k'): number {
   const model = getModelById(modelId)
   if (!model) return 1
 
-  // NanoBanana Pro & Pro Scanner v3: 5 tickets for 2K, 10 tickets for 4K
-  if ((modelId === 'nano-banana-pro' || modelId === 'gemini-3-pro-image') && quality === '4k') {
+  // NanoBanana Pro: 6 tickets for 2K, 12 tickets for 4K
+  if (modelId === 'nano-banana-pro' && quality === '4k') {
+    return 12
+  }
+
+  // Pro Scanner v3: 5 tickets for 2K, 10 tickets for 4K
+  if (modelId === 'gemini-3-pro-image' && quality === '4k') {
     return 10
   }
 
