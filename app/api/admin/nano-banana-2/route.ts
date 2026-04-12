@@ -2,12 +2,18 @@ import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
 import { put } from '@vercel/blob'
 import { PrismaClient } from '@prisma/client'
+import { getUserFromSession } from '@/lib/auth'
+import { cookies } from 'next/headers'
 
 fal.config({ credentials: process.env.FAL_KEY })
 const prisma = new PrismaClient()
 
 export async function POST(req: Request) {
   try {
+    const cookieStore = await cookies()
+    const token = cookieStore.get('session')?.value
+    const sessionUser = token ? await getUserFromSession(token) : null
+
     const body = await req.json()
     const {
       prompt,
@@ -80,12 +86,16 @@ export async function POST(req: Request) {
     // Admin prototype has no user session so we associate with userId=1 or
     // the first user found in the DB.
     try {
-      const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
-      if (adminUser) {
+      let targetUserId: number | null = sessionUser?.id ?? null
+      if (!targetUserId) {
+        const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
+        targetUserId = adminUser?.id ?? null
+      }
+      if (targetUserId) {
         await Promise.all(hostedImages.map(img =>
           prisma.generatedImage.create({
             data: {
-              userId:            adminUser.id,
+              userId:            targetUserId!,
               prompt:            prompt.trim(),
               imageUrl:          img.url,
               model:             'nano-banana-2',
