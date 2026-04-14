@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, CreditCard, AlertCircle, CheckCircle, XCircle, ToggleLeft, ToggleRight, Trash2, DollarSign, Calendar, User, Mail, RefreshCw, Gift, UserPlus, CalendarClock } from "lucide-react"
+import { ArrowLeft, CreditCard, AlertCircle, CheckCircle, XCircle, ToggleLeft, ToggleRight, Trash2, DollarSign, Calendar, User, Mail, RefreshCw, Gift, UserPlus, CalendarClock, Search } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 interface SubscriptionTransaction {
@@ -63,6 +63,9 @@ export default function DevTierAnalytics() {
   const [grantTickets, setGrantTickets] = useState(true)
   const [granting, setGranting] = useState(false)
   const [grantResult, setGrantResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Edit end date state
   const [editingEndDateId, setEditingEndDateId] = useState<number | null>(null)
@@ -519,6 +522,20 @@ export default function DevTierAnalytics() {
           </div>
         )}
 
+        {/* Search */}
+        {!loading && !error && subscriptions.length > 0 && (
+          <div className="mb-4 relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search by email..."
+              className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-emerald-500 placeholder-slate-600"
+            />
+          </div>
+        )}
+
         {/* Subscriptions Table */}
         {!loading && !error && subscriptions.length === 0 && (
           <div className="p-12 text-center rounded-xl border-2 border-slate-700 bg-slate-900/60 backdrop-blur-sm">
@@ -530,7 +547,9 @@ export default function DevTierAnalytics() {
 
         {!loading && !error && subscriptions.length > 0 && (
           <div className="space-y-4">
-            {subscriptions.map((sub) => (
+            {subscriptions
+              .filter(sub => !searchQuery || sub.user.email.toLowerCase().includes(searchQuery.toLowerCase()))
+              .map((sub) => (
               <div
                 key={sub.id}
                 className="p-6 rounded-xl border-2 border-slate-700 bg-slate-900/60 backdrop-blur-sm hover:border-slate-600 transition-all"
