@@ -41,29 +41,34 @@ AI Design Studio (prompt-protocol.vercel.app) is an AI creative platform that le
 ## IMAGE MODELS (in Portal V2)
 
 ### NanoBanana Pro 2 ⭐ (Recommended flagship)
-- **Cost**: 6 tickets (2K quality) or 12 tickets (4K quality)
+- **Cost**: **5 tickets (2K quality)** or **8 tickets (4K quality)**
 - **Supports**: Text-to-image, image-to-image (reference images)
 - **Strengths**: Very high quality, great for portraits, realistic scenes, artistic work
 - **Reference images**: Up to 4 reference images for style/character consistency
 - **Aspect ratios**: 1:1, 4:3, 16:9, 3:4, 9:16
 
+### NanoBanana Pro (Original)
+- **Cost**: **6 tickets (2K quality)** or **12 tickets (4K quality)**
+- **Supports**: Text-to-image, image-to-image (reference images)
+- **Strengths**: High quality, great for portraits and artistic work
+
 ### Kling V3 Image
-- **Cost**: 6 tickets
+- **Cost**: **2 tickets** (1K or 2K quality)
 - **Supports**: Text-to-image, image-to-image
 - **Strengths**: Excellent photorealism, strong image coherence
 - **Reference images**: 1 reference image
 - **Aspect ratios**: Multiple options including auto
 
 ### Kling O3 (Omni)
-- **Cost**: 6 tickets
+- **Cost**: **2 tickets** (1K or 2K) or **4 tickets** (4K)
 - **Supports**: Text-to-image, image-to-image with multiple references
 - **Strengths**: Versatile, handles complex compositions
 - **Reference images**: Up to 10 reference images
 - **Aspect ratios**: Multiple options including auto
-- **Resolution options**: 1K, 2K
+- **Resolution options**: 1K, 2K, 4K
 
 ### Wan 2.7 Pro
-- **Cost**: 4 tickets
+- **Cost**: **4 tickets**
 - **Supports**: Text-to-image, image editing (with reference images)
 - **Strengths**: Good quality at low ticket cost, versatile
 - **Reference images**: Up to 4 reference images (edit mode)
@@ -75,24 +80,32 @@ AI Design Studio (prompt-protocol.vercel.app) is an AI creative platform that le
 - **Strengths**: Direct Gemini API, no content filtering, great for creative/unrestricted work
 - **Reference images**: Multiple
 
+### SeeDream 4.5
+- **Cost**: **1 ticket** (standard) or **2 tickets** (4K)
+- **Strengths**: Excellent text rendering in images, ByteDance model
+- **Aspect ratios**: Multiple
+
+### SeeDream 5.0 Lite
+- **Cost**: **1 ticket** (standard) or **2 tickets** (3K+)
+- **Strengths**: Newer SeeDream model, fast, good quality
+- **Aspect ratios**: Multiple
+
+### FLUX 2
+- **Cost**: **1 ticket**
+- **Strengths**: Cheapest option, crisp text, native editing capability
+
 ### NanoBanana Cluster (Legacy)
 - **Cost**: 2 tickets for 2 images
 - **Strengths**: Super cheap, fast, good for quick concepts
-
-### SeeDream 4.5
-- **Cost**: 2 tickets
-- **Strengths**: Excellent text rendering in images, ByteDance model
-
-### FLUX 2
-- **Cost**: 1 ticket
-- **Strengths**: Cheapest option, crisp text, native editing capability
 
 ---
 
 ## VIDEO MODELS (in Portal V2)
 
 ### Kling V3 Pro ⭐ (Recommended for video)
-- **Cost**: 6 tickets/sec (no audio) or 8 tickets/sec (with audio)
+- **Cost**: **6 tickets/sec** (no audio) or **8 tickets/sec** (with audio)
+  - 5s no audio = **30 tickets**, 5s with audio = **40 tickets**
+  - 10s no audio = **60 tickets**, 10s with audio = **80 tickets**
 - **Duration**: 5s or 10s
 - **Supports**: Image-to-video, optional end frame
 - **Strengths**: Cinematic motion, excellent quality, supports start + end frame
@@ -104,7 +117,7 @@ AI Design Studio (prompt-protocol.vercel.app) is an AI creative platform that le
 - **Strengths**: High quality, longer durations possible (3–15s)
 
 ### Kling Motion Control
-- **Cost**: 6 tickets/sec based on reference video duration
+- **Cost**: **6 tickets/sec** based on reference video duration (rounded up)
 - **Supports**: Image + motion reference video → output video
 - **Strengths**: Transfer motion/camera movement from a reference clip to your image
 - Use it when you want precise control over how the subject/camera moves
@@ -118,6 +131,8 @@ AI Design Studio (prompt-protocol.vercel.app) is an AI creative platform that le
 
 ### SeeDance 2.0 ⭐
 - **Cost**: ~15 tickets/sec at 720p
+  - 5s at 720p ≈ **75 tickets**, 10s at 720p ≈ **150 tickets**
+  - Lower at 480p, higher at 1080p
 - **Supports**: Text-to-video, image-to-video, reference-to-video (R2V — multiple image/video/audio refs)
 - **Strengths**: State-of-the-art quality, versatile modes, start + end frames supported
 - **Duration**: 5s or 10s (or auto)
@@ -125,17 +140,21 @@ AI Design Studio (prompt-protocol.vercel.app) is an AI creative platform that le
 
 ### SeeDance 2.0 Fast
 - **Cost**: ~12 tickets/sec at 720p
+  - 5s at 720p ≈ **60 tickets**, 10s at 720p ≈ **120 tickets**
 - **Supports**: Same as SeeDance 2.0
 - **Strengths**: Faster processing at slightly lower quality than standard SD 2.0
 
-### WAN 2.5
-- **Cost**: 7–40 tickets depending on resolution and duration
+### WAN 2.5 Video
+- **Cost** (exact):
+  - 480p 5s = **7 tickets**, 480p 10s = **14 tickets**
+  - 720p 5s = **13 tickets**, 720p 10s = **26 tickets**
+  - 1080p 5s = **20 tickets**, 1080p 10s = **40 tickets**
 - **Supports**: Image-to-video
-- **Resolutions**: 480p (cheapest), 720p, 1080p
+- **Resolutions**: 480p, 720p, 1080p
 - **Duration**: 5s or 10s
 
 ### Lipsync V3
-- **Cost**: 10 tickets minimum (scales with video duration)
+- **Cost**: **10 tickets minimum** (or 6 tickets/sec for longer videos — whichever is higher)
 - **Supports**: Takes a video + audio file → syncs lip movement to audio
 - **Use case**: Dub characters or make talking head videos
 
@@ -147,14 +166,14 @@ AI Design Studio (prompt-protocol.vercel.app) is an AI creative platform that le
 Use **FLUX 2** (1 ticket) or **NanoBanana Cluster** (2 tickets for 2 images) for fast, cheap ideation.
 
 ### High-quality portrait or character art:
-Use **NanoBanana Pro 2** (6 tickets at 2K). Add 1–4 reference images for consistency.
+Use **NanoBanana Pro 2** (5 tickets at 2K). Add 1–4 reference images for consistency.
 
 ### Photorealistic scene:
-Use **Kling V3 Image** (6 tickets) or **NanoBanana Pro 2**.
+Use **Kling V3 Image** (2 tickets) or **NanoBanana Pro 2** (5 tickets at 2K).
 
 ### Image → Video (best quality):
 1. Generate image with NanoBanana Pro 2 or Kling V3 Image.
-2. Use that image as start frame in **Kling V3 Pro** video (5s = 30 tickets, 10s = 60 tickets).
+2. Use that image as start frame in **Kling V3 Pro** video (5s no audio = 30 tickets, 5s with audio = 40 tickets, 10s no audio = 60 tickets).
 
 ### Image → Video (budget):
 1. Generate with FLUX 2 or WAN 2.5 image.

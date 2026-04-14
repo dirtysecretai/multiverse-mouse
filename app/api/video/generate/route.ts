@@ -255,14 +255,34 @@ export async function POST(request: NextRequest) {
     if (adminMode) {
       const { cookies } = await import('next/headers')
       const { getUserFromSession } = await import('@/lib/auth')
+      const { PrismaClient: PC2 } = await import('@prisma/client')
+      const prisma2 = new PC2()
+      const FALLBACK_ADMIN_EMAILS = ['promptandprotocol@gmail.com', 'dirtysecretai@gmail.com']
       const cookieStore = await cookies()
       const token = cookieStore.get('session')?.value
       const sessionUser = token ? await getUserFromSession(token) : null
-      adminTargetUserId = sessionUser?.id ?? null
-      if (!adminTargetUserId) {
-        const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
-        adminTargetUserId = adminUser?.id ?? null
+      if (!sessionUser) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
       }
+      // Verify the session user is actually an admin
+      let isAdmin = false
+      try {
+        const count = await prisma2.adminAccount.count()
+        if (count === 0) {
+          isAdmin = FALLBACK_ADMIN_EMAILS.includes(sessionUser.email)
+        } else {
+          const account = await prisma2.adminAccount.findUnique({ where: { email: sessionUser.email } })
+          isAdmin = !!(account?.canAccessAdmin)
+        }
+      } catch {
+        isAdmin = FALLBACK_ADMIN_EMAILS.includes(sessionUser.email)
+      } finally {
+        await prisma2.$disconnect()
+      }
+      if (!isAdmin) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      }
+      adminTargetUserId = sessionUser.id
       if (!adminTargetUserId) {
         return NextResponse.json({ success: false, error: 'No user found' }, { status: 500 });
       }
