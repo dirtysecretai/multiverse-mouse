@@ -562,9 +562,8 @@ export default function DevTierAnalytics() {
                             <div className="text-xs text-slate-500">Total Paid</div>
                             <div className="text-sm font-bold text-green-400">
                               {formatCurrency(
-                                sub.transactions
-                                  .filter(tx => tx.type === 'payment')
-                                  .reduce((sum, tx) => sum + (tx.amount || 0), 0)
+                                sub.transactions.filter(tx => tx.type === 'ticket_distribution').length
+                                * (sub.billingAmount || 0)
                               )}
                             </div>
                           </div>
