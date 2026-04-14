@@ -192,6 +192,17 @@ async function handleSubscriptionCreated(payload: any, customData: any) {
     },
   })
 
+  // Record initial payment
+  await prisma.subscriptionTransaction.create({
+    data: {
+      subscriptionId: subscription.id,
+      userId,
+      type:           'payment',
+      amount:         planInfo.price,
+      description:    `Dev Tier ${planInfo.billingCycle} subscription — initial payment via LemonSqueezy`,
+    },
+  })
+
   // Deliver initial tickets
   await deliverTickets(
     userId,
@@ -232,10 +243,19 @@ async function handleSubscriptionUpdated(payload: any) {
     },
   })
 
-  // Deliver tickets only on a genuine renewal (period advanced)
+  // Deliver tickets + record payment on a genuine renewal (period advanced)
   if (isRenewal) {
     const planInfo = SUBSCRIPTION_VARIANT_MAP[subscription.lsVariantId ?? 0]
     if (planInfo) {
+      await prisma.subscriptionTransaction.create({
+        data: {
+          subscriptionId: subscription.id,
+          userId:         subscription.userId,
+          type:           'payment',
+          amount:         planInfo.price,
+          description:    `Dev Tier ${planInfo.billingCycle} renewal payment via LemonSqueezy`,
+        },
+      })
       await deliverTickets(
         subscription.userId,
         subscription.id,
