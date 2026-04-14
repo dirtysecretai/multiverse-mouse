@@ -85,7 +85,7 @@ export async function POST(req: Request) {
           modelId:   'kling-v3-image',
           modelType: 'image',
           prompt:    (prompt as string).trim(),
-          parameters: { falEndpoint: endpoint, falInput: input, usePolling: true, permanentReferenceUrls },
+          parameters: { falEndpoint: endpoint, falInput: input as Record<string, unknown>, usePolling: true, permanentReferenceUrls } as any,
           status:    'queued',
           ticketCost: 0,
         },
