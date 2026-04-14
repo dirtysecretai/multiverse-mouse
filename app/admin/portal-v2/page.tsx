@@ -4084,14 +4084,54 @@ function VideoFeed({
   selectedIds?: Set<number>
   onSelectToggle?: (id: number) => void
 }) {
-  // Pull the same historical feed as the image scanner
+  // Pull the same historical feed as the image scanner — with infinite scroll
   const [dbImages, setDbImages] = useState<ImageItem[]>([])
-  useEffect(() => {
-    fetch("/api/my-images?page=1&limit=18&type=video")
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.images) setDbImages(d.images) })
-      .catch(() => {})
+  const [dbLoading, setDbLoading] = useState(false)
+  const videoSentinelRef = useRef<HTMLDivElement>(null)
+  const videoLoadingRef = useRef(false)
+  const videoPageRef = useRef(1)
+  const videoHasMoreRef = useRef(true)
+  const videoPagLimitRef = useRef(typeof window !== "undefined" && window.innerWidth < 640 ? 8 : 24)
+
+  const loadNextVideos = useCallback(async () => {
+    if (videoLoadingRef.current || !videoHasMoreRef.current) return
+    videoLoadingRef.current = true
+    setDbLoading(true)
+    try {
+      const res = await fetch(`/api/my-images?page=${videoPageRef.current}&limit=${videoPagLimitRef.current}&type=video`)
+      if (!res.ok) return
+      const data = await res.json()
+      if (!data.images) return
+      setDbImages(prev => {
+        const existingIds = new Set(prev.map(i => i.id))
+        const newItems = (data.images as any[]).filter(img => !existingIds.has(img.id))
+        return [...prev, ...newItems]
+      })
+      videoHasMoreRef.current = videoPageRef.current < (data.pagination?.totalPages ?? 1)
+      videoPageRef.current += 1
+    } finally {
+      videoLoadingRef.current = false
+      setDbLoading(false)
+    }
   }, [])
+
+  useEffect(() => { loadNextVideos() }, [loadNextVideos])
+  useEffect(() => { if (!dbLoading) {
+    if (!videoSentinelRef.current || !videoHasMoreRef.current) return
+    const rect = videoSentinelRef.current.getBoundingClientRect()
+    if (rect.top < window.innerHeight + 1200) loadNextVideos()
+  } }, [dbLoading, loadNextVideos])
+
+  useEffect(() => {
+    const sentinel = videoSentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadNextVideos() },
+      { rootMargin: "1200px" }
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [loadNextVideos])
 
   // IDs already shown as session items — skip them in the DB section.
   // Session VideoItem.id is a FAL request ID string, which never matches a numeric
@@ -4112,7 +4152,7 @@ function VideoFeed({
   // Append #t=0.001 so iOS Safari decodes the first frame instead of showing black
   const iosSrc = (url: string) => (url.includes("#") ? url : `${url}#t=0.001`)
 
-  const hasContent = pendingSlots.length > 0 || items.length > 0 || dbImages.length > 0 || savedFails.length > 0
+  const hasContent = pendingSlots.length > 0 || items.length > 0 || dbImages.length > 0 || savedFails.length > 0 || dbLoading || videoHasMoreRef.current
 
   if (!hasContent) {
     return (
@@ -4267,6 +4307,14 @@ function VideoFeed({
             </div>
           ))
       })()}
+
+      {/* Infinite scroll sentinel — triggers next page load when scrolled into view */}
+      <div ref={videoSentinelRef} className="col-span-full h-1" />
+      {dbLoading && (
+        <div className="col-span-full flex justify-center py-4">
+          <div className="w-5 h-5 rounded-full border-2 border-orange-400/30 border-t-orange-400 animate-spin" />
+        </div>
+      )}
     </div>
   )
 }
