@@ -49,7 +49,7 @@ export async function GET(
         .resize({ width: 600, withoutEnlargement: true })
         .webp({ quality: 75 })
         .toBuffer()
-      return new NextResponse(thumb, {
+      return new NextResponse(new Uint8Array(thumb), {
         status: 200,
         headers: {
           'Content-Type': 'image/webp',
