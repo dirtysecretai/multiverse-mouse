@@ -2825,6 +2825,8 @@ function PromptBox({
             }
             const nb2Cost = calcTicketCost("nano-banana-pro-2", quality)
             const nb2RefUrls = submitData.permanentReferenceUrls?.length ? submitData.permanentReferenceUrls : permanentRefUrls
+            // Deduct tickets immediately — whether queued or submitted directly
+            onDeductTickets?.(nb2Cost)
             // Queued (at capacity): store context so the outer component can resume after promotion
             if (submitData.queued) {
               onUpdatePending(sid, {
@@ -2838,7 +2840,6 @@ function PromptBox({
               return
             }
             const { requestId, falEndpoint } = submitData
-            onDeductTickets?.(nb2Cost)
             onUpdatePending(sid, {
               nb2RequestId: requestId,
               nb2FalEndpoint: falEndpoint,
@@ -2881,6 +2882,7 @@ function PromptBox({
             }
             const klingV3Cost = calcTicketCost("kling-v3-image", quality)
             const klingV3RefUrls = submitData.permanentReferenceUrls?.length ? submitData.permanentReferenceUrls : permanentRefUrls
+            onDeductTickets?.(klingV3Cost)
             if (submitData.queued) {
               onUpdatePending(sid, {
                 queueJobId: submitData.queueId,
@@ -2893,7 +2895,6 @@ function PromptBox({
               return
             }
             const { requestId, falEndpoint } = submitData
-            onDeductTickets?.(klingV3Cost)
             onUpdatePending(sid, {
               nb2RequestId: requestId,
               nb2FalEndpoint: falEndpoint,
@@ -2935,6 +2936,7 @@ function PromptBox({
             }
             const klingO3Cost = calcTicketCost("kling-o3-image", quality)
             const klingO3RefUrls = submitData.permanentReferenceUrls?.length ? submitData.permanentReferenceUrls : permanentRefUrls
+            onDeductTickets?.(klingO3Cost)
             if (submitData.queued) {
               onUpdatePending(sid, {
                 queueJobId: submitData.queueId,
@@ -2948,7 +2950,6 @@ function PromptBox({
               return
             }
             const { requestId, falEndpoint } = submitData
-            onDeductTickets?.(klingO3Cost)
             onUpdatePending(sid, {
               nb2RequestId: requestId,
               nb2FalEndpoint: falEndpoint,
@@ -2989,6 +2990,7 @@ function PromptBox({
             }
             const wan27Cost = calcTicketCost("wan-2.7-pro", quality)
             const wan27RefUrls = submitData.permanentReferenceUrls?.length ? submitData.permanentReferenceUrls : permanentRefUrls
+            onDeductTickets?.(wan27Cost)
             if (submitData.queued) {
               onUpdatePending(sid, {
                 queueJobId: submitData.queueId,
@@ -3000,7 +3002,6 @@ function PromptBox({
               return
             }
             const { requestId, falEndpoint } = submitData
-            onDeductTickets?.(wan27Cost)
             onUpdatePending(sid, {
               nb2RequestId: requestId,
               nb2FalEndpoint: falEndpoint,
