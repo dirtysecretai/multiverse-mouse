@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Ticket, LogOut, CreditCard, Image as ImageIcon, Receipt, Settings, Terminal, Sparkles, Video, ArrowRight, ShieldCheck } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import ChatWidget from "@/components/ChatWidget"
 
 interface UserData {
   id: number
@@ -205,6 +206,7 @@ export default function DashboardPage() {
   ]
 
   return (
+    <>
     <div className="min-h-screen bg-[#050810] text-white">
       {/* Subtle grid */}
       <div className="fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
@@ -214,48 +216,66 @@ export default function DashboardPage() {
 
       <div className="relative z-10 max-w-4xl mx-auto px-4 py-10">
 
-        {/* Header */}
-        <div className="flex items-start justify-between mb-8">
-          <div>
-            <p className="text-[11px] font-mono text-slate-600 uppercase tracking-widest mb-1">AI Design Studio</p>
-            <h1 className="text-3xl font-black text-white tracking-tight">Dashboard</h1>
-            <p className="text-slate-500 text-sm mt-0.5">Welcome back, {user.email.split('@')[0]}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Ticket balance */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/20 bg-black/40 font-mono text-xs">
-              <Ticket size={11} className="text-cyan-500/70" />
-              <span className="text-cyan-400 tabular-nums">{user.ticketBalance.toLocaleString()}</span>
-            </div>
-            {/* User badge */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/8 bg-white/3">
-              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-500 to-fuchsia-500 flex items-center justify-center text-[10px] font-black text-black">
-                {user.email[0].toUpperCase()}
+        {/* Brand header */}
+        <div className="mb-8">
+          {/* Logo + wordmark */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-500/25 to-fuchsia-500/25 border border-cyan-500/20 flex items-center justify-center shadow-lg shadow-cyan-500/10">
+                <Sparkles size={18} className="text-cyan-400" />
               </div>
-              <span className="text-xs text-slate-400 max-w-[130px] truncate hidden sm:block">{user.email}</span>
-              {hasPromptStudioDev && (
-                <span className="text-[9px] font-black bg-gradient-to-r from-purple-500 to-cyan-500 text-white px-1.5 py-0.5 rounded-full leading-none">
-                  DEV
-                </span>
-              )}
+              <div>
+                <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-cyan-400 via-white to-fuchsia-400 bg-clip-text text-transparent leading-none">
+                  AI Design Studio
+                </h1>
+                <p className="text-[10px] font-mono text-slate-600 tracking-widest uppercase mt-0.5">Prompt Protocol</p>
+              </div>
             </div>
-            {/* Admin portal shortcut */}
-            {isAdmin && (
-              <Link href="/admin">
-                <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 hover:border-cyan-400/50 hover:bg-cyan-500/15 text-xs text-cyan-400 transition-all">
-                  <ShieldCheck size={12} />
-                  <span className="hidden sm:inline">Admin</span>
-                </button>
-              </Link>
-            )}
-            {/* Logout */}
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/8 bg-white/3 hover:border-red-500/30 hover:bg-red-500/5 hover:text-red-400 text-xs text-slate-400 transition-all"
-            >
-              <LogOut size={12} />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
+            {/* User actions */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/20 bg-black/40 font-mono text-xs">
+                <Ticket size={11} className="text-cyan-500/70" />
+                <span className="text-cyan-400 tabular-nums">{user.ticketBalance.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/8 bg-white/3">
+                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-500 to-fuchsia-500 flex items-center justify-center text-[10px] font-black text-black">
+                  {user.email[0].toUpperCase()}
+                </div>
+                <span className="text-xs text-slate-400 max-w-[130px] truncate hidden sm:block">{user.email}</span>
+                {hasPromptStudioDev && (
+                  <span className="text-[9px] font-black bg-gradient-to-r from-purple-500 to-cyan-500 text-white px-1.5 py-0.5 rounded-full leading-none">
+                    DEV
+                  </span>
+                )}
+              </div>
+              {isAdmin && (
+                <Link href="/admin">
+                  <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 hover:border-cyan-400/50 hover:bg-cyan-500/15 text-xs text-cyan-400 transition-all">
+                    <ShieldCheck size={12} />
+                    <span className="hidden sm:inline">Admin</span>
+                  </button>
+                </Link>
+              )}
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/8 bg-white/3 hover:border-red-500/30 hover:bg-red-500/5 hover:text-red-400 text-xs text-slate-400 transition-all"
+              >
+                <LogOut size={12} />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Welcome bar */}
+          <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-white/6 bg-white/2">
+            <div>
+              <p className="text-sm font-semibold text-white">Welcome back, <span className="bg-gradient-to-r from-cyan-400 to-fuchsia-400 bg-clip-text text-transparent">{user.email.split('@')[0]}</span></p>
+              <p className="text-[11px] text-slate-600 mt-0.5">Your creative workspace is ready.</p>
+            </div>
+            <div className="hidden sm:flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+              <span className="text-[10px] font-mono text-slate-600">All systems online</span>
+            </div>
           </div>
         </div>
 
@@ -285,11 +305,18 @@ export default function DashboardPage() {
               {generatedImages.slice(0, 5).map((img, idx) => (
                 <Link href="/my-images" key={img.id || idx}>
                   <div className="aspect-square rounded-lg overflow-hidden border border-white/6 hover:border-fuchsia-500/40 transition-all group relative">
-                    <img
-                      src={img.videoMetadata?.isVideo ? (img.videoMetadata.thumbnailUrl || img.imageUrl) : `/api/images/${img.id}?thumb=1`}
-                      alt={`Generation ${idx + 1}`}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    />
+                    {img.videoMetadata?.isVideo ? (() => {
+                      const thumb = img.videoMetadata?.thumbnailUrl
+                      const videoUrl = img.imageUrl
+                      const needsVideoThumb = !thumb || thumb === videoUrl || /\.(mp4|webm|mov)(\?|$)/i.test(thumb)
+                      return needsVideoThumb ? (
+                        <video src={videoUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform" muted playsInline preload="metadata" />
+                      ) : (
+                        <img src={thumb} alt={`Generation ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                      )
+                    })() : (
+                      <img src={`/api/images/${img.id}?thumb=1`} alt={`Generation ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                    )}
                     {img.videoMetadata?.isVideo && (
                       <div className="absolute bottom-1 left-1 flex items-center gap-0.5 bg-black/70 rounded px-1 py-0.5">
                         <svg className="w-2.5 h-2.5 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
@@ -459,5 +486,8 @@ export default function DashboardPage() {
 
       </div>
     </div>
+
+    <ChatWidget />
+    </>
   )
 }

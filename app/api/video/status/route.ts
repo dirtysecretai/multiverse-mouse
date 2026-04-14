@@ -52,6 +52,22 @@ export async function POST(request: NextRequest) {
 
       const actualPrompt = result.data?.actual_prompt || prompt;
 
+      // Idempotency: if this requestId was already saved, return the existing record
+      const existingVideo = await prisma.generatedImage.findFirst({
+        where: { falRequestId: requestId },
+        select: { id: true, imageUrl: true },
+      })
+      if (existingVideo) {
+        console.log(`↩ Video already saved [${requestId}] returning existing record ${existingVideo.id}`)
+        return NextResponse.json({
+          status: 'completed',
+          videoUrl: existingVideo.imageUrl,
+          thumbnailUrl: existingVideo.imageUrl,
+          videoId: existingVideo.id,
+          actualPrompt,
+        })
+      }
+
       // Save completed video to DB
       const savedVideo = await prisma.generatedImage.create({
         data: {
@@ -63,6 +79,7 @@ export async function POST(request: NextRequest) {
           aspectRatio: '16:9',
           ticketCost: ticketCost || 0,
           expiresAt: new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000),
+          falRequestId: requestId,
           videoMetadata: {
             duration: duration || '5',
             resolution: resolution || '1080p',

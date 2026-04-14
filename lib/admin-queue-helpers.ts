@@ -11,6 +11,43 @@ import prisma from '@/lib/prisma'
 import { FAL_GLOBAL_ID, promoteNextQueuedJob } from '@/lib/fal-queue'
 
 /**
+ * Syncs the global FAL concurrency counter from ground truth (actual DB count of
+ * 'processing' rows), then atomically claims a slot.
+ *
+ * Why sync first: the counter can drift upward when a serverless function times
+ * out, crashes, or loses its DB connection after incrementing but before the
+ * corresponding decrement — leaving the counter permanently inflated.  An inflated
+ * counter causes subsequent submissions to be falsely queued even when FAL has
+ * plenty of capacity.  Syncing at submit time self-heals any drift without needing
+ * a manual admin action.
+ *
+ * Returns { claimed: true } when a slot was successfully reserved, or
+ * { claimed: false } when the queue is genuinely at capacity.
+ */
+export async function syncAndClaimFalSlot(): Promise<{ claimed: boolean; maxConcurrent: number }> {
+  const globalLimit = await prisma.modelConcurrencyLimit.findUnique({ where: { modelId: FAL_GLOBAL_ID } })
+  if (!globalLimit) return { claimed: true, maxConcurrent: 999 } // No limit row — allow
+
+  // Sync counter to ground truth (idempotent — only writes when value actually changed)
+  const actualProcessing = await prisma.generationQueue.count({ where: { status: 'processing' } })
+  if (actualProcessing !== globalLimit.currentActive) {
+    console.log(`[syncAndClaimFalSlot] Counter drift detected: stored=${globalLimit.currentActive}, actual=${actualProcessing}. Syncing.`)
+    await prisma.modelConcurrencyLimit.updateMany({
+      where: { modelId: FAL_GLOBAL_ID },
+      data: { currentActive: actualProcessing },
+    })
+  }
+
+  // Atomically claim a slot (safe against concurrent requests)
+  const claim = await prisma.modelConcurrencyLimit.updateMany({
+    where: { modelId: FAL_GLOBAL_ID, currentActive: { lt: globalLimit.maxConcurrent } },
+    data: { currentActive: { increment: 1 } },
+  })
+
+  return { claimed: claim.count > 0, maxConcurrent: globalLimit.maxConcurrent }
+}
+
+/**
  * Called once per FAL job when its polling status route detects COMPLETED or FAILED.
  * Atomically marks the GenerationQueue entry, decrements the global slot counter,
  * and promotes the next waiting job.

@@ -171,6 +171,10 @@ model GeneratedImage {
   aspectRatio        String?  // Aspect ratio (e.g., "16:9", "1:1", "4:5")
   videoMetadata      Json?    // Video-specific metadata (duration, thumbnailUrl, isVideo, etc.)
 
+  // Idempotency: FAL queue request ID — prevents duplicate DB records if the client
+  // re-polls a job whose response was lost (e.g. iOS app kill mid-response)
+  falRequestId       String?
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // NEW: Prompt Intelligence relations
@@ -181,6 +185,7 @@ model GeneratedImage {
   @@index([userId])
   @@index([expiresAt])
   @@index([model]) // Index for analytics
+  @@index([falRequestId]) // Idempotency lookups
 }
 
 // ============================================
@@ -425,6 +430,24 @@ model Notification {
   locked      Boolean  @default(false)  // prevents users from dismissing
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// NEWS ARTICLES (Admin Article Pages)
+// ============================================
+
+model NewsArticle {
+  id            Int       @id @default(autoincrement())
+  title         String
+  slug          String    @unique
+  type          String    @default("update") // 'info', 'warning', 'success', 'update'
+  summary       String    @db.Text
+  previewImage  String?
+  content       Json      @default("[]")    // Array of ContentBlock
+  isActive      Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  publishedAt   DateTime?
 }
 
 // ============================================
@@ -763,6 +786,22 @@ model UserModel {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// ============================================
+// ADMIN ACCOUNTS & PERMISSIONS
+// ============================================
+
+model AdminAccount {
+  id               Int      @id @default(autoincrement())
+  email            String   @unique
+  canAccessAdmin   Boolean  @default(true)   // Can use the /admin panel
+  concurrencyLimit Int?                       // Per-user generation concurrency override (null = system default)
+  notes            String?                    // Optional internal notes
+  addedAt          DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([email])
 }
 
 // ============================================

@@ -35,6 +35,23 @@ const TARGET_LABELS: Record<string, { label: string; color: string }> = {
   all:    { label: 'Both Pages', color: 'bg-orange-700 text-orange-200' },
 }
 
+// Parses [link text](url) syntax into clickable links (preview in admin list)
+function parseMessage(message: string, textClass: string) {
+  const parts = message.split(/(\[[^\]]+\]\([^)]+\))/g)
+  return parts.map((part, i) => {
+    const match = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+    if (match) {
+      return (
+        <a key={i} href={match[2]} target="_blank" rel="noopener noreferrer"
+          className={`underline font-bold hover:opacity-80 transition-opacity`}>
+          {match[1]}
+        </a>
+      )
+    }
+    return <span key={i}>{part}</span>
+  })
+}
+
 export function NotificationManager() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -161,10 +178,13 @@ export function NotificationManager() {
           <Textarea
             value={formData.message}
             onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-            placeholder="Notification message..."
-            className="mb-3 bg-slate-950 border-slate-700 text-white"
+            placeholder="Notification message... Use [Click Here](https://url.com) to add clickable links."
+            className="mb-2 bg-slate-950 border-slate-700 text-white"
             rows={3}
           />
+          <p className="text-[11px] text-slate-500 mb-3">
+            💡 Add links with <code className="bg-slate-800 px-1 rounded text-cyan-400">[Click Here](https://url.com)</code> — the text in brackets becomes the clickable label.
+          </p>
 
           <div className="flex flex-wrap items-center gap-3 mb-3">
             {/* Type */}
@@ -300,7 +320,7 @@ export function NotificationManager() {
                   </button>
                 </div>
               </div>
-              <p className={`text-sm ${colors.text}`}>{notification.message}</p>
+              <p className={`text-sm ${colors.text}`}>{parseMessage(notification.message, colors.text)}</p>
               <p className="text-[10px] text-slate-600 mt-2">
                 {new Date(notification.createdAt).toLocaleString()}
               </p>

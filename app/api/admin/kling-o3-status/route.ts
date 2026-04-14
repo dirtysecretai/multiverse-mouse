@@ -60,6 +60,26 @@ export async function POST(req: Request) {
         return NextResponse.json({ status: 'failed', error: 'Failed to download generated images' })
       }
 
+      // Idempotency: if we already saved images for this requestId, return them without
+      // re-inserting. Prevents duplicate DB records when iOS backgrounds the page and the
+      // client re-polls a job whose "completed" response was lost mid-refresh.
+      try {
+        const existing = await prisma.generatedImage.findMany({
+          where: { falRequestId: requestId },
+          select: { id: true, imageUrl: true },
+          orderBy: { id: 'asc' },
+        })
+        if (existing.length > 0) {
+          console.log(`↩ Kling O3 already saved [${requestId}] returning ${existing.length} existing record(s)`)
+          return NextResponse.json({
+            status: 'completed',
+            images: existing.map(img => ({ url: img.imageUrl, dbId: img.id })),
+          })
+        }
+      } catch {
+        // falRequestId column may not exist yet — skip idempotency check
+      }
+
       const ticketCost = quality === '4k' ? 4 : 2
 
       // Save to DB and capture real IDs so the client can display without re-fetching
@@ -83,6 +103,7 @@ export async function POST(req: Request) {
                 aspectRatio:        aspectRatio || 'auto',
                 referenceImageUrls: Array.isArray(referenceImageUrls) ? referenceImageUrls : [],
                 expiresAt:          new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000),
+                falRequestId:       requestId,
               },
               select: { id: true },
             })

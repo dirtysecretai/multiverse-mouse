@@ -60,6 +60,26 @@ export async function POST(req: Request) {
         return NextResponse.json({ status: 'failed', error: 'Failed to download generated images' })
       }
 
+      // Idempotency: if we already saved images for this requestId, return them without
+      // re-uploading or re-inserting. This prevents duplicate DB records when the client
+      // re-polls a job whose "completed" response was lost (e.g. iOS app kill mid-response).
+      try {
+        const existing = await prisma.generatedImage.findMany({
+          where: { falRequestId: requestId },
+          select: { id: true, imageUrl: true },
+          orderBy: { id: 'asc' },
+        })
+        if (existing.length > 0) {
+          console.log(`↩ NanoBanana 2 already saved [${requestId}] returning ${existing.length} existing record(s)`)
+          return NextResponse.json({
+            status: 'completed',
+            images: existing.map(img => ({ url: img.imageUrl, dbId: img.id })),
+          })
+        }
+      } catch {
+        // falRequestId column may not exist yet — skip idempotency check
+      }
+
       // Save to DB and capture real IDs so the client can display without re-fetching
       const savedIds: number[] = []
       try {
@@ -82,6 +102,7 @@ export async function POST(req: Request) {
                 aspectRatio:        aspectRatio || 'auto',
                 referenceImageUrls: Array.isArray(referenceImageUrls) ? referenceImageUrls : [],
                 expiresAt:          new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000),
+                falRequestId:       requestId,
               },
               select: { id: true },
             })

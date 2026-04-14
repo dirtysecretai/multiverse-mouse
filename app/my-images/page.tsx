@@ -329,11 +329,25 @@ export default function MyImagesGalleryPage() {
                     <div className="aspect-square bg-black/40 relative overflow-hidden">
                       {image.videoMetadata?.isVideo ? (
                         <>
-                          <img
-                            src={image.videoMetadata.thumbnailUrl || image.imageUrl}
-                            alt={image.prompt}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
+                          {(() => {
+                            const thumb = image.videoMetadata?.thumbnailUrl
+                            const videoUrl = image.imageUrl
+                            // If no separate static thumbnail, use a video element to show the first frame
+                            const needsVideoThumb = !thumb || thumb === videoUrl || /\.(mp4|webm|mov)(\?|$)/i.test(thumb)
+                            return needsVideoThumb ? (
+                              <video
+                                src={videoUrl}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                muted playsInline preload="metadata"
+                              />
+                            ) : (
+                              <img
+                                src={thumb}
+                                alt={image.prompt}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                            )
+                          })()}
                           <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/70 backdrop-blur-sm rounded-md px-1.5 py-0.5">
                             <svg className="w-2.5 h-2.5 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
                               <polygon points="5 3 19 12 5 21 5 3" />

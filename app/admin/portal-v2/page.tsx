@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import Link from "next/link"
-import { Image, Video, Type, ChevronDown, Ticket, User, BookMarked, ImagePlus, X, Plus, Check, Copy, Download, RotateCcw, ShoppingBag, SlidersHorizontal, Bell, AlertTriangle, CheckCircle, Info, Sparkles, Music } from "lucide-react"
+import ChatWidget from "@/components/ChatWidget"
+import { Image, Video, Type, ChevronDown, Ticket, User, BookMarked, ImagePlus, X, Plus, Check, Copy, Download, RotateCcw, ShoppingBag, SlidersHorizontal, Bell, AlertTriangle, CheckCircle, Info, Sparkles, Music, BookOpen, Star, Trash2 } from "lucide-react"
 
 // --- TYPES ---
 interface UserData {
@@ -50,6 +51,7 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
   { id: "kling-o3-image",       apiId: "kling-o3-image",           name: "Kling O3",            aspectRatios: ["auto", "16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9"], supportsQuality: true, qualityOptions: ["1k", "2k", "4k"], maxReferenceImages: 10, isFal: false, maxImages: 4 },
   { id: "seedream-4.5",         apiId: "seedream-4.5",             name: "SeeDream 4.5",        aspectRatios: ["1:1", "2:3", "3:2", "4:5", "3:4", "4:3", "9:16", "16:9"], supportsQuality: true,  maxReferenceImages: 8,  isFal: true,  maxImages: 4 },
   { id: "seedream-5-lite",      apiId: "seedream-5-lite",          name: "SeeDream 5.0 Lite",   aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "4:5"],                     supportsQuality: true,  qualityOptions: ["2k", "3k"], maxReferenceImages: 10, isFal: false, maxImages: 4 },
+  { id: "wan-2.7-pro",          apiId: "wan-2.7-pro",              name: "Wan 2.7 Pro",         aspectRatios: ["1:1", "4:3", "16:9", "3:4", "9:16"],                     supportsQuality: false, maxReferenceImages: 4,  isFal: false, maxImages: 4 },
   { id: "flux-2",               apiId: "flux-2",                   name: "FLUX 2",              aspectRatios: ["1:1", "4:5", "9:16", "16:9"],                            supportsQuality: false, maxReferenceImages: 4,  isFal: true  },
   { id: "pro-scanner-v3",       apiId: "gemini-3-pro-image",       name: "Pro Scanner v3",      aspectRatios: ["1:1", "2:3", "3:2", "4:5", "3:4", "4:3", "9:16", "16:9"], supportsQuality: true,  maxReferenceImages: 8,  isFal: false },
   { id: "flash-scanner-v2.5",   apiId: "gemini-2.5-flash-image",   name: "Flash Scanner v2.5",  aspectRatios: ["1:1", "4:5", "9:16", "16:9"],                            supportsQuality: false, maxReferenceImages: 4,  isFal: false },
@@ -64,6 +66,7 @@ function calcTicketCost(modelId: string, quality: Quality): number {
   if (modelId === "flux-2")             return 1
   if (modelId === "kling-v3-image")     return 2
   if (modelId === "kling-o3-image")     return quality === "4k" ? 4 : 2
+  if (modelId === "wan-2.7-pro")        return 4
   if (modelId === "pro-scanner-v3")     return quality === "4k" ? 10 : 5
   if (modelId === "flash-scanner-v2.5") return 1
   return 1
@@ -215,10 +218,12 @@ interface VideoModelConfig {
   supportsReferenceVideo?: boolean // SeeDance 2.0 r2v — accepts image_urls[], video_urls[], audio_urls[]
   supportsSD20Modes?: boolean      // SeeDance 2.0 — shows T2V/I2V/Ref mode switcher inside panel
   supportsLipsync?: boolean        // Lipsync v3 — takes video + audio, no prompt
+  startFrameLocksAspect?: boolean  // when a start frame is provided, aspect ratio is ignored by the model
 }
 
 interface VideoItem {
   id: string
+  dbId?: number           // DB GeneratedImage id — set on completion from status route
   videoUrl: string
   prompt: string
   model: string
@@ -257,6 +262,7 @@ interface VideoPendingSlot {
 }
 
 interface VideoDetailData {
+  id?: number             // DB GeneratedImage id for rating
   videoUrl: string
   prompt: string
   model: string
@@ -282,6 +288,7 @@ const VIDEO_MODEL_CONFIGS: VideoModelConfig[] = [
     aspectRatios: ["16:9", "9:16", "1:1"],
     supportsEndFrame: true,
     audioType: "toggle",
+    startFrameLocksAspect: true,
   },
   {
     id: "wan-2.5",
@@ -316,10 +323,9 @@ const VIDEO_MODEL_CONFIGS: VideoModelConfig[] = [
     durations: ["auto","5","6","7","8","9","10"],
     resolutions: ["480p","720p","1080p"],
     aspectRatios: ["auto","21:9","16:9","4:3","1:1","3:4","9:16"],
-    supportsEndFrame: false,
+    supportsEndFrame: true,
     audioType: "toggle",
     textToVideo: true,
-    supportsSD20Modes: true,
   },
   {
     id: "seedance-2.0-fast",
@@ -327,10 +333,9 @@ const VIDEO_MODEL_CONFIGS: VideoModelConfig[] = [
     durations: ["auto","4","5","6","7","8","9","10","11","12","13","14","15"],
     resolutions: ["480p","720p"],
     aspectRatios: ["auto","21:9","16:9","4:3","1:1","3:4","9:16"],
-    supportsEndFrame: false,
+    supportsEndFrame: true,
     audioType: "toggle",
     textToVideo: true,
-    supportsSD20Modes: true,
   },
   {
     id: "lipsync-v3",
@@ -676,9 +681,12 @@ function RefDropdown({
   modelMaxRefs,
   onUpload,
   onDelete,
+  onDeleteMultiple,
+  onClearAll,
   onActivate,
   onDeactivate,
   disabled = false,
+  libraryLimit = 50,
 }: {
   open: boolean
   onToggle: () => void
@@ -687,16 +695,29 @@ function RefDropdown({
   modelMaxRefs: number
   onUpload: (items: RefImage[]) => void
   onDelete: (id: string) => void
+  onDeleteMultiple: (ids: string[]) => void
+  onClearAll: () => void
   onActivate: (id: string) => void
   onDeactivate: (id: string) => void
   disabled?: boolean
+  libraryLimit?: number
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set())
   const activeCount = disabled ? 0 : activeIds.filter((id) => library.some((img) => img.id === id)).length
   const atLimit = !disabled && modelMaxRefs > 0 && activeCount >= modelMaxRefs
+
+  // Exit select mode when dropdown closes
+  useEffect(() => {
+    if (!open) {
+      setSelectMode(false)
+      setSelectedForDelete(new Set())
+    }
+  }, [open])
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -719,7 +740,7 @@ function RefDropdown({
     const files = Array.from(e.target.files || [])
     e.target.value = ""
     if (!files.length) return
-    const toProcess = files.slice(0, 50 - library.length)
+    const toProcess = files.slice(0, libraryLimit - library.length)
     const items: RefImage[] = await Promise.all(
       toProcess.map(async (file) => ({
         id: `lib-${Date.now()}-${Math.random()}`,
@@ -736,6 +757,26 @@ function RefDropdown({
     } else if (!atLimit) {
       onActivate(img.id)
     }
+  }
+
+  const toggleSelectForDelete = (id: string) => {
+    setSelectedForDelete(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const handleDeleteSelected = () => {
+    onDeleteMultiple([...selectedForDelete])
+    setSelectedForDelete(new Set())
+    setSelectMode(false)
+  }
+
+  const handleClearAll = () => {
+    onClearAll()
+    setSelectMode(false)
+    setSelectedForDelete(new Set())
   }
 
   return (
@@ -762,41 +803,76 @@ function RefDropdown({
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
             <span className="text-sm font-semibold text-white">Reference Images</span>
-            <span className="text-[10px] text-slate-500 font-mono">
-              {library.length}/50 · {activeCount} on
-              {modelMaxRefs > 0 ? ` (max ${modelMaxRefs})` : ""}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-500 font-mono">
+                {library.length}/{libraryLimit} · {activeCount} on
+                {modelMaxRefs > 0 ? ` (max ${modelMaxRefs})` : ""}
+              </span>
+              {library.length > 0 && !selectMode && (
+                <button
+                  onClick={() => setSelectMode(true)}
+                  className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors px-1.5 py-0.5 rounded border border-white/10 hover:border-white/20"
+                >
+                  Select
+                </button>
+              )}
+              {library.length > 0 && !selectMode && (
+                <button
+                  onClick={handleClearAll}
+                  className="text-[10px] text-rose-500/70 hover:text-rose-400 transition-colors px-1.5 py-0.5 rounded border border-rose-500/20 hover:border-rose-500/40"
+                >
+                  Clear all
+                </button>
+              )}
+              {selectMode && (
+                <button
+                  onClick={() => { setSelectMode(false); setSelectedForDelete(new Set()) }}
+                  className="text-[10px] text-slate-400 hover:text-white transition-colors px-1.5 py-0.5 rounded border border-white/10 hover:border-white/20"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Upload button */}
-          <div className="px-3 py-2 border-b border-white/5">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={handleFileChange}
-            />
-            <button
-              onClick={() => library.length < 50 && fileInputRef.current?.click()}
-              disabled={library.length >= 50}
-              className="w-full py-2 rounded-lg border border-dashed border-white/10 text-[11px] text-slate-400 hover:text-white hover:border-white/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              <Plus size={11} />
-              {library.length >= 50 ? "Library full (50/50)" : `Upload Images · ${50 - library.length} slots left`}
-            </button>
-          </div>
+          {/* Upload button — hidden in select mode */}
+          {!selectMode && (
+            <div className="px-3 py-2 border-b border-white/5">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <button
+                onClick={() => library.length < libraryLimit && fileInputRef.current?.click()}
+                disabled={library.length >= libraryLimit}
+                className="w-full py-2 rounded-lg border border-dashed border-white/10 text-[11px] text-slate-400 hover:text-white hover:border-white/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <Plus size={11} />
+                {library.length >= libraryLimit ? `Library full (${libraryLimit}/${libraryLimit})` : `Upload Images · ${libraryLimit - library.length} slots left`}
+              </button>
+            </div>
+          )}
+
+          {/* Select mode hint */}
+          {selectMode && (
+            <div className="px-4 py-2 border-b border-white/5 bg-rose-500/5">
+              <p className="text-[10px] text-rose-400/80">Tap images to select them for deletion</p>
+            </div>
+          )}
 
           {/* Disabled notice for video mode */}
-          {disabled && (
+          {!selectMode && disabled && (
             <div className="px-4 py-2 border-b border-white/5 bg-slate-800/60">
               <p className="text-[10px] text-slate-400">Reference images are not used by video models. Upload start/end frames through the video configuration panel instead.</p>
             </div>
           )}
 
           {/* Model support notice */}
-          {!disabled && modelMaxRefs === 0 && (
+          {!selectMode && !disabled && modelMaxRefs === 0 && (
             <div className="px-4 py-2 border-b border-white/5 bg-amber-500/5">
               <p className="text-[10px] text-amber-400/70">Current model doesn't support reference images.</p>
             </div>
@@ -809,16 +885,27 @@ function RefDropdown({
             ) : (
               <div className="grid grid-cols-5 gap-1.5">
                 {library.map((img) => {
-                  const isActive = activeIds.includes(img.id)
-                  const isDisabled = !isActive && atLimit
+                  const isActive = !selectMode && activeIds.includes(img.id)
+                  const isDisabled = !selectMode && !isActive && atLimit
+                  const isSelectedForDelete = selectMode && selectedForDelete.has(img.id)
                   return (
                     <div key={img.id} className="relative group aspect-square">
                       <button
-                        onClick={() => handleToggle(img)}
-                        disabled={isDisabled || disabled}
-                        title={disabled ? "Not available for video models" : isDisabled ? `Limit reached (${modelMaxRefs})` : isActive ? "Click to deactivate" : "Click to activate"}
+                        onClick={() => selectMode ? toggleSelectForDelete(img.id) : handleToggle(img)}
+                        disabled={!selectMode && (isDisabled || disabled)}
+                        title={
+                          selectMode
+                            ? isSelectedForDelete ? "Click to deselect" : "Click to select for deletion"
+                            : disabled ? "Not available for video models"
+                            : isDisabled ? `Limit reached (${modelMaxRefs})`
+                            : isActive ? "Click to deactivate" : "Click to activate"
+                        }
                         className={`w-full h-full rounded-md overflow-hidden border-2 transition-all ${
-                          disabled
+                          selectMode
+                            ? isSelectedForDelete
+                              ? "border-rose-400 ring-1 ring-rose-400/30"
+                              : "border-transparent hover:border-white/30"
+                            : disabled
                             ? "border-transparent opacity-30 cursor-not-allowed"
                             : isActive
                             ? "border-cyan-400 ring-1 ring-cyan-400/30"
@@ -827,29 +914,57 @@ function RefDropdown({
                             : "border-transparent hover:border-white/30"
                         }`}
                       >
-                        <img src={img.url} alt="" className="w-full h-full object-cover" />
+                        <img src={img.url} alt="" className={`w-full h-full object-cover transition-opacity ${isSelectedForDelete ? "opacity-60" : ""}`} />
                       </button>
 
-                      {/* Active checkmark */}
-                      {isActive && (
+                      {/* Active checkmark (normal mode) */}
+                      {!selectMode && isActive && (
                         <div className="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full bg-cyan-400 flex items-center justify-center pointer-events-none">
                           <Check size={9} className="text-black" />
                         </div>
                       )}
 
-                      {/* Delete on hover */}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onDelete(img.id) }}
-                        className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-black/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                      >
-                        <X size={8} className="text-white" />
-                      </button>
+                      {/* Selected-for-delete indicator (select mode) */}
+                      {selectMode && (
+                        <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center pointer-events-none transition-all ${
+                          isSelectedForDelete ? "bg-rose-500 border-rose-400" : "bg-black/50 border-white/40"
+                        }`}>
+                          {isSelectedForDelete && <Check size={8} className="text-white" />}
+                        </div>
+                      )}
+
+                      {/* Delete on hover (normal mode only) */}
+                      {!selectMode && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onDelete(img.id) }}
+                          className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-black/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                        >
+                          <X size={8} className="text-white" />
+                        </button>
+                      )}
                     </div>
                   )
                 })}
               </div>
             )}
           </div>
+
+          {/* Select mode action bar */}
+          {selectMode && (
+            <div className="px-3 py-2.5 border-t border-white/5 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-slate-400">
+                {selectedForDelete.size > 0 ? `${selectedForDelete.size} selected` : "None selected"}
+              </span>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={selectedForDelete.size === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-400 text-[11px] font-medium hover:bg-rose-500/25 hover:border-rose-500/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <Trash2 size={11} />
+                Delete ({selectedForDelete.size})
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1239,12 +1354,14 @@ function QueueDisplay({ active, max, label = "queue" }: { active: number; max: n
 }
 
 // --- GRID IMAGE CELL ---
-function GridImage({ src, alt, onClick, imageId, selectMode, selected, onSelect }: {
-  src: string; alt: string; onClick?: () => void; imageId?: number
+function GridImage({ src, alt, onClick, imageId, directUrl, selectMode, selected, onSelect }: {
+  src: string; alt: string; onClick?: () => void; imageId?: number; directUrl?: string
   selectMode?: boolean; selected?: boolean; onSelect?: (id: number) => void
 }) {
   const [loaded, setLoaded] = useState(false)
-  const thumbSrc = imageId ? `/api/images/${imageId}?thumb=1` : src
+  // directUrl: skip the proxy and load directly (used for just-completed images where the
+  // blob URL is already known — avoids the DB-auth → blob-fetch → sharp chain adding delay)
+  const thumbSrc = directUrl || (imageId ? `/api/images/${imageId}?thumb=1` : src)
   const handleClick = () => {
     if (selectMode && imageId !== undefined) { onSelect?.(imageId); return }
     onClick?.()
@@ -1485,6 +1602,74 @@ function PendingDetailModal({
   )
 }
 
+// --- STAR RATING WIDGET ---
+function StarRatingWidget({ generationId }: { generationId: number }) {
+  const storageKey = `rated-gen-${generationId}`
+  const [rating, setRating] = useState<number | null>(() => {
+    try { const v = localStorage.getItem(storageKey); return v ? parseInt(v) : null } catch { return null }
+  })
+  const [hover, setHover] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const submit = async (score: number) => {
+    if (rating !== null || saving) return
+    setSaving(true)
+    try {
+      await fetch('/api/rating', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ generatedImageId: generationId, score }),
+      })
+      try { localStorage.setItem(storageKey, String(score)) } catch {}
+      setRating(score)
+      setSaved(true)
+    } catch {}
+    setSaving(false)
+  }
+
+  if (rating !== null) {
+    return (
+      <div>
+        <p className="text-[10px] font-mono text-slate-600 uppercase tracking-widest mb-2">Your Rating</p>
+        <div className="flex items-center gap-1">
+          {[1, 2, 3, 4, 5].map(s => (
+            <Star
+              key={s}
+              size={15}
+              className={s <= rating ? "text-amber-400 fill-amber-400" : "text-slate-700 fill-slate-800"}
+            />
+          ))}
+          {saved && <span className="ml-2 text-[10px] text-slate-500">Thanks!</span>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <p className="text-[10px] font-mono text-slate-600 uppercase tracking-widest mb-1.5">How close is this to your vision?</p>
+      <div className="flex items-center gap-0.5">
+        {[1, 2, 3, 4, 5].map(s => (
+          <button
+            key={s}
+            disabled={saving}
+            onClick={() => submit(s)}
+            onMouseEnter={() => setHover(s)}
+            onMouseLeave={() => setHover(0)}
+            className="p-1 rounded transition-transform hover:scale-110 disabled:opacity-40"
+          >
+            <Star
+              size={16}
+              className={s <= hover ? "text-amber-400 fill-amber-400" : "text-slate-600 fill-transparent"}
+            />
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // --- IMAGE DETAIL MODAL ---
 function ImageDetailModal({
   image,
@@ -1614,6 +1799,11 @@ function ImageDetailModal({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+            {!image.failed && image.id > 0 && (
+              <div className="pt-1 border-t border-white/[0.06]">
+                <StarRatingWidget generationId={image.id} />
               </div>
             )}
           </div>
@@ -1845,6 +2035,11 @@ function VideoDetailModal({
                 <p className="text-[11px] text-slate-400">{formattedDate}</p>
               </div>
             )}
+            {!video.failed && video.id !== undefined && (
+              <div className="pt-1 border-t border-white/[0.06]">
+                <StarRatingWidget generationId={video.id} />
+              </div>
+            )}
           </div>
 
           {/* Mobile: compact info */}
@@ -2064,7 +2259,7 @@ function ImageGrid({
         {freshImages.map((img) =>
           img.failed
             ? <FailedSlot key={`fresh-${img.id}`} prompt={img.prompt} error={img.failError || "Generation failed"} onClick={selectMode ? undefined : () => onImageClick(img)} />
-            : <GridImage key={`fresh-${img.id}`} src={img.imageUrl} alt={img.prompt} onClick={selectMode ? undefined : () => onImageClick(img)} imageId={img.id} selectMode={selectMode} selected={selectedIds?.has(img.id)} onSelect={onSelectToggle} />
+            : <GridImage key={`fresh-${img.id}`} src={img.imageUrl} alt={img.prompt} onClick={selectMode ? undefined : () => onImageClick(img)} imageId={img.id} directUrl={img.imageUrl} selectMode={selectMode} selected={selectedIds?.has(img.id)} onSelect={onSelectToggle} />
         )}
         {/* DB images merged with restored fails, sorted by createdAt so fails land in the right spot */}
         {(() => {
@@ -2772,6 +2967,56 @@ function PromptBox({
         return
       }
 
+      // --- Wan 2.7 Pro: one FAL job per slot ---
+      if (model.id === "wan-2.7-pro") {
+        const imageUrls = referenceImages.length > 0 ? referenceImages : undefined
+        await Promise.all(slotIds.map(async (sid) => {
+          try {
+            const res = await fetch("/api/admin/wan-27-pro-submit", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                prompt: currentPrompt,
+                image_urls: imageUrls,
+                aspect_ratio: aspectRatio,
+                num_images: 1,
+              }),
+            })
+            const submitData = await res.json()
+            if (!res.ok || !submitData.success) {
+              onUpdatePending(sid, { status: "failed", error: submitData.error || "Submission failed" })
+              return
+            }
+            const wan27Cost = calcTicketCost("wan-2.7-pro", quality)
+            const wan27RefUrls = submitData.permanentReferenceUrls?.length ? submitData.permanentReferenceUrls : permanentRefUrls
+            if (submitData.queued) {
+              onUpdatePending(sid, {
+                queueJobId: submitData.queueId,
+                nb2StatusUrl: "/api/admin/wan-27-pro-status",
+                nb2AspectRatio: aspectRatio,
+                nb2TicketCost: wan27Cost,
+                referenceImageUrls: wan27RefUrls,
+              })
+              return
+            }
+            const { requestId, falEndpoint } = submitData
+            onDeductTickets?.(wan27Cost)
+            onUpdatePending(sid, {
+              nb2RequestId: requestId,
+              nb2FalEndpoint: falEndpoint,
+              nb2AspectRatio: aspectRatio,
+              nb2StatusUrl: "/api/admin/wan-27-pro-status",
+              nb2TicketCost: wan27Cost,
+              referenceImageUrls: wan27RefUrls,
+            })
+            onStartNb2Polling(requestId, falEndpoint, [sid], currentPrompt, outputFormat, aspectRatio, "/api/admin/wan-27-pro-status", undefined, wan27Cost, wan27RefUrls)
+          } catch (err: any) {
+            onUpdatePending(sid, { status: "failed", error: err.message || "Network error" })
+          }
+        }))
+        return
+      }
+
       // --- Gemini image models: async submit so the button unlocks immediately ---
       if (model.id === "pro-scanner-v3" || model.id === "flash-scanner-v2.5") {
         await Promise.all(slotIds.map(async (sid) => {
@@ -3131,13 +3376,9 @@ function FrameUploadArea({
       ) : (
         <button
           onClick={() => inputRef.current?.click()}
-          className={`w-full rounded-lg border border-dashed flex flex-col items-center justify-center gap-1.5 transition-all py-6 ${
-            optional
-              ? "border-white/10 hover:border-white/20"
-              : "border-orange-500/30 hover:border-orange-500/50"
-          }`}
+          className="w-full rounded-lg border border-dashed border-orange-500/30 hover:border-orange-500/50 flex flex-col items-center justify-center gap-1.5 transition-all py-6"
         >
-          <ImagePlus size={16} className={optional ? "text-slate-600" : "text-orange-400/60"} />
+          <ImagePlus size={16} className="text-orange-400/60" />
           <span className="text-[10px] text-slate-500">{label}</span>
         </button>
       )}
@@ -3355,7 +3596,7 @@ function VideoCustomizationPanel({
   lipsyncVideoFilename?: string | null
   lipsyncVideoUploading?: boolean
   lipsyncVideoDuration?: number
-  onLipsyncVideoSelect?: (f: File, duration: number) => void
+  onLipsyncVideoSelect?: (f: File, duration: number, aspectRatio?: string) => void
   onClearLipsyncVideo?: () => void
   lipsyncAudioFilename?: string | null
   lipsyncAudioUploading?: boolean
@@ -3400,7 +3641,32 @@ function VideoCustomizationPanel({
     vid.preload = "metadata"
     vid.onloadedmetadata = () => {
       URL.revokeObjectURL(objectUrl)
-      onLipsyncVideoSelect?.(file, vid.duration)
+      const w = vid.videoWidth
+      const h = vid.videoHeight
+      let detectedRatio: string | undefined
+      if (w && h) {
+        const r = w / h
+        const standards: { label: string; ratio: number }[] = [
+          { label: "1:1",  ratio: 1 },
+          { label: "16:9", ratio: 16 / 9 },
+          { label: "9:16", ratio: 9 / 16 },
+          { label: "4:3",  ratio: 4 / 3 },
+          { label: "3:4",  ratio: 3 / 4 },
+          { label: "3:2",  ratio: 3 / 2 },
+          { label: "2:3",  ratio: 2 / 3 },
+          { label: "4:5",  ratio: 4 / 5 },
+          { label: "5:4",  ratio: 5 / 4 },
+          { label: "21:9", ratio: 21 / 9 },
+        ]
+        let closest = standards[0]
+        let minDiff = Math.abs(r - closest.ratio)
+        for (const s of standards) {
+          const diff = Math.abs(r - s.ratio)
+          if (diff < minDiff) { minDiff = diff; closest = s }
+        }
+        detectedRatio = closest.label
+      }
+      onLipsyncVideoSelect?.(file, vid.duration, detectedRatio)
     }
     vid.onerror = () => { URL.revokeObjectURL(objectUrl); setLipsyncVideoError("Could not read video file") }
     vid.src = objectUrl
@@ -3408,8 +3674,7 @@ function VideoCustomizationPanel({
 
   const motionMaxSec = characterOrientation === "video" ? 30 : 10
   const sd20ResMultiplier = resolution === "1080p" ? 2.25 : resolution === "480p" ? 0.5 : 1.0
-  const isSD20 = !!model.supportsSD20Modes
-  const isSD20R2V = isSD20 && sd20Mode === "r2v"
+  const isSD20Family = model.id === "seedance-2.0" || model.id === "seedance-2.0-fast"
   const isLipsync = !!model.supportsLipsync
   const ticketCost = isLipsync
     ? Math.max(10, Math.ceil((lipsyncVideoDuration ?? 0) * 6))
@@ -3419,8 +3684,8 @@ function VideoCustomizationPanel({
     ? parseInt(duration) * (audioEnabled ? 8 : 6)
     : model.id === "seedance-1.5"
     ? Math.ceil(parseInt(duration) * 2.0 * (resolution === "1080p" ? 2.25 : resolution === "480p" ? 0.5 : 1.0) * (audioEnabled ? 1.0 : 0.5)) + 1
-    : isSD20
-    ? Math.ceil((parseInt(duration === "auto" ? "5" : duration) + (isSD20R2V ? videoRefVideoDuration : 0)) * (model.id === "seedance-2.0-fast" ? 12 : 15) * sd20ResMultiplier * (isSD20R2V && videoRefVideoDuration > 0 ? 0.6 : 1.0))
+    : isSD20Family
+    ? Math.ceil(parseInt(duration === "auto" ? "5" : duration) * (model.id === "seedance-2.0-fast" ? 12 : 15) * sd20ResMultiplier)
     : ({ "480p": { "5": 7, "10": 14 }, "720p": { "5": 13, "10": 26 }, "1080p": { "5": 20, "10": 40 } } as any)[resolution]?.[duration] ?? 20
 
   const btnBase   = "py-1.5 rounded text-[11px] font-mono transition-all border"
@@ -3434,29 +3699,9 @@ function VideoCustomizationPanel({
         <Video size={13} className="text-orange-400 shrink-0" />
         <span className="text-sm font-semibold text-white">{model.name}</span>
         <span className="ml-auto text-[10px] font-mono text-orange-400/70 flex items-center gap-0.5">
-          <Ticket size={9} />{ticketCost}{(isSD20 && duration === "auto") || (isLipsync && !lipsyncVideoDuration) ? "~" : ""}
+          <Ticket size={9} />{ticketCost}{(isSD20Family && duration === "auto") || (isLipsync && !lipsyncVideoDuration) ? "~" : ""}
         </span>
       </div>
-
-      {/* SeeDance 2.0: Mode switcher */}
-      {isSD20 && onSD20ModeChange && (
-        <div className="space-y-1.5">
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Generation Mode</p>
-          <div className="grid grid-cols-3 gap-1">
-            {(["t2v", "i2v", "r2v"] as const).map(m => (
-              <button key={m} onClick={() => onSD20ModeChange(m)}
-                className={`${btnBase} ${sd20Mode === m ? btnActive : btnIdle}`}>
-                {m === "t2v" ? "Text" : m === "i2v" ? "Image" : "Ref"}
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-slate-600">
-            {sd20Mode === "t2v" ? "Generate from text only — no reference image needed" :
-             sd20Mode === "i2v" ? "Animate a start frame with optional end frame" :
-             "Combine image, video, and audio references"}
-          </p>
-        </div>
-      )}
 
       {/* ── Lipsync v3 panel ── */}
       {isLipsync && (
@@ -3565,18 +3810,18 @@ function VideoCustomizationPanel({
         </>
       )}
 
-      {/* Reference Image / Start Frame — hidden for SD20 t2v/r2v, hidden for non-SD20 r2v models, hidden for lipsync */}
-      {!isLipsync && !(isSD20 && sd20Mode !== "i2v") && !(!isSD20 && model.supportsReferenceVideo) && (
+      {/* Reference Image / Start Frame — hidden for r2v models, hidden for lipsync */}
+      {!isLipsync && !model.supportsReferenceVideo && (
         <div className="space-y-1.5">
           <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
-            {model.supportsMotionControl ? "Character Image" : (isSD20 && sd20Mode === "i2v") ? "Start Frame" : model.textToVideo ? "Reference Image" : "Start Frame"}
-            {(!model.textToVideo || (isSD20 && sd20Mode === "i2v")) && !model.supportsMotionControl && <span className="text-orange-400/70"> *</span>}
-            {model.textToVideo && !model.supportsMotionControl && !(isSD20 && sd20Mode === "i2v") && <span className="text-slate-600 normal-case font-normal"> (optional)</span>}
+            {model.supportsMotionControl ? "Character Image" : model.textToVideo ? "Reference Image" : "Start Frame"}
+            {!model.textToVideo && !model.supportsMotionControl && <span className="text-orange-400/70"> *</span>}
+            {model.textToVideo && !model.supportsMotionControl && <span className="text-slate-600 normal-case font-normal"> (optional)</span>}
           </p>
           {model.supportsMotionControl && (
             <p className="text-[10px] text-slate-600 leading-snug">The character's appearance and background will be sourced from this image</p>
           )}
-          {model.textToVideo && !model.supportsMotionControl && !(isSD20 && sd20Mode === "i2v") && (
+          {model.textToVideo && !model.supportsMotionControl && (
             <p className="text-[10px] text-slate-600 leading-snug">Provide a reference image to guide the video, or leave empty for text-only generation</p>
           )}
           <FrameUploadArea
@@ -3584,8 +3829,8 @@ function VideoCustomizationPanel({
             uploading={startFrameUploading}
             onSelect={onStartFrameSelect}
             onClear={onClearStartFrame}
-            label={model.supportsMotionControl ? "Click to upload character image" : (isSD20 && sd20Mode === "i2v") ? "Click to upload start frame" : model.textToVideo ? "Click to upload reference image (optional)" : "Click to upload start frame"}
-            optional={model.textToVideo && !(isSD20 && sd20Mode === "i2v")}
+            label={model.supportsMotionControl ? "Click to upload character image" : model.textToVideo ? "Click to upload reference image (optional)" : "Click to upload start frame"}
+            optional={!!model.textToVideo}
             inputRef={startRef}
           />
         </div>
@@ -3673,7 +3918,7 @@ function VideoCustomizationPanel({
             </button>
           </div>
         </>
-      ) : (isSD20 && sd20Mode === "r2v") || (!isSD20 && model.supportsReferenceVideo) ? (
+      ) : model.supportsReferenceVideo ? (
         /* ── SeeDance 2.0 Reference-to-Video ── */
         <SD20RefPanel
           videoRefImagePreviews={videoRefImagePreviews}
@@ -3689,8 +3934,8 @@ function VideoCustomizationPanel({
         />
       ) : (
         <>
-          {/* End frame — Kling 3.0 and SeeDance 2.0 I2V mode */}
-          {(model.supportsEndFrame || (isSD20 && sd20Mode === "i2v")) && (
+          {/* End frame */}
+          {model.supportsEndFrame && (
             <div className="space-y-1.5">
               <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
                 End Frame <span className="text-slate-600 normal-case font-normal">(optional)</span>
@@ -3733,7 +3978,11 @@ function VideoCustomizationPanel({
           {model.aspectRatios && (
             <div className="space-y-1.5">
               <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Aspect Ratio</p>
-              {model.aspectRatios.length > 4 ? (
+              {model.startFrameLocksAspect && startFramePreview ? (
+                <div className="px-3 py-2 rounded-lg bg-white/4 border border-white/8 text-[11px] text-slate-400 italic">
+                  Matches start frame
+                </div>
+              ) : model.aspectRatios.length > 4 ? (
                 <div className="grid grid-cols-4 gap-1">
                   {model.aspectRatios.map(r => (
                     <button key={r} onClick={() => onAspectRatioChange(r)}
@@ -3764,8 +4013,8 @@ function VideoCustomizationPanel({
             </div>
           )}
 
-          {/* Audio toggle — Kling 3.0 / SeeDance (hidden for standard SD20 r2v only; Fast r2v supports audio) */}
-          {model.audioType === "toggle" && !(model.id === "seedance-2.0" && sd20Mode === "r2v") && (
+          {/* Audio toggle — Kling 3.0 / SeeDance */}
+          {model.audioType === "toggle" && (
             <div className="flex items-start justify-between gap-3 py-1">
               <div>
                 <p className="text-[12px] text-slate-300 font-medium">Generate Audio</p>
@@ -3821,12 +4070,18 @@ function VideoFeed({
   savedFails,
   onVideoClick,
   onPendingClick,
+  selectMode,
+  selectedIds,
+  onSelectToggle,
 }: {
   pendingSlots: VideoPendingSlot[]
   items: VideoItem[]
   savedFails: VideoItem[]
   onVideoClick: (data: VideoDetailData) => void
   onPendingClick?: (slot: VideoPendingSlot) => void
+  selectMode?: boolean
+  selectedIds?: Set<number>
+  onSelectToggle?: (id: number) => void
 }) {
   // Pull the same historical feed as the image scanner
   const [dbImages, setDbImages] = useState<ImageItem[]>([])
@@ -3837,8 +4092,10 @@ function VideoFeed({
       .catch(() => {})
   }, [])
 
-  // IDs already shown as session items — skip them in the DB section
-  const sessionIds = new Set(items.map(i => i.id))
+  // IDs already shown as session items — skip them in the DB section.
+  // Session VideoItem.id is a FAL request ID string, which never matches a numeric
+  // DB id. Use dbId (set when the video completes) for correct dedup.
+  const sessionDbIds = new Set(items.map(i => i.dbId).filter((id): id is number => id !== undefined))
 
   const isVideoUrl = (url: string) =>
     /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url) ||
@@ -3900,17 +4157,31 @@ function VideoFeed({
         ) : (
           <div
             key={item.id}
-            className="rounded-lg bg-black border border-white/5 overflow-hidden relative group cursor-pointer hover:border-orange-500/30 transition-colors"
-            style={{ aspectRatio: toAspectRatioCss(item.aspectRatio) }}
-            onClick={() => onVideoClick({ videoUrl: item.videoUrl, prompt: item.prompt, model: item.model, duration: item.duration, resolution: item.resolution, aspectRatio: item.aspectRatio, audioEnabled: item.audioEnabled, startFrameUrl: item.startFrameUrl, endFrameUrl: item.endFrameUrl, motionVideoUrl: item.motionVideoUrl, keepOriginalSound: item.keepOriginalSound, characterOrientation: item.characterOrientation, createdAt: item.createdAt })}
+            className={`rounded-lg bg-black overflow-hidden relative group cursor-pointer transition-colors ${
+              selectMode && selectedIds?.has(parseInt(item.id))
+                ? "border-2 border-cyan-400 ring-2 ring-cyan-400 ring-inset"
+                : "border border-white/5 hover:border-orange-500/30"
+            }`}
+            style={{ aspectRatio: "16/9" }}
+            onClick={() => selectMode ? onSelectToggle?.(parseInt(item.id)) : onVideoClick({ id: item.dbId, videoUrl: item.videoUrl, prompt: item.prompt, model: item.model, duration: item.duration, resolution: item.resolution, aspectRatio: item.aspectRatio, audioEnabled: item.audioEnabled, startFrameUrl: item.startFrameUrl, endFrameUrl: item.endFrameUrl, motionVideoUrl: item.motionVideoUrl, keepOriginalSound: item.keepOriginalSound, characterOrientation: item.characterOrientation, createdAt: item.createdAt })}
           >
-            <video src={iosSrc(item.videoUrl)} className="w-full h-full object-contain pointer-events-none" playsInline preload="metadata" muted />
-            {/* Play overlay */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
-              <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center border border-white/20">
-                <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+            <video src={iosSrc(item.videoUrl)} className={`w-full h-full pointer-events-none ${item.aspectRatio === "16:9" ? "object-cover" : "object-contain"}`} playsInline preload="metadata" muted />
+            {/* Select mode checkmark */}
+            {selectMode && (
+              <div className={`absolute top-1.5 left-1.5 w-4 h-4 rounded-full border-2 flex items-center justify-center z-10 transition-all ${
+                selectedIds?.has(parseInt(item.id)) ? "bg-cyan-400 border-cyan-400" : "border-white/60 bg-black/40"
+              }`}>
+                {selectedIds?.has(parseInt(item.id)) && <Check size={9} className="text-black" />}
               </div>
-            </div>
+            )}
+            {/* Play overlay (hidden in select mode) */}
+            {!selectMode && (
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
+                <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center border border-white/20">
+                  <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                </div>
+              </div>
+            )}
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
               <p className="text-[10px] text-white/80 line-clamp-1">"{item.prompt}"</p>
               <p className="text-[9px] text-orange-400/70 font-mono mt-0.5">{item.model} · {item.duration}s</p>
@@ -3921,21 +4192,38 @@ function VideoFeed({
 
       {/* Historical feed from DB — same as image scanner */}
       {dbImages
-        .filter(img => !sessionIds.has(String(img.id)))
+        .filter(img => !sessionDbIds.has(img.id))
         .map(img => (
           isVideoUrl(img.imageUrl) ? (
             <div
               key={img.id}
-              className="rounded-lg bg-black border border-white/5 overflow-hidden relative group cursor-pointer hover:border-orange-500/30 transition-colors"
-              style={{ aspectRatio: toAspectRatioCss(img.videoMetadata?.aspectRatio || img.aspectRatio) }}
-              onClick={() => { const vm = img.videoMetadata || {}; onVideoClick({ videoUrl: img.imageUrl, prompt: img.prompt, model: img.model, duration: vm.duration, resolution: vm.resolution || img.quality || undefined, aspectRatio: vm.aspectRatio || img.aspectRatio, audioEnabled: vm.audioEnabled, startFrameUrl: vm.startFrameUrl || undefined, endFrameUrl: vm.endFrameUrl || undefined, motionVideoUrl: vm.motionVideoUrl || undefined, keepOriginalSound: vm.keepOriginalSound, characterOrientation: vm.characterOrientation || undefined, createdAt: img.createdAt }) }}
+              className={`rounded-lg bg-black overflow-hidden relative group cursor-pointer transition-colors ${
+                selectMode && selectedIds?.has(img.id)
+                  ? "border-2 border-cyan-400 ring-2 ring-cyan-400 ring-inset"
+                  : "border border-white/5 hover:border-orange-500/30"
+              }`}
+              style={{ aspectRatio: "16/9" }}
+              onClick={() => {
+                if (selectMode) { onSelectToggle?.(img.id); return }
+                const vm = img.videoMetadata || {}
+                onVideoClick({ id: img.id, videoUrl: img.imageUrl, prompt: img.prompt, model: img.model, duration: vm.duration, resolution: vm.resolution || img.quality || undefined, aspectRatio: vm.aspectRatio || img.aspectRatio, audioEnabled: vm.audioEnabled, startFrameUrl: vm.startFrameUrl || undefined, endFrameUrl: vm.endFrameUrl || undefined, motionVideoUrl: vm.motionVideoUrl || undefined, keepOriginalSound: vm.keepOriginalSound, characterOrientation: vm.characterOrientation || undefined, createdAt: img.createdAt })
+              }}
             >
-              <video src={iosSrc(img.imageUrl)} className="w-full h-full object-contain pointer-events-none" playsInline preload="metadata" muted />
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
-                <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center border border-white/20">
-                  <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+              <video src={iosSrc(img.imageUrl)} className={`w-full h-full pointer-events-none ${(img.videoMetadata?.aspectRatio || img.aspectRatio) === "16:9" ? "object-cover" : "object-contain"}`} playsInline preload="metadata" muted />
+              {selectMode && (
+                <div className={`absolute top-1.5 left-1.5 w-4 h-4 rounded-full border-2 flex items-center justify-center z-10 transition-all ${
+                  selectedIds?.has(img.id) ? "bg-cyan-400 border-cyan-400" : "border-white/60 bg-black/40"
+                }`}>
+                  {selectedIds?.has(img.id) && <Check size={9} className="text-black" />}
                 </div>
-              </div>
+              )}
+              {!selectMode && (
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
+                  <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center border border-white/20">
+                    <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                  </div>
+                </div>
+              )}
               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                 <p className="text-[10px] text-white/80 line-clamp-1">"{img.prompt}"</p>
                 <p className="text-[9px] text-orange-400/70 font-mono mt-0.5">{img.model}</p>
@@ -4036,7 +4324,7 @@ function VideoPromptBar({
   }, [modelOpen])
 
   const motionMaxSec = characterOrientation === "video" ? 30 : 10
-  const isSD20 = !!model.supportsSD20Modes
+  const isSD20FamilyBar = model.id === "seedance-2.0" || model.id === "seedance-2.0-fast"
   const isLipsyncModel = !!model.supportsLipsync
   const ticketCost = isLipsyncModel
     ? Math.max(10, Math.ceil((lipsyncVideoDuration ?? 0) * 6))
@@ -4046,7 +4334,7 @@ function VideoPromptBar({
     ? parseInt(duration) * (audioEnabled ? 8 : 6)
     : model.id === "seedance-1.5"
     ? Math.ceil(parseInt(duration) * 2.0 * (resolution === "1080p" ? 2.25 : resolution === "480p" ? 0.5 : 1.0) * (audioEnabled ? 1.0 : 0.5)) + 1
-    : isSD20
+    : isSD20FamilyBar
     ? Math.ceil(parseInt(duration === "auto" ? "5" : duration) * (model.id === "seedance-2.0-fast" ? 12 : 15) * (resolution === "1080p" ? 2.25 : resolution === "480p" ? 0.5 : 1.0))
     : ({ "480p": { "5": 7, "10": 14 }, "720p": { "5": 13, "10": 26 }, "1080p": { "5": 20, "10": 40 } } as any)[resolution]?.[duration] ?? 20
 
@@ -4058,7 +4346,7 @@ function VideoPromptBar({
     ? `${duration}s · ${aspectRatio}${audioEnabled ? " · audio" : ""}`
     : model.id === "seedance-1.5"
     ? `${resolution} · ${duration}s · ${aspectRatio}${audioEnabled ? " · audio" : ""}`
-    : isSD20
+    : isSD20FamilyBar
     ? `${resolution} · ${duration === "auto" ? "auto" : duration + "s"}${audioEnabled ? " · audio" : ""}`
     : `${resolution} · ${duration}s`
 
@@ -4301,10 +4589,11 @@ function VideoPromptBar({
 
 // --- NEWS DROPDOWN ---
 const NEWS_TYPE_CONFIG = {
-  info:    { text: "text-cyan-400",    dot: "bg-cyan-400",    icon: Info },
-  warning: { text: "text-amber-400",   dot: "bg-amber-400",   icon: AlertTriangle },
-  success: { text: "text-emerald-400", dot: "bg-emerald-400", icon: CheckCircle },
-  update:  { text: "text-fuchsia-400", dot: "bg-fuchsia-400", icon: Sparkles },
+  info:     { text: "text-cyan-400",    dot: "bg-cyan-400",    bg: "bg-cyan-500/10",    border: "border-cyan-500/30",    icon: Info         },
+  warning:  { text: "text-amber-400",   dot: "bg-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/30",   icon: AlertTriangle },
+  success:  { text: "text-emerald-400", dot: "bg-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", icon: CheckCircle   },
+  update:   { text: "text-fuchsia-400", dot: "bg-fuchsia-400", bg: "bg-fuchsia-500/10", border: "border-fuchsia-500/30", icon: Sparkles      },
+  tutorial: { text: "text-violet-400",  dot: "bg-violet-400",  bg: "bg-violet-500/10",  border: "border-violet-500/30",  icon: BookOpen      },
 } as const
 
 interface PortalNotification {
@@ -4315,24 +4604,60 @@ interface PortalNotification {
   createdAt: string
 }
 
+interface NewsArticlePreview {
+  id: number
+  title: string
+  slug: string
+  type: string
+  summary: string
+  previewImage: string | null
+  createdAt: string
+  publishedAt: string | null
+}
+
+// Parses [link text](url) syntax into clickable links
+function parseNotifMessage(message: string) {
+  const parts = message.split(/(\[[^\]]+\]\([^)]+\))/g)
+  return parts.map((part, i) => {
+    const match = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+    if (match) {
+      return (
+        <a key={i} href={match[2]} target="_blank" rel="noopener noreferrer"
+          className="underline font-bold hover:opacity-80 transition-opacity">
+          {match[1]}
+        </a>
+      )
+    }
+    return <span key={i}>{part}</span>
+  })
+}
+
 function NewsDropdown({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const [notifications, setNotifications] = useState<PortalNotification[]>([])
+  const [articles, setArticles] = useState<NewsArticlePreview[]>([])
   const [dismissed, setDismissed] = useState<number[]>([])
+  const [dismissedArticles, setDismissedArticles] = useState<number[]>([])
 
   // Load dismissed IDs from localStorage
   useEffect(() => {
     const stored = JSON.parse(localStorage.getItem("dismissed-portal-news") || "[]")
     setDismissed(stored)
+    const storedArticles = JSON.parse(localStorage.getItem("dismissed-portal-articles") || "[]")
+    setDismissedArticles(storedArticles)
   }, [])
 
   // Fetch portal notifications
   const fetchNews = useCallback(async () => {
     try {
-      const res = await fetch("/api/notifications?target=portal")
-      if (res.ok) setNotifications(await res.json())
+      const [notifRes, articleRes] = await Promise.all([
+        fetch("/api/notifications?target=portal"),
+        fetch("/api/news"),
+      ])
+      if (notifRes.ok) setNotifications(await notifRes.json())
+      if (articleRes.ok) setArticles(await articleRes.json())
     } catch {}
   }, [])
 
@@ -4366,16 +4691,26 @@ function NewsDropdown({ open, onToggle }: { open: boolean; onToggle: () => void 
     localStorage.setItem("dismissed-portal-news", JSON.stringify(next))
   }
 
-  const handleDismissAll = () => {
-    // Only dismiss unlocked notifications
-    const dismissibleIds = visible.filter(n => !n.locked).map(n => n.id)
-    const next = [...dismissed, ...dismissibleIds]
-    setDismissed(next)
-    localStorage.setItem("dismissed-portal-news", JSON.stringify(next))
+  const handleDismissArticle = (id: number) => {
+    const next = [...dismissedArticles, id]
+    setDismissedArticles(next)
+    localStorage.setItem("dismissed-portal-articles", JSON.stringify(next))
   }
 
-  const visible = notifications.filter(n => !dismissed.includes(n.id))
-  const unreadCount = visible.length
+  const handleDismissAll = () => {
+    const dismissibleIds = visibleNotifs.filter(n => !n.locked).map(n => n.id)
+    const nextNotifs = [...dismissed, ...dismissibleIds]
+    setDismissed(nextNotifs)
+    localStorage.setItem("dismissed-portal-news", JSON.stringify(nextNotifs))
+
+    const nextArticles = [...dismissedArticles, ...visibleArticles.map(a => a.id)]
+    setDismissedArticles(nextArticles)
+    localStorage.setItem("dismissed-portal-articles", JSON.stringify(nextArticles))
+  }
+
+  const visibleNotifs = notifications.filter(n => !dismissed.includes(n.id))
+  const visibleArticles = articles.filter(a => !dismissedArticles.includes(a.id))
+  const unreadCount = visibleNotifs.length + visibleArticles.length
 
   function relativeTime(dateStr: string) {
     const diff = Date.now() - new Date(dateStr).getTime()
@@ -4431,43 +4766,103 @@ function NewsDropdown({ open, onToggle }: { open: boolean; onToggle: () => void 
             )}
           </div>
 
-          {/* Notifications list */}
-          <div className="max-h-96 overflow-y-auto">
-            {visible.length === 0 ? (
+          {/* Content */}
+          <div className="max-h-[28rem] overflow-y-auto">
+            {unreadCount === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2 text-slate-600">
                 <Bell size={20} strokeWidth={1.5} />
                 <p className="text-[12px]">All caught up</p>
               </div>
             ) : (
-              visible.map((n) => {
-                const cfg = NEWS_TYPE_CONFIG[n.type as keyof typeof NEWS_TYPE_CONFIG] ?? NEWS_TYPE_CONFIG.info
-                const Icon = cfg.icon
-                return (
-                  <div key={n.id} className="group px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/3 transition-colors">
-                    <div className="flex items-start gap-3">
-                      <div className={`mt-0.5 shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${cfg.dot}/15`}>
-                        <Icon size={11} className={cfg.text} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[12px] text-slate-200 leading-relaxed">{n.message}</p>
-                        <p className="text-[10px] text-slate-600 mt-1">{relativeTime(n.createdAt)}</p>
-                      </div>
-                      {n.locked ? (
-                        <div className="shrink-0 w-5 h-5 flex items-center justify-center text-amber-500/50" title="Pinned">
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleDismiss(n.id)}
-                          className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-slate-600 hover:text-slate-300 hover:bg-white/8 transition-all opacity-0 group-hover:opacity-100"
+              <>
+                {/* News Article Previews */}
+                {visibleArticles.length > 0 && (
+                  <div>
+                    {visibleArticles.length > 0 && visibleNotifs.length > 0 && (
+                      <p className="px-4 pt-2.5 pb-1 text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Articles</p>
+                    )}
+                    {visibleArticles.map(a => {
+                      const cfg = NEWS_TYPE_CONFIG[a.type as keyof typeof NEWS_TYPE_CONFIG] ?? NEWS_TYPE_CONFIG.update
+                      const Icon = cfg.icon
+                      return (
+                        <div
+                          key={`article-${a.id}`}
+                          className="group px-3 py-2.5 border-b border-white/5 last:border-0 hover:bg-white/[0.04] transition-colors cursor-pointer"
+                          onClick={() => { window.location.href = `/news/${a.slug}`; onToggle() }}
                         >
-                          <X size={10} />
-                        </button>
-                      )}
-                    </div>
+                          <div className="flex items-start gap-2.5">
+                            {a.previewImage ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={a.previewImage}
+                                alt=""
+                                className="w-10 h-10 rounded-lg object-cover shrink-0 border border-white/10"
+                              />
+                            ) : (
+                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${cfg.bg} border ${cfg.border}`}>
+                                <Icon size={16} className={cfg.text} />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className={`text-[10px] font-semibold ${cfg.text}`}>{a.type === 'success' ? 'Update' : a.type === 'update' ? 'Patch' : a.type === 'tutorial' ? 'Tutorial' : a.type.charAt(0).toUpperCase() + a.type.slice(1)}</span>
+                                <span className="text-slate-700 text-[10px]">·</span>
+                                <span className="text-[10px] text-slate-600">{relativeTime(a.publishedAt || a.createdAt)}</span>
+                              </div>
+                              <p className="text-[12px] text-slate-200 font-medium leading-snug truncate">{a.title}</p>
+                              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed line-clamp-2">{a.summary}</p>
+                            </div>
+                            <button
+                              onClick={e => { e.stopPropagation(); handleDismissArticle(a.id) }}
+                              className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-slate-600 hover:text-slate-300 hover:bg-white/8 transition-all opacity-0 group-hover:opacity-100 mt-0.5"
+                            >
+                              <X size={10} />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
-                )
-              })
+                )}
+
+                {/* Notifications */}
+                {visibleNotifs.length > 0 && (
+                  <div>
+                    {visibleArticles.length > 0 && (
+                      <p className="px-4 pt-2.5 pb-1 text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Updates</p>
+                    )}
+                    {visibleNotifs.map((n) => {
+                      const cfg = NEWS_TYPE_CONFIG[n.type as keyof typeof NEWS_TYPE_CONFIG] ?? NEWS_TYPE_CONFIG.info
+                      const Icon = cfg.icon
+                      return (
+                        <div key={n.id} className="group px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/[0.03] transition-colors">
+                          <div className="flex items-start gap-3">
+                            <div className={`mt-0.5 shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${cfg.dot}/15`}>
+                              <Icon size={11} className={cfg.text} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[12px] text-slate-200 leading-relaxed">{parseNotifMessage(n.message)}</p>
+                              <p className="text-[10px] text-slate-600 mt-1">{relativeTime(n.createdAt)}</p>
+                            </div>
+                            {n.locked ? (
+                              <div className="shrink-0 w-5 h-5 flex items-center justify-center text-amber-500/50" title="Pinned">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleDismiss(n.id)}
+                                className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-slate-600 hover:text-slate-300 hover:bg-white/8 transition-all opacity-0 group-hover:opacity-100"
+                              >
+                                <X size={10} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -4648,6 +5043,9 @@ export default function PortalV2Page() {
     setBulkDownloading(true)
     setDownloadProgress({ done: 0, total: ids.length })
 
+    // Delay URL revocation — revoking immediately after a.click() causes silent
+    // failures on iOS Safari before the browser has had a chance to initiate the
+    // download fetch.
     const triggerDownload = (blob: Blob, filename: string) => {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
@@ -4655,51 +5053,63 @@ export default function PortalV2Page() {
       a.download = filename
       document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(url)
       document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
     }
 
     try {
       if (ids.length === 1) {
-        // Single image — direct download, no ZIP needed
+        // Single file — direct proxy download
         const res = await fetch(`/api/images/${ids[0]}?download=1`)
-        if (res.ok) triggerDownload(await res.blob(), `image-${ids[0]}.png`)
+        if (res.ok) {
+          const blob = await res.blob()
+          const ext = blob.type.includes("mp4") || blob.type.includes("video") ? "mp4"
+                    : blob.type.includes("webm") ? "webm"
+                    : blob.type.includes("jpeg") ? "jpg"
+                    : blob.type.includes("webp") ? "webp"
+                    : "png"
+          triggerDownload(blob, `file-${ids[0]}.${ext}`)
+        }
         setDownloadProgress({ done: 1, total: 1 })
       } else {
-        // Multiple images — bundle into a single ZIP so all platforms
-        // (including iOS Safari, which blocks multiple programmatic downloads)
-        // receive everything in one file.
-        const { default: JSZip } = await import("jszip")
-        const zip = new JSZip()
-        let done = 0
+        // Multiple files — server builds the zip so the client never has to
+        // hold every raw image blob in JS heap simultaneously (avoids the
+        // iPad Safari memory crash that occurred with the old client-side
+        // JSZip approach for large selections).
+        const url = `/api/images/zip?ids=${ids.join(",")}`
+        const res = await fetch(url)
+        if (!res.ok) throw new Error("Zip generation failed")
 
-        // Fetch in batches of 4 to avoid hammering the proxy route
-        const BATCH = 4
-        for (let i = 0; i < ids.length; i += BATCH) {
-          await Promise.all(
-            ids.slice(i, i + BATCH).map(async (id) => {
-              try {
-                const res = await fetch(`/api/images/${id}`)
-                if (res.ok) {
-                  const blob = await res.blob()
-                  const ext = blob.type.includes("jpeg") ? "jpg"
-                            : blob.type.includes("webp") ? "webp"
-                            : "png"
-                  zip.file(`image-${id}.${ext}`, blob)
-                }
-              } catch {}
-              done++
-              setDownloadProgress({ done, total: ids.length })
-            })
-          )
+        // Stream the response body so we can report download progress
+        const contentLength = parseInt(res.headers.get("Content-Length") ?? "0")
+        const reader = res.body!.getReader()
+        const chunks: BlobPart[] = []
+        let received = 0
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          if (value) {
+            chunks.push(value)
+            received += value.length
+            if (contentLength > 0) {
+              setDownloadProgress({
+                done: Math.min(Math.round((received / contentLength) * ids.length), ids.length - 1),
+                total: ids.length,
+              })
+            }
+          }
         }
 
-        const zipBlob = await zip.generateAsync({ type: "blob", compression: "STORE" })
+        const zipBlob = new Blob(chunks, { type: "application/zip" })
+        setDownloadProgress({ done: ids.length, total: ids.length })
         triggerDownload(zipBlob, `selections-${Date.now()}.zip`)
       }
+    } catch (err) {
+      console.error("Bulk download failed:", err)
     } finally {
       setBulkDownloading(false)
-      setDownloadProgress(null)
+      setTimeout(() => setDownloadProgress(null), 600)
     }
   }
 
@@ -4744,10 +5154,10 @@ export default function PortalV2Page() {
       const stored = sessionStorage.getItem("pv2-video-pending-slots")
       if (stored) {
         const slots = JSON.parse(stored) as VideoPendingSlot[]
-        // Keep slots up to 60 min old — startVideoPolling will immediately fail ones
-        // that are past the poll timeout (10 min) so they show a failed tile instead
+        // Keep slots up to 90 min old — startVideoPolling will immediately fail ones
+        // that are past the poll timeout (20 min) so they show a failed tile instead
         // of being silently dropped.
-        const cutoff = Date.now() - 60 * 60 * 1000
+        const cutoff = Date.now() - 90 * 60 * 1000
         return slots.filter(s => !s.startedAt || s.startedAt > cutoff)
       }
     } catch {}
@@ -4784,6 +5194,7 @@ export default function PortalV2Page() {
   const [videoLipsyncVideoFilename, setVideoLipsyncVideoFilename] = useState<string | null>(null)
   const [videoLipsyncVideoUrl, setVideoLipsyncVideoUrl] = useState<string | null>(null)
   const [videoLipsyncVideoDuration, setVideoLipsyncVideoDuration] = useState<number>(0)
+  const [videoLipsyncAspectRatio, setVideoLipsyncAspectRatio] = useState<string | undefined>(undefined)
   const [videoLipsyncAudioFilename, setVideoLipsyncAudioFilename] = useState<string | null>(null)
   const [videoLipsyncAudioUrl, setVideoLipsyncAudioUrl] = useState<string | null>(null)
   const [videoLipsyncSyncMode, setVideoLipsyncSyncMode] = useState<string>("cut_off")
@@ -4925,10 +5336,11 @@ export default function PortalV2Page() {
     setVideoRefAudioUrls(u => u.filter((_, j) => j !== i))
   }, [])
 
-  const handleLipsyncVideoSelect = useCallback(async (file: File, duration: number) => {
+  const handleLipsyncVideoSelect = useCallback(async (file: File, duration: number, aspectRatio?: string) => {
     setVideoLipsyncVideoFilename(file.name)
     setVideoLipsyncVideoUrl(null)
     setVideoLipsyncVideoDuration(duration)
+    setVideoLipsyncAspectRatio(aspectRatio)
     const url = await uploadVideoFrame(file)
     setVideoLipsyncVideoUrl(url)
   }, [uploadVideoFrame])
@@ -4947,7 +5359,7 @@ export default function PortalV2Page() {
 
     // If the slot is already past its poll timeout (e.g. page was refreshed after it
     // expired), fail it immediately so a failed tile appears instead of silent disappearance.
-    const POLL_TIMEOUT_MS = 40 * 15 * 1000 // same as 40 polls × 15s below
+    const POLL_TIMEOUT_MS = 80 * 15 * 1000 // 80 polls × 15s = 20 min (SeeDance 2.0 can be slow)
     if (slot.startedAt && Date.now() - slot.startedAt > POLL_TIMEOUT_MS) {
       setVideoPendingSlots(prev => prev.filter(s => s.slotId !== slot.slotId))
       const timedOutItem: VideoItem = {
@@ -4960,7 +5372,8 @@ export default function PortalV2Page() {
         failError: "Generation timed out",
         createdAt: new Date().toISOString(),
       }
-      setVideoItems(prev => [timedOutItem, ...prev])
+      // Dedup guard — prevents duplicate tiles if this path is triggered more than once
+      setVideoItems(prev => prev.some(i => i.id === timedOutItem.id) ? prev : [timedOutItem, ...prev])
       setSavedVideoFails(prev => prev.some(f => f.id === timedOutItem.id) ? prev : [timedOutItem, ...prev])
       if (slot.ticketCost > 0) {
         setUser(prev => prev ? { ...prev, ticketBalance: prev.ticketBalance + slot.ticketCost } : prev)
@@ -4978,8 +5391,8 @@ export default function PortalV2Page() {
       if (pollInFlight) return
       pollInFlight = true
       pollCount++
-      // Auto-fail after 40 polls (40 × 15s = 10 min)
-      if (pollCount > 40) {
+      // Auto-fail after 80 polls (80 × 15s = 20 min)
+      if (pollCount > 80) {
         clearInterval(interval)
         delete videoPollingIntervals.current[slot.slotId]
         setVideoPendingSlots(prev => prev.filter(s => s.slotId !== slot.slotId))
@@ -4993,7 +5406,8 @@ export default function PortalV2Page() {
           failError: "Generation timed out",
           createdAt: new Date().toISOString(),
         }
-        setVideoItems(prev => [timedOutItem, ...prev])
+        // Dedup guard — prevents duplicate tiles if two ticks slipped the pollInFlight guard
+        setVideoItems(prev => prev.some(i => i.id === timedOutItem.id) ? prev : [timedOutItem, ...prev])
         setSavedVideoFails(prev => prev.some(f => f.id === timedOutItem.id) ? prev : [timedOutItem, ...prev])
         if (slot.ticketCost > 0) {
           setUser(prev => prev ? { ...prev, ticketBalance: prev.ticketBalance + slot.ticketCost } : prev)
@@ -5041,6 +5455,7 @@ export default function PortalV2Page() {
           // Dedup by requestId — prevents a double-add if two ticks slipped through
           setVideoItems(prev => prev.some(i => i.id === slot.requestId) ? prev : [{
             id:                   slot.requestId,
+            dbId:                 data.videoId ?? undefined,
             videoUrl:             data.videoUrl,
             prompt:               slot.prompt,
             model:                slot.model,
@@ -5143,7 +5558,7 @@ export default function PortalV2Page() {
         resolution:           videoResolution,
         ticketCost:           data.ticketCost,
         startedAt:            Date.now(),
-        aspectRatio:          videoAspectRatio || undefined,
+        aspectRatio:          isLipsync ? videoLipsyncAspectRatio : (videoAspectRatio || undefined),
         audioEnabled:         videoAudioEnabled,
         startFrameUrl:        videoStartFrameUrl || undefined,
         endFrameUrl:          videoEndFrameUrl || undefined,
@@ -5309,6 +5724,7 @@ export default function PortalV2Page() {
           const completedImgs: { url: string; dbId?: number | null }[] = statusData.images || []
           const modelId = statusUrl.includes("kling-o3") ? "kling-o3-image"
             : statusUrl.includes("kling-image") ? "kling-v3-image"
+            : statusUrl.includes("wan-27-pro") ? "wan-2.7-pro"
             : "nano-banana-pro-2"
           completedImgs.forEach((img, i) =>
             handlePrependImage({
@@ -5607,6 +6023,17 @@ export default function PortalV2Page() {
     setActiveRefIds((prev) => prev.filter((rid) => rid !== id))
   }, [])
 
+  const handleLibraryDeleteMultiple = useCallback((ids: string[]) => {
+    const idSet = new Set(ids)
+    setRefLibrary((prev) => prev.filter((i) => !idSet.has(i.id)))
+    setActiveRefIds((prev) => prev.filter((rid) => !idSet.has(rid)))
+  }, [])
+
+  const handleLibraryClearAll = useCallback(() => {
+    setRefLibrary([])
+    setActiveRefIds([])
+  }, [])
+
   const handleActivateRef   = useCallback((id: string) => setActiveRefIds((prev) => [...prev, id]), [])
   const handleDeactivateRef = useCallback((id: string) => setActiveRefIds((prev) => prev.filter((rid) => rid !== id)), [])
 
@@ -5843,9 +6270,13 @@ export default function PortalV2Page() {
       {/* Taskbar */}
       <div className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md border-b border-white/5">
 
-        {/* Mobile-only top row: queue + tickets + profile + dashboard */}
+        {/* Mobile-only top row: branding + queue + tickets + profile + dashboard */}
         <div className="flex sm:hidden items-center justify-between px-3 h-9 border-b border-white/5">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 border border-cyan-500/20 flex items-center justify-center shrink-0">
+              <Sparkles size={11} className="text-cyan-400" />
+            </div>
+            <div className="w-px h-3 bg-white/10" />
             <QueueDisplay active={activeJobCount} max={maxConcurrent} label="img" />
             <QueueDisplay active={videoActiveJobCount} max={videoMaxConcurrent} label="vid" />
           </div>
@@ -5866,6 +6297,19 @@ export default function PortalV2Page() {
 
         {/* Dropdown row + desktop-only right group */}
         <div className="flex items-center justify-between px-4 h-12">
+          {/* Wordmark — desktop only */}
+          <div className="hidden sm:flex items-center gap-2 shrink-0 mr-3">
+            <div className="flex items-center gap-1.5">
+              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 border border-cyan-500/20 flex items-center justify-center">
+                <Sparkles size={12} className="text-cyan-400" />
+              </div>
+              <div className="flex flex-col leading-none">
+                <span className="text-[11px] font-black tracking-tight bg-gradient-to-r from-cyan-400 to-fuchsia-400 bg-clip-text text-transparent">AI Design Studio</span>
+                <span className="text-[8px] font-mono text-slate-600 tracking-widest uppercase">Prompt Protocol</span>
+              </div>
+            </div>
+            <div className="w-px h-4 bg-white/8" />
+          </div>
           <div className="flex items-center flex-1 min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden mr-1">
             <TaskbarDropdown
               label="Image"
@@ -5913,9 +6357,12 @@ export default function PortalV2Page() {
               modelMaxRefs={selectedModel.maxReferenceImages}
               onUpload={handleLibraryUpload}
               onDelete={handleLibraryDelete}
+              onDeleteMultiple={handleLibraryDeleteMultiple}
+              onClearAll={handleLibraryClearAll}
               onActivate={handleActivateRef}
               onDeactivate={handleDeactivateRef}
               disabled={scannerMode === "video"}
+              libraryLimit={hasPromptStudioDev ? 100 : 50}
             />
             <ShopDropdown
               open={openDropdown === "shop"}
@@ -6045,7 +6492,7 @@ export default function PortalV2Page() {
               lipsyncVideoUploading={videoLipsyncVideoFilename !== null && videoLipsyncVideoUrl === null}
               lipsyncVideoDuration={videoLipsyncVideoDuration}
               onLipsyncVideoSelect={handleLipsyncVideoSelect}
-              onClearLipsyncVideo={() => { setVideoLipsyncVideoFilename(null); setVideoLipsyncVideoUrl(null); setVideoLipsyncVideoDuration(0) }}
+              onClearLipsyncVideo={() => { setVideoLipsyncVideoFilename(null); setVideoLipsyncVideoUrl(null); setVideoLipsyncVideoDuration(0); setVideoLipsyncAspectRatio(undefined) }}
               lipsyncAudioFilename={videoLipsyncAudioFilename}
               lipsyncAudioUploading={videoLipsyncAudioFilename !== null && videoLipsyncAudioUrl === null}
               onLipsyncAudioSelect={handleLipsyncAudioSelect}
@@ -6063,6 +6510,9 @@ export default function PortalV2Page() {
               savedFails={savedVideoFails}
               onVideoClick={setSelectedVideo}
               onPendingClick={setVideoPendingDetail}
+              selectMode={selectMode}
+              selectedIds={selectedImageIds}
+              onSelectToggle={handleSelectToggle}
             />
           </div>
 
@@ -6071,7 +6521,7 @@ export default function PortalV2Page() {
             model={selectedVideoModel}
             onGenerate={handleVideoGenerate}
             generating={videoGenerating}
-            canGenerate={!videoGenerating && (selectedVideoModel.supportsLipsync ? (!!videoLipsyncVideoUrl && !!videoLipsyncAudioUrl) : ((selectedVideoModel.textToVideo && !(selectedVideoModel.supportsSD20Modes && videoSD20Mode === "i2v")) || !!videoStartFrameUrl)) && (selectedVideoModel.id !== "kling-v3-motion" || !!videoMotionVideoUrl) && videoActiveJobCount < videoMaxConcurrent}
+            canGenerate={!videoGenerating && (selectedVideoModel.supportsLipsync ? (!!videoLipsyncVideoUrl && !!videoLipsyncAudioUrl) : (selectedVideoModel.textToVideo || !!videoStartFrameUrl)) && (selectedVideoModel.id !== "kling-v3-motion" || !!videoMotionVideoUrl) && videoActiveJobCount < videoMaxConcurrent}
             queueFull={videoActiveJobCount >= videoMaxConcurrent && videoMaxConcurrent !== Infinity}
             duration={videoDuration}
             resolution={videoResolution}
@@ -6177,7 +6627,7 @@ export default function PortalV2Page() {
                   lipsyncVideoUploading={videoLipsyncVideoFilename !== null && videoLipsyncVideoUrl === null}
                   lipsyncVideoDuration={videoLipsyncVideoDuration}
                   onLipsyncVideoSelect={handleLipsyncVideoSelect}
-                  onClearLipsyncVideo={() => { setVideoLipsyncVideoFilename(null); setVideoLipsyncVideoUrl(null); setVideoLipsyncVideoDuration(0) }}
+                  onClearLipsyncVideo={() => { setVideoLipsyncVideoFilename(null); setVideoLipsyncVideoUrl(null); setVideoLipsyncVideoDuration(0); setVideoLipsyncAspectRatio(undefined) }}
                   lipsyncAudioFilename={videoLipsyncAudioFilename}
                   lipsyncAudioUploading={videoLipsyncAudioFilename !== null && videoLipsyncAudioUrl === null}
                   onLipsyncAudioSelect={handleLipsyncAudioSelect}
@@ -6262,6 +6712,7 @@ export default function PortalV2Page() {
           onUsePrompt={(text) => { handleUsePrompt(text); setVideoPendingDetail(null) }}
         />
       )}
+      <ChatWidget sideTabOnly={scannerMode === "video"} />
     </div>
   )
 }

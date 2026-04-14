@@ -41,14 +41,25 @@ export async function POST(req: Request) {
       }
 
       if (existingJob) {
-        // Already processed — skip DB save to prevent duplicate
+        // Already processed — skip DB save to prevent duplicate.
+        // Look up the saved DB record so the client can use videoId for dedup.
         console.log(`⚡ Video already saved [${requestId}] — returning cached result`)
-        return NextResponse.json({ status: 'completed', videoUrl })
+        let cachedVideoId: number | null = null
+        try {
+          const saved = await prisma.generatedImage.findFirst({
+            where: { imageUrl: videoUrl },
+            select: { id: true },
+            orderBy: { id: 'desc' },
+          })
+          cachedVideoId = saved?.id ?? null
+        } catch {}
+        return NextResponse.json({ status: 'completed', videoUrl, videoId: cachedVideoId })
       }
 
       console.log(`✓ Video generation completed [${requestId}] model=${model} duration=${duration} url=${videoUrl}`)
 
       // Save to DB under the first (admin) user
+      let savedVideoId: number | null = null
       try {
         let targetUserId: number | null = sessionUser?.id ?? null
         if (!targetUserId) {
@@ -56,7 +67,7 @@ export async function POST(req: Request) {
           targetUserId = adminUser?.id ?? null
         }
         if (targetUserId) {
-          await prisma.generatedImage.create({
+          const created = await prisma.generatedImage.create({
             data: {
               userId:      targetUserId!,
               prompt:      prompt || '',
@@ -79,14 +90,16 @@ export async function POST(req: Request) {
                 characterOrientation: characterOrientation || null,
               } as any,
             },
+            select: { id: true },
           })
+          savedVideoId = created.id
         }
       } catch (dbErr) {
         console.error('Admin video-status: failed to save to DB (non-fatal):', dbErr)
       }
 
       await releaseQueueSlot(requestId, false)
-      return NextResponse.json({ status: 'completed', videoUrl })
+      return NextResponse.json({ status: 'completed', videoUrl, videoId: savedVideoId })
 
     } else if ((status as any).status === 'ERROR' || (status as any).status === 'FAILED') {
       await releaseQueueSlot(requestId, true, 'Video generation failed on FAL servers')

@@ -164,6 +164,7 @@ export default function PromptStudioUpgradePage() {
                     { text: '30% off all ticket packages', highlight: true },
                     { text: '250–500 tickets auto-delivered each billing cycle', highlight: true },
                     { text: 'Up to 8 concurrent generations — 6 image + 2 video (vs 2 on free tier)', highlight: true },
+                    { text: '100 reference image slots in the Refs library (2× the free limit)', highlight: true },
                     { text: 'AI-powered prompt generation (Gemini models)', highlight: false },
                     { text: 'Early access to new features and experimental tools', highlight: false },
                   ].map((f) => (

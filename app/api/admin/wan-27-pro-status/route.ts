@@ -8,8 +8,8 @@ import { cookies } from 'next/headers'
 
 fal.config({ credentials: process.env.FAL_KEY! })
 
-// POST /api/admin/kling-image-status
-// Polls a FAL queue Kling V3 image job. On completion, re-hosts images on Vercel Blob and saves to DB.
+// POST /api/admin/wan-27-pro-status
+// Polls a FAL queue Wan 2.7 Pro job. On completion, re-hosts images on Vercel Blob and saves to DB.
 export async function POST(req: Request) {
   let requestId: string | undefined
   try {
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 
     const body = await req.json()
     requestId = body.requestId
-    const { falEndpoint, prompt, outputFormat, aspectRatio, referenceImageUrls } = body
+    const { falEndpoint, prompt, aspectRatio, referenceImageUrls } = body
     if (!requestId || !falEndpoint) {
       return NextResponse.json({ error: 'Missing requestId or falEndpoint' }, { status: 400 })
     }
@@ -35,7 +35,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ status: 'failed', error: 'No images returned from model' })
       }
 
-      const format = outputFormat || 'png'
       const hostedImages: { url: string; width?: number; height?: number }[] = []
       for (let i = 0; i < falImages.length; i++) {
         const falImg = falImages[i]
@@ -43,15 +42,14 @@ export async function POST(req: Request) {
           const res = await fetch(falImg.url)
           if (!res.ok) continue
           const buffer = Buffer.from(await res.arrayBuffer())
-          const ext = format === 'jpeg' ? 'jpg' : format
-          const filename = `kling-v3-${Date.now()}-${i}.${ext}`
+          const filename = `wan27-${Date.now()}-${i}.png`
           const blob = await put(filename, buffer, {
             access: 'public',
-            contentType: `image/${format === 'jpeg' ? 'jpeg' : format}`,
+            contentType: 'image/png',
           })
           hostedImages.push({ url: blob.url, width: falImg.width, height: falImg.height })
         } catch (e) {
-          console.error(`kling-image-status: failed to re-host image ${i}:`, e)
+          console.error(`wan-27-pro-status: failed to re-host image ${i}:`, e)
         }
       }
 
@@ -60,9 +58,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ status: 'failed', error: 'Failed to download generated images' })
       }
 
-      // Idempotency: if we already saved images for this requestId, return them without
-      // re-inserting. Prevents duplicate DB records when iOS backgrounds the page and the
-      // client re-polls a job whose "completed" response was lost mid-refresh.
+      // Idempotency: if already saved for this requestId, return existing records
       try {
         const existing = await prisma.generatedImage.findMany({
           where: { falRequestId: requestId },
@@ -70,7 +66,7 @@ export async function POST(req: Request) {
           orderBy: { id: 'asc' },
         })
         if (existing.length > 0) {
-          console.log(`↩ Kling V3 already saved [${requestId}] returning ${existing.length} existing record(s)`)
+          console.log(`↩ Wan 2.7 Pro already saved [${requestId}] returning ${existing.length} existing record(s)`)
           return NextResponse.json({
             status: 'completed',
             images: existing.map(img => ({ url: img.imageUrl, dbId: img.id })),
@@ -80,7 +76,7 @@ export async function POST(req: Request) {
         // falRequestId column may not exist yet — skip idempotency check
       }
 
-      // Save to DB and capture real IDs so the client can display without re-fetching
+      // Save to DB
       const savedIds: number[] = []
       try {
         let targetUserId: number | null = sessionUser?.id ?? null
@@ -95,8 +91,8 @@ export async function POST(req: Request) {
                 userId:             targetUserId!,
                 prompt:             prompt || '',
                 imageUrl:           img.url,
-                model:              'kling-v3-image',
-                ticketCost:         2,
+                model:              'wan-2.7-pro',
+                ticketCost:         4,
                 quality:            'auto',
                 aspectRatio:        aspectRatio || '16:9',
                 referenceImageUrls: Array.isArray(referenceImageUrls) ? referenceImageUrls : [],
@@ -109,11 +105,11 @@ export async function POST(req: Request) {
           created.forEach(r => savedIds.push(r.id))
         }
       } catch (dbErr) {
-        console.error('kling-image-status: DB save failed (non-fatal):', dbErr)
+        console.error('wan-27-pro-status: DB save failed (non-fatal):', dbErr)
       }
 
       await releaseQueueSlot(requestId, false)
-      console.log(`✓ Kling V3 image completed [${requestId}] ${hostedImages.length} image(s)`)
+      console.log(`✓ Wan 2.7 Pro completed [${requestId}] ${hostedImages.length} image(s)`)
       return NextResponse.json({
         status: 'completed',
         images: hostedImages.map((img, i) => ({ ...img, dbId: savedIds[i] ?? null })),
@@ -127,7 +123,7 @@ export async function POST(req: Request) {
     }
 
   } catch (error: any) {
-    console.error('kling-image-status error:', error)
+    console.error('wan-27-pro-status error:', error)
     if (error.status === 422 || error.constructor?.name === 'ValidationError') {
       const detail = Array.isArray(error.body?.detail)
         ? error.body.detail.map((d: any) => d.msg || d.message || JSON.stringify(d)).join('; ')

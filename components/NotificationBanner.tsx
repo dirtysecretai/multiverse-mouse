@@ -38,6 +38,23 @@ const TYPE_CONFIG = {
   }
 }
 
+// Parses [link text](url) syntax in notification messages into clickable <a> tags.
+function parseMessage(message: string, linkClass: string) {
+  const parts = message.split(/(\[[^\]]+\]\([^)]+\))/g)
+  return parts.map((part, i) => {
+    const match = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+    if (match) {
+      return (
+        <a key={i} href={match[2]} target="_blank" rel="noopener noreferrer"
+          className={`underline font-bold hover:opacity-80 transition-opacity`}>
+          {match[1]}
+        </a>
+      )
+    }
+    return <span key={i}>{part}</span>
+  })
+}
+
 export function NotificationBanner() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [dismissed, setDismissed] = useState<number[]>([])
@@ -91,7 +108,7 @@ export function NotificationBanner() {
             <div className="flex items-start gap-3">
               <Icon className={`${config.text} flex-shrink-0 mt-0.5`} size={20} />
               <p className={`flex-1 text-sm ${config.text} font-medium`}>
-                {notification.message}
+                {parseMessage(notification.message, config.text)}
               </p>
               {!notification.locked && (
                 <button

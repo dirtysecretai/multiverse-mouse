@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { fal } from "@fal-ai/client";
-import { FAL_GLOBAL_ID } from '@/lib/fal-queue';
+import { syncAndClaimFalSlot } from '@/lib/admin-queue-helpers';
 
 const prisma = new PrismaClient();
 
@@ -61,7 +61,15 @@ export async function POST(request: NextRequest) {
 
     const isSD20Family = model === 'seedance-2.0' || model === 'seedance-2.0-fast'
     const isLipsync = model === 'lipsync-v3'
-    const isTextToVideo = model === 'seedance-1.5' || (isSD20Family && sd20Mode !== 'i2v')
+    // For SD20 family: auto-detect mode from imageUrl; explicit r2v overrides
+    const effectiveSd20Mode = isSD20Family
+      ? (sd20Mode === 'r2v' ? 'r2v' : imageUrl ? 'i2v' : 't2v')
+      : sd20Mode
+    const isTextToVideo = model === 'seedance-1.5'
+      ? !imageUrl
+      : isSD20Family
+        ? (effectiveSd20Mode === 't2v')
+        : false
     if (!imageUrl && !isTextToVideo && !isLipsync) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
     }
@@ -154,10 +162,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Build FAL input based on model
-    const falEndpoint = model === 'seedance-1.5' && !imageUrl
+    const falEndpoint = isSD20Family
+      ? FAL_ENDPOINTS[`${model}-${effectiveSd20Mode}`] || FAL_ENDPOINTS[`${model}-t2v`]
+      : model === 'seedance-1.5' && !imageUrl
       ? FAL_ENDPOINTS['seedance-1.5-text']
-      : isSD20Family
-      ? FAL_ENDPOINTS[`${model}-${sd20Mode}`] || FAL_ENDPOINTS[`${model}-t2v`]
       : FAL_ENDPOINTS[model] || FAL_ENDPOINTS['wan-2.5'];
     let falInput: Record<string, any>;
 
@@ -203,20 +211,28 @@ export async function POST(request: NextRequest) {
       if (imageUrl) falInput.image_url = imageUrl;
       if (endImageUrl) falInput.end_image_url = endImageUrl;
     } else if (isSD20Family) {
-      if (sd20Mode === 'i2v') {
-        falInput = { prompt, image_url: imageUrl, resolution, duration: String(duration), generate_audio: generateAudio };
-        if (klingAspectRatio && klingAspectRatio !== 'auto') falInput.aspect_ratio = klingAspectRatio;
+      // Base params shared across all SD20 modes
+      const sd20Base: Record<string, any> = {
+        prompt,
+        resolution,
+        generate_audio: generateAudio,
+        enable_safety_checker: false,
+      };
+      // Only pass duration when explicitly selected (omit for "auto" — let the model decide)
+      if (duration && duration !== 'auto') sd20Base.duration = String(duration);
+      if (klingAspectRatio && klingAspectRatio !== 'auto') sd20Base.aspect_ratio = klingAspectRatio;
+
+      if (effectiveSd20Mode === 'i2v') {
+        falInput = { ...sd20Base, image_url: imageUrl };
         if (endImageUrl) falInput.end_image_url = endImageUrl;
-      } else if (sd20Mode === 'r2v') {
-        falInput = { prompt, resolution, duration: String(duration), generate_audio: generateAudio };
-        if (klingAspectRatio && klingAspectRatio !== 'auto') falInput.aspect_ratio = klingAspectRatio;
+      } else if (effectiveSd20Mode === 'r2v') {
+        falInput = { ...sd20Base };
         if (Array.isArray(referenceImageUrls) && referenceImageUrls.length > 0) falInput.image_urls = referenceImageUrls;
         if (Array.isArray(referenceVideoUrls) && referenceVideoUrls.length > 0) falInput.video_urls = referenceVideoUrls;
         if (Array.isArray(referenceAudioUrls) && referenceAudioUrls.length > 0) falInput.audio_urls = referenceAudioUrls;
       } else {
-        // t2v (default)
-        falInput = { prompt, resolution, duration: String(duration), generate_audio: generateAudio };
-        if (klingAspectRatio && klingAspectRatio !== 'auto') falInput.aspect_ratio = klingAspectRatio;
+        // t2v
+        falInput = { ...sd20Base };
       }
     } else {
       // WAN 2.5
@@ -233,36 +249,41 @@ export async function POST(request: NextRequest) {
 
     console.log(`Submitting ${model} job to FAL queue:`, JSON.stringify({ falEndpoint, ...falInput }, null, 2));
 
-    // Admin mode: atomically claim a global FAL slot or queue for later
-    let adminGlobalLimit: { maxConcurrent: number; currentActive: number } | null = null
+    // Admin mode: resolve the target user, sync counter, then claim a slot or queue for later
+    let adminSlotClaimed = false
+    let adminTargetUserId: number | null = null
     if (adminMode) {
-      adminGlobalLimit = await prisma.modelConcurrencyLimit.findUnique({ where: { modelId: FAL_GLOBAL_ID } })
-      if (adminGlobalLimit) {
-        const claimed = await prisma.modelConcurrencyLimit.updateMany({
-          where: { modelId: FAL_GLOBAL_ID, currentActive: { lt: adminGlobalLimit.maxConcurrent } },
-          data: { currentActive: { increment: 1 } },
-        })
-        if (claimed.count === 0) {
-          // At capacity — queue for later (counter was NOT incremented)
-          const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
-          if (adminUser) {
-            const queueEntry = await prisma.generationQueue.create({
-              data: {
-                userId:     adminUser.id,
-                modelId:    model,
-                modelType:  'video',
-                prompt:     (prompt || '').trim(),
-                parameters: { falEndpoint, falInput, usePolling: true },
-                status:     'queued',
-                ticketCost: 0,
-              },
-            })
-            console.log(`Video queued (at capacity ${adminGlobalLimit.currentActive}/${adminGlobalLimit.maxConcurrent}) model=${model} queueId=#${queueEntry.id}`)
-            return NextResponse.json({ success: true, queued: true, queueId: queueEntry.id, ticketCost, model, resolution, duration, falEndpoint })
-          }
-        }
-        // Slot claimed (counter already incremented)
+      const { cookies } = await import('next/headers')
+      const { getUserFromSession } = await import('@/lib/auth')
+      const cookieStore = await cookies()
+      const token = cookieStore.get('session')?.value
+      const sessionUser = token ? await getUserFromSession(token) : null
+      adminTargetUserId = sessionUser?.id ?? null
+      if (!adminTargetUserId) {
+        const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
+        adminTargetUserId = adminUser?.id ?? null
       }
+      if (!adminTargetUserId) {
+        return NextResponse.json({ success: false, error: 'No user found' }, { status: 500 });
+      }
+
+      const { claimed, maxConcurrent } = await syncAndClaimFalSlot()
+      if (!claimed) {
+        const queueEntry = await prisma.generationQueue.create({
+          data: {
+            userId:     adminTargetUserId,
+            modelId:    model,
+            modelType:  'video',
+            prompt:     (prompt || '').trim(),
+            parameters: { falEndpoint, falInput, usePolling: true },
+            status:     'queued',
+            ticketCost: 0,
+          },
+        })
+        console.log(`Video queued (at capacity, max=${maxConcurrent}) model=${model} queueId=#${queueEntry.id}`)
+        return NextResponse.json({ success: true, queued: true, queueId: queueEntry.id, ticketCost, model, resolution, duration, falEndpoint })
+      }
+      adminSlotClaimed = true
     }
 
     // Submit to FAL async queue (returns immediately with a requestId)
@@ -283,7 +304,8 @@ export async function POST(request: NextRequest) {
       }
 
       // Release the admin slot we claimed (if any)
-      if (adminMode && adminGlobalLimit) {
+      if (adminMode && adminSlotClaimed) {
+        const { FAL_GLOBAL_ID } = await import('@/lib/fal-queue')
         await prisma.modelConcurrencyLimit.updateMany({
           where: { modelId: FAL_GLOBAL_ID },
           data: { currentActive: { decrement: 1 } },
@@ -305,23 +327,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Admin mode: track as processing in GenerationQueue (counter already incremented above)
-    if (adminMode) {
-      const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
-      if (adminUser) {
-        await prisma.generationQueue.create({
-          data: {
-            userId:      adminUser.id,
-            modelId:     model,
-            modelType:   'video',
-            prompt:      (prompt || '').trim(),
-            parameters:  { falEndpoint, falInput, usePolling: true },
-            status:      'processing',
-            ticketCost:  0,
-            falRequestId: requestId,
-            startedAt:   new Date(),
-          },
-        })
-      }
+    if (adminMode && adminSlotClaimed && adminTargetUserId) {
+      await prisma.generationQueue.create({
+        data: {
+          userId:      adminTargetUserId,
+          modelId:     model,
+          modelType:   'video',
+          prompt:      (prompt || '').trim(),
+          parameters:  { falEndpoint, falInput, usePolling: true },
+          status:      'processing',
+          ticketCost:  0,
+          falRequestId: requestId,
+          startedAt:   new Date(),
+        },
+      })
     }
 
     return NextResponse.json({

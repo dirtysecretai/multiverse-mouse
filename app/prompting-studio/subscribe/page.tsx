@@ -155,6 +155,7 @@ export default function SubscribePage() {
     { text: '30% off all ticket package purchases', highlight: true },
     { text: '250–500 tickets auto-delivered each billing cycle', highlight: true },
     { text: 'Up to 8 concurrent generations — 6 image + 2 video (vs 2 on free tier)', highlight: true },
+    { text: '100 reference image slots in the Refs library (2× the free tier limit of 50)', highlight: true },
     { text: 'AI-powered prompt generation (Gemini models)', highlight: false },
     { text: 'Early access to new experimental features', highlight: false },
   ];

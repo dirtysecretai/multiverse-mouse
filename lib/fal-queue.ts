@@ -33,6 +33,18 @@ export async function promoteNextQueuedJob(): Promise<void> {
     })
     if (!globalLimit) return
 
+    // Sync counter from ground truth before claiming — prevents a drifted counter
+    // from blocking promotion of queued jobs when there are actually free slots.
+    const actualProcessing = await prisma.generationQueue.count({ where: { status: 'processing' } })
+    if (actualProcessing !== globalLimit.currentActive) {
+      console.log(`[promoteNextQueuedJob] Counter drift: stored=${globalLimit.currentActive}, actual=${actualProcessing}. Syncing.`)
+      await prisma.modelConcurrencyLimit.updateMany({
+        where: { modelId: FAL_GLOBAL_ID },
+        data: { currentActive: actualProcessing },
+      })
+      globalLimit.currentActive = actualProcessing
+    }
+
     // Atomically claim a global slot — only succeeds if currentActive < maxConcurrent
     const slotClaim = await prisma.modelConcurrencyLimit.updateMany({
       where: {

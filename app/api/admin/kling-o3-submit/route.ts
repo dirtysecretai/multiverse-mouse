@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
 import { put } from '@vercel/blob'
 import prisma from '@/lib/prisma'
-import { FAL_GLOBAL_ID } from '@/lib/fal-queue'
+import { syncAndClaimFalSlot } from '@/lib/admin-queue-helpers'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
 
@@ -92,19 +92,11 @@ export async function POST(req: Request) {
     }
     if (!targetUserId) return NextResponse.json({ error: 'No user found' }, { status: 500 })
 
-    // Atomically claim a global FAL slot (prevents race conditions when multiple requests arrive simultaneously)
-    const globalLimit = await prisma.modelConcurrencyLimit.findUnique({ where: { modelId: FAL_GLOBAL_ID } })
-    let isAtCapacity = false
-    if (globalLimit) {
-      const claimed = await prisma.modelConcurrencyLimit.updateMany({
-        where: { modelId: FAL_GLOBAL_ID, currentActive: { lt: globalLimit.maxConcurrent } },
-        data: { currentActive: { increment: 1 } },
-      })
-      isAtCapacity = claimed.count === 0
-    }
+    // Sync counter from ground truth, then atomically claim a slot
+    const { claimed, maxConcurrent } = await syncAndClaimFalSlot()
 
-    if (isAtCapacity) {
-      // Slot could not be claimed — queue for later (counter was NOT incremented)
+    if (!claimed) {
+      // At capacity — queue for later (counter was NOT incremented)
       const queueEntry = await prisma.generationQueue.create({
         data: {
           userId:    targetUserId!,
@@ -116,7 +108,7 @@ export async function POST(req: Request) {
           ticketCost: 0,
         },
       })
-      console.log(`Kling O3 queued (at capacity ${globalLimit!.currentActive}/${globalLimit!.maxConcurrent}) → queueId #${queueEntry.id}`)
+      console.log(`Kling O3 queued (at capacity, max=${maxConcurrent}) → queueId #${queueEntry.id}`)
       return NextResponse.json({ success: true, queued: true, queueId: queueEntry.id, permanentReferenceUrls })
     }
 
@@ -147,12 +139,11 @@ export async function POST(req: Request) {
       })
     } catch (submitError: any) {
       // FAL submit failed — release the slot we claimed
-      if (globalLimit) {
-        await prisma.modelConcurrencyLimit.updateMany({
-          where: { modelId: FAL_GLOBAL_ID },
-          data: { currentActive: { decrement: 1 } },
-        }).catch(() => {})
-      }
+      const { FAL_GLOBAL_ID } = await import('@/lib/fal-queue')
+      await prisma.modelConcurrencyLimit.updateMany({
+        where: { modelId: FAL_GLOBAL_ID },
+        data: { currentActive: { decrement: 1 } },
+      }).catch(() => {})
       throw submitError
     }
   } catch (error: any) {
