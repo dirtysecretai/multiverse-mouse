@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { fal } from "@fal-ai/client";
 import { getUserFromSession } from '@/lib/auth';
 import { cookies } from 'next/headers';
+import { put } from '@vercel/blob';
 
 const prisma = new PrismaClient();
 
@@ -45,8 +46,8 @@ export async function POST(request: NextRequest) {
       // Fetch the result
       const result = await fal.queue.result<any>(falEndpoint, { requestId });
 
-      const videoUrl = result.data?.video?.url;
-      if (!videoUrl) {
+      const falVideoUrl = result.data?.video?.url;
+      if (!falVideoUrl) {
         return NextResponse.json({ status: 'failed', error: 'No video URL in result' });
       }
 
@@ -68,12 +69,29 @@ export async function POST(request: NextRequest) {
         })
       }
 
+      // Upload video to Vercel Blob for permanent storage (FAL URLs expire after ~24–48h)
+      let permanentVideoUrl = falVideoUrl
+      try {
+        const videoRes = await fetch(falVideoUrl)
+        if (videoRes.ok) {
+          const contentType = videoRes.headers.get('content-type') || 'video/mp4'
+          const ext = contentType.includes('webm') ? 'webm' : 'mp4'
+          const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
+          const filename = `video-${user.id}-${Date.now()}.${ext}`
+          const blob = await put(filename, videoBuffer, { access: 'public', contentType })
+          permanentVideoUrl = blob.url
+          console.log(`[video/status] Uploaded video to blob: ${blob.url}`)
+        }
+      } catch (uploadErr) {
+        console.error('[video/status] Failed to upload video to blob (using FAL URL as fallback):', uploadErr)
+      }
+
       // Save completed video to DB
       const savedVideo = await prisma.generatedImage.create({
         data: {
           userId: user.id,
           prompt: actualPrompt,
-          imageUrl: videoUrl,
+          imageUrl: permanentVideoUrl,
           model: model || 'wan-2.5',
           quality: resolution || '1080p',
           aspectRatio: '16:9',
@@ -84,15 +102,15 @@ export async function POST(request: NextRequest) {
             duration: duration || '5',
             resolution: resolution || '1080p',
             isVideo: true,
-            thumbnailUrl: thumbnailUrl || videoUrl,
+            thumbnailUrl: thumbnailUrl || permanentVideoUrl,
           } as any,
         },
       });
 
       return NextResponse.json({
         status: 'completed',
-        videoUrl,
-        thumbnailUrl: thumbnailUrl || videoUrl,
+        videoUrl: permanentVideoUrl,
+        thumbnailUrl: thumbnailUrl || permanentVideoUrl,
         videoId: savedVideo.id,
         actualPrompt,
       });

@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma'
 import { releaseQueueSlot } from '@/lib/admin-queue-helpers'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
+import { put } from '@vercel/blob'
 
 fal.config({ credentials: process.env.FAL_KEY! })
 
@@ -35,48 +36,63 @@ export async function POST(req: Request) {
       })
 
       const result = await fal.queue.result<any>(falEndpoint, { requestId })
-      const videoUrl = result.data?.video?.url
-      if (!videoUrl) {
+      const falVideoUrl = result.data?.video?.url
+      if (!falVideoUrl) {
         return NextResponse.json({ status: 'failed', error: 'No video URL in FAL result' })
       }
 
       if (existingJob) {
         // Already processed — skip DB save to prevent duplicate.
-        // Look up the saved DB record so the client can use videoId for dedup.
         console.log(`⚡ Video already saved [${requestId}] — returning cached result`)
         let cachedVideoId: number | null = null
+        let cachedVideoUrl = falVideoUrl
         try {
           const saved = await prisma.generatedImage.findFirst({
-            where: { imageUrl: videoUrl },
-            select: { id: true },
+            where: { falRequestId: requestId },
+            select: { id: true, imageUrl: true },
             orderBy: { id: 'desc' },
           })
-          cachedVideoId = saved?.id ?? null
+          if (saved) { cachedVideoId = saved.id; cachedVideoUrl = saved.imageUrl }
         } catch {}
-        return NextResponse.json({ status: 'completed', videoUrl, videoId: cachedVideoId })
+        return NextResponse.json({ status: 'completed', videoUrl: cachedVideoUrl, videoId: cachedVideoId })
       }
 
-      console.log(`✓ Video generation completed [${requestId}] model=${model} duration=${duration} url=${videoUrl}`)
+      console.log(`✓ Video generation completed [${requestId}] model=${model} duration=${duration} url=${falVideoUrl}`)
 
-      // Save to DB under the first (admin) user
+      // Upload video to Vercel Blob for permanent storage (FAL URLs expire after ~24–48h)
+      let permanentVideoUrl = falVideoUrl
+      try {
+        const videoRes = await fetch(falVideoUrl)
+        if (videoRes.ok) {
+          const contentType = videoRes.headers.get('content-type') || 'video/mp4'
+          const ext = contentType.includes('webm') ? 'webm' : 'mp4'
+          const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
+          const filename = `video-admin-${Date.now()}.${ext}`
+          const blob = await put(filename, videoBuffer, { access: 'public', contentType })
+          permanentVideoUrl = blob.url
+          console.log(`[admin/video-status] Uploaded video to blob: ${blob.url}`)
+        }
+      } catch (uploadErr) {
+        console.error('[admin/video-status] Failed to upload video to blob (using FAL URL as fallback):', uploadErr)
+      }
+
+      // Save to DB under the session user
       let savedVideoId: number | null = null
       try {
-        let targetUserId: number | null = sessionUser?.id ?? null
-        if (!targetUserId) {
-          const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
-          targetUserId = adminUser?.id ?? null
-        }
-        if (targetUserId) {
+        if (!sessionUser) {
+          console.error('Admin video-status: no session user — skipping DB save')
+        } else {
           const created = await prisma.generatedImage.create({
             data: {
-              userId:      targetUserId!,
+              userId:      sessionUser.id,
               prompt:      prompt || '',
-              imageUrl:    videoUrl,
+              imageUrl:    permanentVideoUrl,
               model:       model || 'wan-2.5',
               quality:     resolution || '1080p',
               aspectRatio: aspectRatio || '16:9',
               ticketCost:  ticketCost || 0,
               expiresAt:   new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000),
+              falRequestId: requestId,
               videoMetadata: {
                 duration:             duration || '5',
                 resolution:           resolution || '1080p',
@@ -99,7 +115,7 @@ export async function POST(req: Request) {
       }
 
       await releaseQueueSlot(requestId, false)
-      return NextResponse.json({ status: 'completed', videoUrl, videoId: savedVideoId })
+      return NextResponse.json({ status: 'completed', videoUrl: permanentVideoUrl, videoId: savedVideoId })
 
     } else if ((status as any).status === 'ERROR' || (status as any).status === 'FAILED') {
       await releaseQueueSlot(requestId, true, 'Video generation failed on FAL servers')
