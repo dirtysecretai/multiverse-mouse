@@ -57,11 +57,23 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST - Create/Grant subscription
+const BILLING_TICKET_MAP: Record<string, number> = {
+  biweekly: 250,
+  monthly:  500,
+  yearly:   6000,
+}
+
+const BILLING_PRICE_MAP: Record<string, number> = {
+  biweekly: 20,
+  monthly:  40,
+  yearly:   480,
+}
+
+// POST - Create/Grant subscription (optionally deliver initial tickets)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { password, userEmail, tier, endDate } = body;
+    const { password, userEmail, tier, endDate, billingCycle, deliverTickets } = body;
 
     if (password !== ADMIN_PASSWORD) {
       return NextResponse.json(
@@ -91,11 +103,7 @@ export async function POST(req: NextRequest) {
 
     // Check if user already has an active subscription for this tier
     const existingSub = await prisma.subscription.findFirst({
-      where: {
-        userId: user.id,
-        tier: tier,
-        status: 'active'
-      }
+      where: { userId: user.id, tier, status: 'active' }
     });
 
     if (existingSub) {
@@ -105,31 +113,61 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const cycle = billingCycle || 'monthly'
+    const price = BILLING_PRICE_MAP[cycle] ?? null
+
     // Create subscription
     const subscription = await prisma.subscription.create({
       data: {
-        userId: user.id,
-        tier: tier,
-        status: 'active',
-        startDate: new Date(),
-        endDate: endDate ? new Date(endDate) : null
+        userId:      user.id,
+        tier,
+        status:      'active',
+        billingCycle: cycle,
+        billingAmount: price,
+        startDate:   new Date(),
+        endDate:     endDate ? new Date(endDate) : null,
+        autoRenew:   false, // manual grant — no auto-renew by default
+        metadata:    { grantedManually: true, billingCycle: cycle } as any,
       },
       include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            name: true
-          }
-        }
+        user: { select: { id: true, email: true, name: true } }
       }
     });
 
-    console.log(`✅ Subscription granted: ${tier} to ${userEmail}`);
+    // Optionally deliver initial tickets
+    let ticketsDelivered = 0
+    if (deliverTickets) {
+      ticketsDelivered = BILLING_TICKET_MAP[cycle] ?? 500
+      const ticketRecord = await prisma.ticket.findUnique({ where: { userId: user.id } })
+      const previousBalance = ticketRecord?.balance ?? 0
+      const newBalance = previousBalance + ticketsDelivered
+
+      await prisma.$transaction([
+        prisma.ticket.upsert({
+          where:  { userId: user.id },
+          update: { balance: { increment: ticketsDelivered }, totalBought: { increment: ticketsDelivered } },
+          create: { userId: user.id, balance: ticketsDelivered, totalBought: ticketsDelivered },
+        }),
+        prisma.subscriptionTransaction.create({
+          data: {
+            subscriptionId: subscription.id,
+            userId:         user.id,
+            type:           'ticket_distribution',
+            ticketsAdded:   ticketsDelivered,
+            previousBalance,
+            newBalance,
+            description:    `Manual grant — Dev Tier ${cycle} initial tickets`,
+          },
+        }),
+      ])
+    }
+
+    console.log(`✅ Subscription granted: ${tier} (${cycle}) to ${userEmail} — tickets: ${ticketsDelivered}`)
 
     return NextResponse.json({
       success: true,
-      subscription
+      subscription,
+      ticketsDelivered,
     });
 
   } catch (error: any) {

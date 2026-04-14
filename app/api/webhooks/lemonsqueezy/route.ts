@@ -335,8 +335,8 @@ export async function POST(request: Request) {
     }
   } catch (err) {
     console.error('[LS webhook] Handler error:', err)
-    // Return 200 so LS doesn't retry — log the error but don't block
-    return NextResponse.json({ received: true, warning: 'Handler error — check logs' })
+    // Return 500 so LemonSqueezy retries on transient errors (DB unavailable, schema mismatch, etc.)
+    return NextResponse.json({ error: 'Handler error — retrying' }, { status: 500 })
   } finally {
     await prisma.$disconnect()
   }

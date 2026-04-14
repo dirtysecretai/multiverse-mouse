@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, CreditCard, AlertCircle, CheckCircle, XCircle, ToggleLeft, ToggleRight, Trash2, DollarSign, Calendar, User, Mail, RefreshCw, Gift } from "lucide-react"
+import { ArrowLeft, CreditCard, AlertCircle, CheckCircle, XCircle, ToggleLeft, ToggleRight, Trash2, DollarSign, Calendar, User, Mail, RefreshCw, Gift, UserPlus } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 interface SubscriptionTransaction {
@@ -55,6 +55,13 @@ export default function DevTierAnalytics() {
   const [processingId, setProcessingId] = useState<number | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<{ synced: number; failed: number; results: any[] } | null>(null)
+
+  // Grant access state
+  const [grantEmail, setGrantEmail] = useState('')
+  const [grantCycle, setGrantCycle] = useState('monthly')
+  const [grantTickets, setGrantTickets] = useState(true)
+  const [granting, setGranting] = useState(false)
+  const [grantResult, setGrantResult] = useState<{ success: boolean; message: string } | null>(null)
 
   const fetchSubscriptions = async () => {
     setLoading(true)
@@ -206,6 +213,40 @@ export default function DevTierAnalytics() {
     }
   }
 
+  const grantAccess = async () => {
+    if (!grantEmail.trim()) return
+    setGranting(true)
+    setGrantResult(null)
+    try {
+      const res = await fetch('/api/admin/subscriptions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          password: sessionStorage.getItem('admin-password') || '',
+          userEmail: grantEmail.trim().toLowerCase(),
+          tier: 'prompt-studio-dev',
+          billingCycle: grantCycle,
+          deliverTickets: grantTickets,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        const ticketMsg = data.ticketsDelivered > 0 ? ` + ${data.ticketsDelivered} tickets delivered` : ''
+        setGrantResult({ success: true, message: `Access granted to ${grantEmail}${ticketMsg}` })
+        setGrantEmail('')
+        await fetchSubscriptions()
+      } else {
+        setGrantResult({ success: false, message: data.error || 'Failed to grant access' })
+      }
+    } catch {
+      setGrantResult({ success: false, message: 'Request failed' })
+    } finally {
+      setGranting(false)
+    }
+  }
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A'
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -310,6 +351,64 @@ export default function DevTierAnalytics() {
             </div>
             <div className="text-sm text-slate-400">Total Revenue (Initial Payments)</div>
           </div>
+        </div>
+
+        {/* Manual Grant Access */}
+        <div className="mb-6 p-5 rounded-xl border border-cyan-500/30 bg-cyan-500/5">
+          <div className="flex items-center gap-2 mb-3">
+            <UserPlus size={16} className="text-cyan-400" />
+            <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-wider">Manually Grant Dev Tier Access</h2>
+          </div>
+          <p className="text-xs text-slate-500 mb-4">Use this to fix customers who paid but didn't receive access. Enter their account email exactly as they registered.</p>
+
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="flex-1 min-w-[220px]">
+              <label className="text-xs text-slate-400 mb-1 block">User Email</label>
+              <input
+                type="email"
+                value={grantEmail}
+                onChange={e => setGrantEmail(e.target.value)}
+                placeholder="customer@email.com"
+                className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Plan</label>
+              <select
+                value={grantCycle}
+                onChange={e => setGrantCycle(e.target.value)}
+                className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-cyan-500"
+              >
+                <option value="biweekly">Biweekly ($20 · 250 tickets)</option>
+                <option value="monthly">Monthly ($40 · 500 tickets)</option>
+                <option value="yearly">Yearly ($480 · 6000 tickets)</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 pb-1">
+              <input
+                type="checkbox"
+                id="grantTickets"
+                checked={grantTickets}
+                onChange={e => setGrantTickets(e.target.checked)}
+                className="w-4 h-4 accent-cyan-500"
+              />
+              <label htmlFor="grantTickets" className="text-xs text-slate-300 cursor-pointer">Deliver initial tickets</label>
+            </div>
+            <button
+              onClick={grantAccess}
+              disabled={granting || !grantEmail.trim()}
+              className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-cyan-900 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
+            >
+              <UserPlus size={14} />
+              {granting ? 'Granting...' : 'Grant Access'}
+            </button>
+          </div>
+
+          {grantResult && (
+            <div className={`mt-3 px-4 py-2 rounded-lg text-sm font-medium ${grantResult.success ? 'bg-green-500/15 text-green-400 border border-green-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'}`}>
+              {grantResult.success ? '✓' : '✗'} {grantResult.message}
+            </div>
+          )}
         </div>
 
         {/* LemonSqueezy Sync Tool */}
