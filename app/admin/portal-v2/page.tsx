@@ -5575,7 +5575,8 @@ export default function PortalV2Page() {
           sd20Mode:             isSD20 ? videoSD20Mode : undefined,
           generateAudio:        videoAudioEnabled,
           audioUrl:             videoAudioUrl || undefined,
-          adminMode:            true,
+          adminMode:            userRef.current !== null && ADMIN_EMAILS.includes(userRef.current.email),
+          userId:               (userRef.current !== null && !ADMIN_EMAILS.includes(userRef.current.email)) ? userRef.current.id : undefined,
           // Motion Control
           motionVideoUrl:          videoMotionVideoUrl || undefined,
           motionVideoDurationSec:  videoMotionVideoDuration ?? undefined,
@@ -5615,14 +5616,20 @@ export default function PortalV2Page() {
         keepOriginalSound:    videoKeepOriginalSound,
         characterOrientation: videoCharacterOrientation,
       }
-      // Deduct tickets immediately: update UI and persist server-side so balance survives a refresh
+      // Update UI balance immediately.
+      // For admin users the generate route skips deduction, so we also persist via use-tickets.
+      // For regular users the generate route already deducted server-side — UI update only.
       if (data.ticketCost > 0) {
         setUser(prev => prev ? { ...prev, ticketBalance: Math.max(0, prev.ticketBalance - data.ticketCost) } : prev)
-        fetch("/api/admin/use-tickets", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "deduct", amount: data.ticketCost }),
-        }).catch(() => {})
+        const currentUser = userRef.current
+        const isAdminUser = currentUser !== null && ADMIN_EMAILS.includes(currentUser.email)
+        if (isAdminUser) {
+          fetch("/api/admin/use-tickets", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "deduct", amount: data.ticketCost }),
+          }).catch(() => {})
+        }
       }
       if (data.queued) {
         // At capacity — job is queued; slot has no FAL requestId yet
