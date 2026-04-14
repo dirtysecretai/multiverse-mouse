@@ -27,7 +27,7 @@ interface ImageItem {
 }
 
 type AspectRatio = "auto" | "1:1" | "2:3" | "3:2" | "4:5" | "5:4" | "3:4" | "4:3" | "9:16" | "16:9" | "21:9"
-type Quality = "2k" | "3k" | "4k"
+type Quality = "1k" | "2k" | "3k" | "4k"
 
 // --- IMAGE MODEL CONFIG ---
 interface ImageModelConfig {
