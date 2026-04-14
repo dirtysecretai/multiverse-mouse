@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Ticket, LogOut, CreditCard, Image as ImageIcon, Receipt, Settings, Terminal, Sparkles, Video, ArrowRight, ShieldCheck } from "lucide-react"
+import { Ticket, LogOut, CreditCard, Image as ImageIcon, Receipt, Settings, Terminal, Sparkles, Video, ArrowRight, ShieldCheck, KeyRound, X, Eye, EyeOff } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import ChatWidget from "@/components/ChatWidget"
@@ -50,6 +50,20 @@ export default function DashboardPage() {
   const [echoMessage, setEchoMessage] = useState("")
   const [isTransmitting, setIsTransmitting] = useState(false)
   const [submitSuccess, setSubmitSuccess] = useState(false)
+
+  // Change password state
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [pwCurrent, setPwCurrent] = useState("")
+  const [pwCurrentConfirm, setPwCurrentConfirm] = useState("")
+  const [pwNew, setPwNew] = useState("")
+  const [pwNewConfirm, setPwNewConfirm] = useState("")
+  const [pwError, setPwError] = useState("")
+  const [pwSuccess, setPwSuccess] = useState(false)
+  const [pwSubmitting, setPwSubmitting] = useState(false)
+  const [showPwCurrent, setShowPwCurrent] = useState(false)
+  const [showPwCurrentConfirm, setShowPwCurrentConfirm] = useState(false)
+  const [showPwNew, setShowPwNew] = useState(false)
+  const [showPwNewConfirm, setShowPwNewConfirm] = useState(false)
 
   useEffect(() => {
     checkAuth()
@@ -140,6 +154,35 @@ export default function DashboardPage() {
       setTimeout(() => setSubmitSuccess(false), 2000)
     } catch {}
     finally { setIsTransmitting(false) }
+  }
+
+  const handleChangePassword = async () => {
+    setPwError("")
+    setPwSubmitting(true)
+    try {
+      const res = await fetch('/api/user/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: pwCurrent,
+          currentPasswordConfirm: pwCurrentConfirm,
+          newPassword: pwNew,
+          newPasswordConfirm: pwNewConfirm,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setPwError(data.error || 'Something went wrong')
+      } else {
+        setPwSuccess(true)
+        setPwCurrent(""); setPwCurrentConfirm(""); setPwNew(""); setPwNewConfirm("")
+        setTimeout(() => { setPwSuccess(false); setShowPasswordModal(false) }, 2000)
+      }
+    } catch {
+      setPwError('Network error. Please try again.')
+    } finally {
+      setPwSubmitting(false)
+    }
   }
 
   const handleLogout = async () => {
@@ -410,6 +453,13 @@ export default function DashboardPage() {
                   Feedback
                 </button>
               </Link>
+              <button
+                onClick={() => { setShowPasswordModal(true); setPwError(""); setPwSuccess(false) }}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-white/6 bg-white/2 hover:border-amber-500/30 hover:bg-amber-500/5 text-xs text-slate-400 hover:text-amber-400 transition-all"
+              >
+                <KeyRound size={12} />
+                Change Password
+              </button>
             </div>
           </div>
 
@@ -488,6 +538,133 @@ export default function DashboardPage() {
     </div>
 
     <ChatWidget />
+
+    {/* Change Password Modal */}
+    {showPasswordModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowPasswordModal(false)} />
+        <div className="relative w-full max-w-md rounded-2xl border border-amber-500/20 bg-[#080c18] shadow-2xl shadow-amber-500/5 p-6">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                <KeyRound size={15} className="text-amber-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-white">Change Password</h2>
+                <p className="text-[10px] text-slate-600 font-mono">{user.email}</p>
+              </div>
+            </div>
+            <button onClick={() => setShowPasswordModal(false)} className="text-slate-600 hover:text-slate-400 transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+
+          {pwSuccess ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-3">
+              <div className="w-12 h-12 rounded-full bg-green-500/10 border border-green-500/30 flex items-center justify-center">
+                <span className="text-2xl">✓</span>
+              </div>
+              <p className="text-sm font-semibold text-green-400">Password updated successfully</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Current password */}
+              <div>
+                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider mb-1.5 block">Current Password</label>
+                <div className="relative">
+                  <input
+                    type={showPwCurrent ? 'text' : 'password'}
+                    value={pwCurrent}
+                    onChange={e => setPwCurrent(e.target.value)}
+                    placeholder="Enter current password"
+                    className="w-full bg-black/40 border border-white/8 rounded-lg px-3 py-2 pr-9 text-xs text-white placeholder-slate-600 outline-none focus:border-amber-500/40 transition-colors"
+                  />
+                  <button type="button" onClick={() => setShowPwCurrent(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400">
+                    {showPwCurrent ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm current password */}
+              <div>
+                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider mb-1.5 block">Confirm Current Password</label>
+                <div className="relative">
+                  <input
+                    type={showPwCurrentConfirm ? 'text' : 'password'}
+                    value={pwCurrentConfirm}
+                    onChange={e => setPwCurrentConfirm(e.target.value)}
+                    placeholder="Re-enter current password"
+                    className="w-full bg-black/40 border border-white/8 rounded-lg px-3 py-2 pr-9 text-xs text-white placeholder-slate-600 outline-none focus:border-amber-500/40 transition-colors"
+                  />
+                  <button type="button" onClick={() => setShowPwCurrentConfirm(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400">
+                    {showPwCurrentConfirm ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t border-white/6 my-1" />
+
+              {/* New password */}
+              <div>
+                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider mb-1.5 block">New Password</label>
+                <div className="relative">
+                  <input
+                    type={showPwNew ? 'text' : 'password'}
+                    value={pwNew}
+                    onChange={e => setPwNew(e.target.value)}
+                    placeholder="Enter new password"
+                    className="w-full bg-black/40 border border-white/8 rounded-lg px-3 py-2 pr-9 text-xs text-white placeholder-slate-600 outline-none focus:border-amber-500/40 transition-colors"
+                  />
+                  <button type="button" onClick={() => setShowPwNew(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400">
+                    {showPwNew ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-600 mt-1">Min 8 chars, uppercase, lowercase, and number</p>
+              </div>
+
+              {/* Confirm new password */}
+              <div>
+                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider mb-1.5 block">Confirm New Password</label>
+                <div className="relative">
+                  <input
+                    type={showPwNewConfirm ? 'text' : 'password'}
+                    value={pwNewConfirm}
+                    onChange={e => setPwNewConfirm(e.target.value)}
+                    placeholder="Re-enter new password"
+                    onKeyDown={e => e.key === 'Enter' && !pwSubmitting && handleChangePassword()}
+                    className="w-full bg-black/40 border border-white/8 rounded-lg px-3 py-2 pr-9 text-xs text-white placeholder-slate-600 outline-none focus:border-amber-500/40 transition-colors"
+                  />
+                  <button type="button" onClick={() => setShowPwNewConfirm(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400">
+                    {showPwNewConfirm ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                </div>
+              </div>
+
+              {pwError && (
+                <p className="text-xs text-red-400 bg-red-500/8 border border-red-500/20 rounded-lg px-3 py-2">{pwError}</p>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setShowPasswordModal(false)}
+                  className="flex-1 py-2 rounded-lg border border-white/8 bg-white/3 text-xs text-slate-400 hover:text-white hover:border-white/15 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleChangePassword}
+                  disabled={pwSubmitting || !pwCurrent || !pwCurrentConfirm || !pwNew || !pwNewConfirm}
+                  className="flex-1 py-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-xs font-semibold text-amber-400 hover:bg-amber-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  {pwSubmitting ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
     </>
   )
 }

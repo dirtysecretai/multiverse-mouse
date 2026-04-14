@@ -21,9 +21,9 @@ export async function GET(request: Request) {
     let whereClause: Prisma.GeneratedImageWhereInput = { isDeleted: false }
 
     if (type === 'video') {
-      whereClause = { ...whereClause, NOT: { videoMetadata: Prisma.JsonNull } }
+      whereClause = { ...whereClause, NOT: { videoMetadata: { equals: Prisma.JsonNull } } }
     } else if (type === 'image') {
-      whereClause = { ...whereClause, videoMetadata: Prisma.JsonNull }
+      whereClause = { ...whereClause, videoMetadata: { equals: Prisma.JsonNull } }
     }
 
     if (userIds.length > 0) {
