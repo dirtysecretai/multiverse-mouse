@@ -359,7 +359,7 @@ export default function AdminQueuePage() {
                     FAL.ai Models
                   </span>
                   <span className="text-xs text-slate-400">
-                    ({AI_MODELS.filter(m => m.isAvailable && m.provider !== 'gemini').length + 3} models incl. video)
+                    ({AI_MODELS.filter(m => m.isAvailable && m.provider !== 'gemini').length + 14} models incl. video)
                   </span>
                 </div>
                 <ChevronDown
@@ -478,19 +478,25 @@ export default function AdminQueuePage() {
                           </div>
                         );
                       })}
-                      {/* NanoBanana 2 — admin prototype, not in AI_MODELS config */}
-                      {(() => {
-                        const modelId = 'nano-banana-2';
-                        const existingLimit = limits.find(l => l.modelId === modelId);
+                      {/* Portal V2 image models — not in AI_MODELS config */}
+                      {[
+                        { id: 'nano-banana-pro-2', displayName: 'NanoBanana Pro 2', ticketInfo: '5t (2K) / 8t (4K)' },
+                        { id: 'nano-banana-2',     displayName: 'NanoBanana 2',     ticketInfo: 'Admin prototype' },
+                        { id: 'kling-v3-image',    displayName: 'Kling V3 Image',   ticketInfo: '2t' },
+                        { id: 'kling-o3-image',    displayName: 'Kling O3 Image',   ticketInfo: '2t (1K/2K) / 4t (4K)' },
+                        { id: 'wan-2.7-pro',       displayName: 'WAN 2.7 Pro',      ticketInfo: '4t' },
+                        { id: 'seedream-5-lite',   displayName: 'SeeDream 5.0 Lite', ticketInfo: '1t / 2t (3K+)' },
+                      ].map((model) => {
+                        const existingLimit = limits.find(l => l.modelId === model.id);
                         const currentLimit = existingLimit?.maxConcurrent;
                         const displayLimit = currentLimit === 999 ? 'No Limit' : currentLimit ? `${currentLimit}` : 'No Limit';
                         return (
-                          <div className="p-4 rounded-lg border border-slate-700 bg-slate-800/50">
+                          <div key={model.id} className="p-4 rounded-lg border border-slate-700 bg-slate-800/50">
                             <div className="flex items-start justify-between mb-3">
                               <div className="flex-1">
-                                <h3 className="text-sm font-bold text-white">NanoBanana 2</h3>
-                                <p className="text-xs text-slate-400">{modelId}</p>
-                                <p className="text-xs text-slate-500 mt-1">Admin prototype</p>
+                                <h3 className="text-sm font-bold text-white">{model.displayName}</h3>
+                                <p className="text-xs text-slate-400">{model.id}</p>
+                                <p className="text-xs text-slate-500 mt-1">{model.ticketInfo}</p>
                               </div>
                               {existingLimit && (
                                 <span className={`px-2 py-1 rounded text-xs font-bold ${
@@ -512,13 +518,13 @@ export default function AdminQueuePage() {
                                   type="number"
                                   min="0"
                                   max="99"
-                                  value={tempLimits[modelId] ?? ''}
-                                  onChange={(e) => setTempLimits(prev => ({ ...prev, [modelId]: e.target.value }))}
+                                  value={tempLimits[model.id] ?? ''}
+                                  onChange={(e) => setTempLimits(prev => ({ ...prev, [model.id]: e.target.value }))}
                                   placeholder="0-99 (0=no limit)"
                                   className="flex-1 px-2 py-1.5 rounded bg-slate-950 border border-cyan-500/30 text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400"
                                 />
                                 <button
-                                  onClick={() => saveLimit(modelId, 'image')}
+                                  onClick={() => saveLimit(model.id, 'image')}
                                   className="px-4 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold"
                                 >
                                   Set
@@ -527,7 +533,7 @@ export default function AdminQueuePage() {
                             </div>
                           </div>
                         );
-                      })()}
+                      })}
                     </div>
                   </div>
 
@@ -536,8 +542,14 @@ export default function AdminQueuePage() {
                     <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Video Models</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {[
-                        { id: 'wan-2.5', displayName: 'Wan 2.5', ticketCost: 10 },
-                        { id: 'kling-v3', displayName: 'Kling 3.0', ticketCost: 10 },
+                        { id: 'kling-v3',          displayName: 'Kling V3 Pro',         ticketInfo: '6t/s (no audio) · 8t/s (audio)' },
+                        { id: 'kling-o3',          displayName: 'Kling O3 Video',        ticketInfo: '~20t for 5s, scales with duration' },
+                        { id: 'kling-v3-motion',   displayName: 'Kling Motion Control',  ticketInfo: '6t/s of reference video' },
+                        { id: 'wan-2.5',           displayName: 'WAN 2.5',              ticketInfo: '7–40t (res × duration)' },
+                        { id: 'seedance-1.5',      displayName: 'SeeDance 1.5',         ticketInfo: 'varies by res + duration' },
+                        { id: 'seedance-2.0',      displayName: 'SeeDance 2.0',         ticketInfo: '~15t/s at 720p' },
+                        { id: 'seedance-2.0-fast', displayName: 'SeeDance 2.0 Fast',    ticketInfo: '~12t/s at 720p' },
+                        { id: 'lipsync-v3',        displayName: 'Lipsync V3',           ticketInfo: '10t min · 6t/s' },
                       ].map((model) => {
                         const existingLimit = limits.find(l => l.modelId === model.id);
                         const currentLimit = existingLimit?.maxConcurrent;
@@ -548,7 +560,7 @@ export default function AdminQueuePage() {
                               <div className="flex-1">
                                 <h3 className="text-sm font-bold text-white">{model.displayName}</h3>
                                 <p className="text-xs text-slate-400">{model.id}</p>
-                                <p className="text-xs text-slate-500 mt-1">{model.ticketCost} tickets</p>
+                                <p className="text-xs text-slate-500 mt-1">{model.ticketInfo}</p>
                               </div>
                               {existingLimit && (
                                 <span className={`px-2 py-1 rounded text-xs font-bold ${
