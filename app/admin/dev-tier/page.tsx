@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, CreditCard, AlertCircle, CheckCircle, XCircle, ToggleLeft, ToggleRight, Trash2, DollarSign, Calendar, User, Mail, RefreshCw, Gift, UserPlus } from "lucide-react"
+import { ArrowLeft, CreditCard, AlertCircle, CheckCircle, XCircle, ToggleLeft, ToggleRight, Trash2, DollarSign, Calendar, User, Mail, RefreshCw, Gift, UserPlus, CalendarClock } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 interface SubscriptionTransaction {
@@ -59,9 +59,15 @@ export default function DevTierAnalytics() {
   // Grant access state
   const [grantEmail, setGrantEmail] = useState('')
   const [grantCycle, setGrantCycle] = useState('monthly')
+  const [grantEndDate, setGrantEndDate] = useState('')
   const [grantTickets, setGrantTickets] = useState(true)
   const [granting, setGranting] = useState(false)
   const [grantResult, setGrantResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  // Edit end date state
+  const [editingEndDateId, setEditingEndDateId] = useState<number | null>(null)
+  const [editEndDateValue, setEditEndDateValue] = useState('')
+  const [savingEndDate, setSavingEndDate] = useState(false)
 
   const fetchSubscriptions = async () => {
     setLoading(true)
@@ -229,6 +235,7 @@ export default function DevTierAnalytics() {
           tier: 'prompt-studio-dev',
           billingCycle: grantCycle,
           deliverTickets: grantTickets,
+          endDate: grantEndDate || null,
         }),
       })
       const data = await res.json()
@@ -244,6 +251,35 @@ export default function DevTierAnalytics() {
       setGrantResult({ success: false, message: 'Request failed' })
     } finally {
       setGranting(false)
+    }
+  }
+
+  const saveEndDate = async (subscriptionId: number) => {
+    setSavingEndDate(true)
+    try {
+      const res = await fetch('/api/admin/subscriptions', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          password: sessionStorage.getItem('admin-password') || '',
+          id: subscriptionId,
+          endDate: editEndDateValue || null,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setEditingEndDateId(null)
+        setEditEndDateValue('')
+        await fetchSubscriptions()
+      } else {
+        alert(data.error || 'Failed to update end date')
+      }
+    } catch {
+      alert('Request failed')
+    } finally {
+      setSavingEndDate(false)
     }
   }
 
@@ -383,6 +419,15 @@ export default function DevTierAnalytics() {
                 <option value="monthly">Monthly ($40 · 500 tickets)</option>
                 <option value="yearly">Yearly ($480 · 6000 tickets)</option>
               </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">End Date <span className="text-slate-600">(optional)</span></label>
+              <input
+                type="datetime-local"
+                value={grantEndDate}
+                onChange={e => setGrantEndDate(e.target.value)}
+                className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-cyan-500"
+              />
             </div>
             <div className="flex items-center gap-2 pb-1">
               <input
@@ -549,42 +594,88 @@ export default function DevTierAnalytics() {
                   </div>
 
                   {/* Action Buttons */}
-                  {sub.status === 'active' && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => distributeTickets(sub.id, sub.user.email)}
-                        disabled={processingId === sub.id}
-                        className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-purple-800 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors"
-                        title="Manually distribute tickets"
-                      >
-                        <Gift size={18} />
-                        Give Tickets
-                      </button>
+                  <div className="flex flex-col gap-2 items-end">
+                    {sub.status === 'active' && (
+                      <div className="flex gap-2 flex-wrap justify-end">
+                        <button
+                          onClick={() => distributeTickets(sub.id, sub.user.email)}
+                          disabled={processingId === sub.id}
+                          className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-purple-800 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors"
+                          title="Manually distribute tickets"
+                        >
+                          <Gift size={18} />
+                          Give Tickets
+                        </button>
 
-                      <button
-                        onClick={() => toggleAutoRenew(sub.id, sub.autoRenew)}
-                        disabled={processingId === sub.id}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all ${
-                          sub.autoRenew
-                            ? 'bg-green-600 hover:bg-green-500 text-white'
-                            : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-                        } disabled:opacity-50 disabled:cursor-not-allowed`}
-                        title={sub.autoRenew ? 'Auto-renew enabled' : 'Auto-renew disabled'}
-                      >
-                        {sub.autoRenew ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
-                        {processingId === sub.id ? 'Processing...' : sub.autoRenew ? 'Auto-Renew ON' : 'Auto-Renew OFF'}
-                      </button>
+                        <button
+                          onClick={() => toggleAutoRenew(sub.id, sub.autoRenew)}
+                          disabled={processingId === sub.id}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all ${
+                            sub.autoRenew
+                              ? 'bg-green-600 hover:bg-green-500 text-white'
+                              : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title={sub.autoRenew ? 'Auto-renew enabled' : 'Auto-renew disabled'}
+                        >
+                          {sub.autoRenew ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                          {processingId === sub.id ? 'Processing...' : sub.autoRenew ? 'Auto-Renew ON' : 'Auto-Renew OFF'}
+                        </button>
 
+                        <button
+                          onClick={() => revokeAccess(sub.id, sub.user.email)}
+                          disabled={processingId === sub.id}
+                          className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 disabled:bg-red-800 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors"
+                        >
+                          <Trash2 size={18} />
+                          Revoke Access
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Set End Date — available for all subscriptions */}
+                    {editingEndDateId === sub.id ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="datetime-local"
+                          value={editEndDateValue}
+                          onChange={e => setEditEndDateValue(e.target.value)}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-500 text-white text-sm focus:outline-none focus:border-cyan-500"
+                        />
+                        <button
+                          onClick={() => saveEndDate(sub.id)}
+                          disabled={savingEndDate}
+                          className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:bg-cyan-900 text-white rounded-lg text-sm font-bold transition-colors"
+                        >
+                          {savingEndDate ? 'Saving...' : 'Save'}
+                        </button>
+                        <button
+                          onClick={() => { setEditingEndDateId(null); setEditEndDateValue('') }}
+                          className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm font-bold transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
                       <button
-                        onClick={() => revokeAccess(sub.id, sub.user.email)}
-                        disabled={processingId === sub.id}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 disabled:bg-red-800 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors"
+                        onClick={() => {
+                          setEditingEndDateId(sub.id)
+                          // Pre-fill with current end date if set
+                          if (sub.endDate) {
+                            const d = new Date(sub.endDate)
+                            const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+                              .toISOString().slice(0, 16)
+                            setEditEndDateValue(local)
+                          } else {
+                            setEditEndDateValue('')
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded-lg text-sm font-bold transition-colors"
                       >
-                        <Trash2 size={18} />
-                        Revoke Access
+                        <CalendarClock size={14} />
+                        {sub.endDate ? 'Change End Date' : 'Set End Date'}
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
 
                 {/* Subscription Details Grid */}
