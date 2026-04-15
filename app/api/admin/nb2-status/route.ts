@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 
     const body = await req.json()
     requestId = body.requestId
-    const { falEndpoint, prompt, outputFormat, aspectRatio, quality, referenceImageUrls } = body
+    const { falEndpoint, prompt, outputFormat, aspectRatio, quality, referenceImageUrls, ticketCost } = body
     if (!requestId || !falEndpoint) {
       return NextResponse.json({ error: 'Missing requestId or falEndpoint' }, { status: 400 })
     }
@@ -97,7 +97,7 @@ export async function POST(req: Request) {
                 prompt:             prompt || '',
                 imageUrl:           img.url,
                 model:              'nano-banana-pro-2',
-                ticketCost:         0,
+                ticketCost:         typeof ticketCost === 'number' ? ticketCost : 0,
                 quality:            quality || 'auto',
                 aspectRatio:        aspectRatio || 'auto',
                 referenceImageUrls: Array.isArray(referenceImageUrls) ? referenceImageUrls : [],

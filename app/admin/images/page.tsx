@@ -12,6 +12,8 @@ interface GeneratedImage {
   prompt: string
   imageUrl: string
   model: string
+  quality: string | null
+  aspectRatio: string | null
   ticketCost: number
   referenceImageUrls: string[]
   createdAt: string
@@ -20,12 +22,22 @@ interface GeneratedImage {
     thumbnailUrl?: string
     duration?: string
     resolution?: string
+    aspectRatio?: string
+    audioEnabled?: boolean
+    startFrameUrl?: string
+    endFrameUrl?: string
+    motionVideoUrl?: string
+    characterOrientation?: string
   } | null
   user: {
     id: number
     email: string
     name: string | null
   }
+  imageRating?: {
+    score: number
+    feedbackText: string | null
+  } | null
 }
 
 interface UserOption {
@@ -65,6 +77,17 @@ function formatDate(d: string) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function formatDateTime(d: string) {
+  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+}
+
+// For models whose ticketCost was historically saved as 0, derive it from model + quality
+function getDisplayTicketCost(img: GeneratedImage): number {
+  if (img.ticketCost > 0) return img.ticketCost
+  if (img.model === 'nano-banana-pro-2') return img.quality === '4k' ? 8 : 5
+  return 0
+}
+
 export default function AdminImagesPage() {
   const router = useRouter()
 
@@ -78,7 +101,8 @@ export default function AdminImagesPage() {
   const [pagination, setPagination] = useState<PaginationInfo>({ page: 1, limit: 24, total: 0, totalPages: 0 })
 
   // Filters
-  const [typeFilter, setTypeFilter]       = useState<'all' | 'image' | 'video'>('all')
+  const [typeFilter, setTypeFilter]           = useState<'all' | 'image' | 'video'>('all')
+  const [ratedOnly, setRatedOnly]             = useState(false)
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set())
 
   // User picker
@@ -160,12 +184,14 @@ export default function AdminImagesPage() {
     page: number,
     type: 'all' | 'image' | 'video' = typeFilter,
     userIds: Set<number> = selectedUserIds,
+    rated: boolean = ratedOnly,
   ) => {
     setIsLoading(true)
     try {
       const typeParam  = type !== 'all' ? `&type=${type}` : ''
       const userParam  = userIds.size > 0 ? `&userIds=${Array.from(userIds).join(',')}` : ''
-      const res = await fetch(`/api/admin/images?page=${page}&limit=24${typeParam}${userParam}`)
+      const ratedParam = rated ? `&rated=true` : ''
+      const res = await fetch(`/api/admin/images?page=${page}&limit=24${typeParam}${userParam}${ratedParam}`)
       if (res.ok) {
         const data = await res.json()
         setImages(data.images)
@@ -177,11 +203,11 @@ export default function AdminImagesPage() {
 
   // Re-fetch when filters change
   useEffect(() => {
-    if (isAuthenticated) fetchImages(1, typeFilter, selectedUserIds)
-  }, [typeFilter, selectedUserIds])
+    if (isAuthenticated) fetchImages(1, typeFilter, selectedUserIds, ratedOnly)
+  }, [typeFilter, selectedUserIds, ratedOnly])
 
   const handlePageChange = (newPage: number) => {
-    fetchImages(newPage, typeFilter, selectedUserIds)
+    fetchImages(newPage, typeFilter, selectedUserIds, ratedOnly)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -295,9 +321,24 @@ export default function AdminImagesPage() {
               ))}
             </div>
 
+            {/* Rated filter — independent toggle, ANDs with type filter */}
+            <button
+              onClick={() => setRatedOnly(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                ratedOnly
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                  : 'border-white/6 bg-black/30 text-slate-500 hover:text-slate-300 hover:border-white/15'
+              }`}
+            >
+              <svg className={`w-3 h-3 ${ratedOnly ? 'text-amber-400' : 'text-slate-600'}`} fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+              </svg>
+              Rated only
+            </button>
+
             {/* Refresh */}
             <button
-              onClick={() => fetchImages(pagination.page, typeFilter, selectedUserIds)}
+              onClick={() => fetchImages(pagination.page, typeFilter, selectedUserIds, ratedOnly)}
               disabled={isLoading}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 hover:text-white text-xs transition-all disabled:opacity-40"
             >
@@ -502,7 +543,7 @@ export default function AdminImagesPage() {
                       <User size={8} />
                       <span className="truncate">{image.user.email}</span>
                     </div>
-                    <p className="text-[9px] text-slate-700 font-mono mt-0.5">{formatDate(image.createdAt)}</p>
+                    <p className="text-[9px] text-slate-700 font-mono mt-0.5">{formatDateTime(image.createdAt)}</p>
                   </div>
                 </div>
               ))}
@@ -609,23 +650,134 @@ export default function AdminImagesPage() {
 
           <div className="border-t border-white/6 bg-black/80 backdrop-blur-sm px-3 py-3 sm:p-4" onClick={e => e.stopPropagation()}>
             <div className="max-w-4xl mx-auto">
+              {/* Prompt */}
               <div className="flex items-start gap-2 mb-3">
                 <Sparkles className="text-cyan-400 flex-shrink-0 mt-0.5" size={13} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-xs sm:text-sm line-clamp-2">{selectedImage.prompt}</p>
-                  <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px]">
-                    <span className="px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/20 text-cyan-400 font-mono">
-                      {getModelName(selectedImage.model)}
-                    </span>
-                    <span className="flex items-center gap-1 text-slate-500">
-                      <User size={10} />
-                      {selectedImage.user.email}
-                    </span>
-                    <span className="text-slate-600">{selectedImage.ticketCost} ticket{selectedImage.ticketCost !== 1 ? 's' : ''}</span>
-                    <span className="text-slate-600">{formatDate(selectedImage.createdAt)}</span>
-                  </div>
-                </div>
+                <p className="text-white text-xs sm:text-sm line-clamp-3 flex-1 min-w-0">{selectedImage.prompt}</p>
               </div>
+
+              {/* Config grid */}
+              {(() => {
+                const vm = selectedImage.videoMetadata
+                const isVid = !!vm?.isVideo
+                const cost = getDisplayTicketCost(selectedImage)
+                const ar = vm?.aspectRatio || selectedImage.aspectRatio
+                const res = vm?.resolution || selectedImage.quality
+                const dur = vm?.duration
+                const audio = vm?.audioEnabled
+                const hasStartFrame = !!vm?.startFrameUrl
+                const hasEndFrame = !!vm?.endFrameUrl
+                const hasMotion = !!vm?.motionVideoUrl
+                const orientation = vm?.characterOrientation
+
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                    {/* Model */}
+                    <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                      <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">Model</p>
+                      <p className="text-[11px] text-cyan-400 font-mono font-semibold truncate">{getModelName(selectedImage.model)}</p>
+                    </div>
+
+                    {/* User */}
+                    <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                      <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">User</p>
+                      <p className="text-[11px] text-slate-300 truncate">{selectedImage.user.email}</p>
+                    </div>
+
+                    {/* Tickets */}
+                    <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                      <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">Tickets</p>
+                      <p className="text-[11px] text-amber-400 font-mono font-semibold">{cost} ticket{cost !== 1 ? 's' : ''}</p>
+                    </div>
+
+                    {/* Date/Time */}
+                    <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                      <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">Created</p>
+                      <p className="text-[11px] text-slate-300 font-mono">{formatDateTime(selectedImage.createdAt)}</p>
+                    </div>
+
+                    {/* Rating */}
+                    <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                      <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">Rating</p>
+                      {selectedImage.imageRating ? (
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-0.5">
+                            {[1,2,3,4,5].map(s => (
+                              <svg key={s} className={`w-2.5 h-2.5 ${s <= selectedImage.imageRating!.score ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                              </svg>
+                            ))}
+                            <span className="text-[10px] text-amber-400 font-mono ml-1">{selectedImage.imageRating.score}/5</span>
+                          </div>
+                          {selectedImage.imageRating.feedbackText && (
+                            <p className="text-[9px] text-slate-500 line-clamp-1 italic">"{selectedImage.imageRating.feedbackText}"</p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-600 italic">Unrated</p>
+                      )}
+                    </div>
+
+                    {/* Aspect Ratio */}
+                    {ar && (
+                      <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                        <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">Aspect Ratio</p>
+                        <p className="text-[11px] text-slate-300 font-mono">{ar}</p>
+                      </div>
+                    )}
+
+                    {/* Resolution / Quality */}
+                    {res && (
+                      <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                        <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">{isVid ? 'Resolution' : 'Quality'}</p>
+                        <p className="text-[11px] text-slate-300 font-mono">{res}</p>
+                      </div>
+                    )}
+
+                    {/* Duration (video only) */}
+                    {isVid && dur && (
+                      <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                        <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">Duration</p>
+                        <p className="text-[11px] text-slate-300 font-mono">{dur}s</p>
+                      </div>
+                    )}
+
+                    {/* Audio (video only) */}
+                    {isVid && (
+                      <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                        <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">Audio</p>
+                        <p className={`text-[11px] font-mono font-semibold ${audio ? 'text-green-400' : 'text-slate-500'}`}>{audio ? 'Yes' : 'No'}</p>
+                      </div>
+                    )}
+
+                    {/* Start frame (video only) */}
+                    {isVid && hasStartFrame && (
+                      <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                        <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">Start Frame</p>
+                        <img src={vm!.startFrameUrl!} alt="start frame" onClick={() => setViewingRef(vm!.startFrameUrl!)}
+                          className="h-8 w-8 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity mt-0.5" />
+                      </div>
+                    )}
+
+                    {/* End frame (video only) */}
+                    {isVid && hasEndFrame && (
+                      <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                        <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">End Frame</p>
+                        <img src={vm!.endFrameUrl!} alt="end frame" onClick={() => setViewingRef(vm!.endFrameUrl!)}
+                          className="h-8 w-8 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity mt-0.5" />
+                      </div>
+                    )}
+
+                    {/* Motion Control (video only) */}
+                    {isVid && hasMotion && (
+                      <div className="rounded-lg bg-white/3 border border-white/6 px-2.5 py-2">
+                        <p className="text-[9px] text-slate-600 uppercase tracking-wide mb-0.5">Motion Control</p>
+                        <p className="text-[11px] text-orange-400 font-mono">Yes{orientation ? ` · ${orientation}` : ''}</p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {selectedImage.referenceImageUrls?.length > 0 && (
                 <div className="mb-3 p-3 rounded-xl bg-white/3 border border-white/6">

@@ -4,15 +4,16 @@ import { PrismaClient, Prisma } from '@prisma/client'
 const prisma = new PrismaClient()
 
 // GET - Fetch all generated images with user info (admin only)
-// Query params: page, limit, type (all | image | video), userIds (comma-separated)
+// Query params: page, limit, type (all | image | video), userIds (comma-separated), rated (true)
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const page    = parseInt(searchParams.get('page')  || '1')
-    const limit   = parseInt(searchParams.get('limit') || '24')
-    const type    = searchParams.get('type') || 'all'
+    const page         = parseInt(searchParams.get('page')  || '1')
+    const limit        = parseInt(searchParams.get('limit') || '24')
+    const type         = searchParams.get('type') || 'all'
     const userIdsParam = searchParams.get('userIds') || ''
-    const skip    = (page - 1) * limit
+    const ratedOnly    = searchParams.get('rated') === 'true'
+    const skip         = (page - 1) * limit
 
     const userIds = userIdsParam
       ? userIdsParam.split(',').map(Number).filter(n => !isNaN(n) && n > 0)
@@ -30,12 +31,17 @@ export async function GET(request: Request) {
       whereClause = { ...whereClause, userId: { in: userIds } }
     }
 
+    if (ratedOnly) {
+      whereClause = { ...whereClause, imageRating: { isNot: null } }
+    }
+
     const [total, images] = await prisma.$transaction([
       prisma.generatedImage.count({ where: whereClause }),
       prisma.generatedImage.findMany({
         where: whereClause,
         include: {
-          user: { select: { id: true, email: true, name: true } }
+          user: { select: { id: true, email: true, name: true } },
+          imageRating: { select: { score: true, feedbackText: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip,

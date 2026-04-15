@@ -137,14 +137,18 @@ export async function POST(request: NextRequest) {
     if (!adminMode) {
       const userTickets = await prisma.ticket.findUnique({
         where: { userId },
-        select: { balance: true },
+        select: { balance: true, reserved: true },
       });
 
       if (!userTickets) {
         return NextResponse.json({ success: false, error: 'User tickets not found' }, { status: 404 });
       }
 
-      if (userTickets.balance < ticketCost) {
+      // Use the same effective balance formula as /api/user/tickets and the UI:
+      // effectiveBalance = max(0, balance - reserved)
+      // This prevents the display and the check from diverging when `reserved` is non-zero.
+      const effectiveBalance = Math.max(0, userTickets.balance - (userTickets.reserved || 0));
+      if (effectiveBalance < ticketCost) {
         return NextResponse.json(
           { success: false, error: `Insufficient tickets. Need ${ticketCost} tickets.` },
           { status: 400 }

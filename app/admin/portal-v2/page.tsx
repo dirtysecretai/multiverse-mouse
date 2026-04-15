@@ -5754,7 +5754,7 @@ export default function PortalV2Page() {
         const statusRes = await fetch(statusUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ requestId, falEndpoint, prompt, outputFormat, aspectRatio, quality, referenceImageUrls }),
+          body: JSON.stringify({ requestId, falEndpoint, prompt, outputFormat, aspectRatio, quality, referenceImageUrls, ticketCost }),
         })
         const statusData = await statusRes.json()
         if (statusData.status === "completed") {

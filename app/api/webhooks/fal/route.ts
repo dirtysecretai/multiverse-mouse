@@ -30,9 +30,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ received: true })
     }
 
-    // Idempotency: if already settled, acknowledge and skip
-    if (queueItem.status === 'completed' || queueItem.status === 'failed') {
-      console.log(`Queue item #${queueItem.id} already settled (${queueItem.status}), skipping duplicate webhook`)
+    // Idempotency: if already settled, acknowledge and skip.
+    // Use an atomic status update (updateMany with status filter) so concurrent webhook
+    // calls can't both pass this check and double-release the reserved tickets.
+    const claimed = await prisma.generationQueue.updateMany({
+      where: { id: queueItem.id, status: { notIn: ['completed', 'failed'] } },
+      data: { status: 'processing' }, // no-op state change just to acquire the lock
+    })
+    if (claimed.count === 0) {
+      console.log(`Queue item #${queueItem.id} already settled or claimed by concurrent call — skipping`)
       return NextResponse.json({ received: true })
     }
 
