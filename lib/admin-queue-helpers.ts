@@ -28,17 +28,36 @@ export async function syncAndClaimFalSlot(): Promise<{ claimed: boolean; maxConc
   const globalLimit = await prisma.modelConcurrencyLimit.findUnique({ where: { modelId: FAL_GLOBAL_ID } })
   if (!globalLimit) return { claimed: true, maxConcurrent: 999 } // No limit row — allow
 
-  // Sync counter to ground truth (idempotent — only writes when value actually changed)
-  const actualProcessing = await prisma.generationQueue.count({ where: { status: 'processing' } })
+  // Sync counter to ground truth AND check for waiting jobs in one pass.
+  const [actualProcessing, queuedCount] = await Promise.all([
+    prisma.generationQueue.count({ where: { status: 'processing' } }),
+    prisma.generationQueue.count({ where: { status: 'queued' } }),
+  ])
+
   if (actualProcessing !== globalLimit.currentActive) {
-    console.log(`[syncAndClaimFalSlot] Counter drift detected: stored=${globalLimit.currentActive}, actual=${actualProcessing}. Syncing.`)
+    console.log(`[syncAndClaimFalSlot] Counter drift: stored=${globalLimit.currentActive}, actual=${actualProcessing}. Syncing.`)
     await prisma.modelConcurrencyLimit.updateMany({
       where: { modelId: FAL_GLOBAL_ID },
       data: { currentActive: actualProcessing },
     })
+
+    // Drift correction freed up slots. If there are queued jobs waiting, promote
+    // them now rather than letting new submissions jump ahead of the backlog.
+    if (queuedCount > 0) {
+      const freeSlots = globalLimit.maxConcurrent - actualProcessing
+      for (let i = 0; i < Math.min(freeSlots, queuedCount); i++) {
+        await promoteNextQueuedJob()
+      }
+    }
   }
 
-  // Atomically claim a slot (safe against concurrent requests)
+  // FIFO enforcement: if there are already queued jobs, this new submission must
+  // also queue — don't allow it to skip ahead of older waiting generations.
+  if (queuedCount > 0) {
+    return { claimed: false, maxConcurrent: globalLimit.maxConcurrent }
+  }
+
+  // No backlog — atomically claim a direct slot for this submission.
   const claim = await prisma.modelConcurrencyLimit.updateMany({
     where: { modelId: FAL_GLOBAL_ID, currentActive: { lt: globalLimit.maxConcurrent } },
     data: { currentActive: { increment: 1 } },

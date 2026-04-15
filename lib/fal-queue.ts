@@ -35,7 +35,10 @@ export async function promoteNextQueuedJob(): Promise<void> {
 
     // Sync counter from ground truth before claiming — prevents a drifted counter
     // from blocking promotion of queued jobs when there are actually free slots.
-    const actualProcessing = await prisma.generationQueue.count({ where: { status: 'processing' } })
+    const [actualProcessing, queuedCount] = await Promise.all([
+      prisma.generationQueue.count({ where: { status: 'processing' } }),
+      prisma.generationQueue.count({ where: { status: 'queued' } }),
+    ])
     if (actualProcessing !== globalLimit.currentActive) {
       console.log(`[promoteNextQueuedJob] Counter drift: stored=${globalLimit.currentActive}, actual=${actualProcessing}. Syncing.`)
       await prisma.modelConcurrencyLimit.updateMany({
@@ -43,6 +46,17 @@ export async function promoteNextQueuedJob(): Promise<void> {
         data: { currentActive: actualProcessing },
       })
       globalLimit.currentActive = actualProcessing
+    }
+
+    // If drift correction opened up multiple slots, schedule additional promotions
+    // for any remaining queued jobs (beyond the one this call handles).
+    const freeSlots = globalLimit.maxConcurrent - globalLimit.currentActive
+    if (freeSlots > 1 && queuedCount > 1) {
+      const extraPromotions = Math.min(freeSlots - 1, queuedCount - 1)
+      for (let i = 0; i < extraPromotions; i++) {
+        // Fire-and-forget — each call is idempotent and handles its own slot claim
+        promoteNextQueuedJob().catch(e => console.error('[fal-queue] Extra promotion error:', e))
+      }
     }
 
     // Atomically claim a global slot — only succeeds if currentActive < maxConcurrent
