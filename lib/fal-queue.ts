@@ -10,6 +10,16 @@
  * GenerationQueue row with status='queued' (not submitted to FAL yet) and
  * stores the full FAL endpoint + input in the row's `parameters` field.
  * When a slot opens this helper picks up the oldest waiting row and submits it.
+ *
+ * IMPORTANT: This function does NOT sync the counter internally.  Callers
+ * that need counter-drift correction should call syncActiveCounters() first
+ * (e.g. the /kick and /cron-drain endpoints).  The in-function sync was
+ * removed because concurrent calls would race on the SET and undo each
+ * other's slot increments, causing all but one concurrent promotion to fail.
+ *
+ * The function also does NOT cascade additional promotions.  Callers that
+ * need to fill multiple slots should call promoteNextQueuedJob() once per
+ * free slot — the retry loop inside handles concurrent races between calls.
  */
 
 import { fal } from '@fal-ai/client'
@@ -20,10 +30,14 @@ fal.config({ credentials: process.env.FAL_KEY })
 export const FAL_GLOBAL_ID = 'fal-global'
 
 /**
- * Called after any FAL webhook completes or fails.
- * Finds the oldest 'queued' job and promotes it to 'processing' by submitting
- * it to FAL.  Uses conditional WHERE clauses on both the global slot and the
- * job's status so concurrent webhook handlers can't double-promote the same job.
+ * Called after any FAL job completes or fails (webhook / polling), or from the
+ * kick/cron endpoints to fill free slots.
+ *
+ * Atomically claims one global slot, then finds and claims the oldest queued
+ * job.  Uses a retry loop on the job-claim step so that when multiple calls
+ * race for the same oldest job, the losers skip to the next oldest rather than
+ * releasing their slot and returning — this lets N concurrent calls each
+ * promote a different job.
  */
 export async function promoteNextQueuedJob(): Promise<void> {
   try {
@@ -33,32 +47,6 @@ export async function promoteNextQueuedJob(): Promise<void> {
     })
     if (!globalLimit) return
 
-    // Sync counter from ground truth before claiming — prevents a drifted counter
-    // from blocking promotion of queued jobs when there are actually free slots.
-    const [actualProcessing, queuedCount] = await Promise.all([
-      prisma.generationQueue.count({ where: { status: 'processing' } }),
-      prisma.generationQueue.count({ where: { status: 'queued' } }),
-    ])
-    if (actualProcessing !== globalLimit.currentActive) {
-      console.log(`[promoteNextQueuedJob] Counter drift: stored=${globalLimit.currentActive}, actual=${actualProcessing}. Syncing.`)
-      await prisma.modelConcurrencyLimit.updateMany({
-        where: { modelId: FAL_GLOBAL_ID },
-        data: { currentActive: actualProcessing },
-      })
-      globalLimit.currentActive = actualProcessing
-    }
-
-    // If drift correction opened up multiple slots, schedule additional promotions
-    // for any remaining queued jobs (beyond the one this call handles).
-    const freeSlots = globalLimit.maxConcurrent - globalLimit.currentActive
-    if (freeSlots > 1 && queuedCount > 1) {
-      const extraPromotions = Math.min(freeSlots - 1, queuedCount - 1)
-      for (let i = 0; i < extraPromotions; i++) {
-        // Fire-and-forget — each call is idempotent and handles its own slot claim
-        promoteNextQueuedJob().catch(e => console.error('[fal-queue] Extra promotion error:', e))
-      }
-    }
-
     // Atomically claim a global slot — only succeeds if currentActive < maxConcurrent
     const slotClaim = await prisma.modelConcurrencyLimit.updateMany({
       where: {
@@ -67,49 +55,58 @@ export async function promoteNextQueuedJob(): Promise<void> {
       },
       data: { currentActive: { increment: 1 } },
     })
-    if (slotClaim.count === 0) return // Still at capacity
+    if (slotClaim.count === 0) return // At capacity
 
-    // Find the oldest waiting job
-    const nextJob = await prisma.generationQueue.findFirst({
-      where: { status: 'queued' },
-      orderBy: { createdAt: 'asc' },
-    })
+    // Find and claim the oldest queued job.
+    // Retry loop: if a concurrent call already claimed the candidate job, skip
+    // it and try the next oldest — prevents all concurrent callers from piling
+    // up on the same row and releasing their slots unnecessarily.
+    const triedIds: number[] = []
+    let jobToProcess: Awaited<ReturnType<typeof prisma.generationQueue.findFirst>> = null
 
-    if (!nextJob) {
-      // No waiting jobs — release the slot we just claimed
-      await prisma.modelConcurrencyLimit.updateMany({
-        where: { modelId: FAL_GLOBAL_ID },
-        data: { currentActive: { decrement: 1 } },
+    while (true) {
+      const candidate = await prisma.generationQueue.findFirst({
+        where: {
+          status: 'queued',
+          ...(triedIds.length > 0 ? { id: { notIn: triedIds } } : {}),
+        },
+        orderBy: { createdAt: 'asc' },
       })
-      return
-    }
 
-    // Atomically claim the job (guard against concurrent handlers)
-    const jobClaim = await prisma.generationQueue.updateMany({
-      where: { id: nextJob.id, status: 'queued' },
-      data: { status: 'processing', startedAt: new Date() },
-    })
+      if (!candidate) {
+        // No more waiting jobs — release the slot we just claimed
+        await prisma.modelConcurrencyLimit.updateMany({
+          where: { modelId: FAL_GLOBAL_ID },
+          data: { currentActive: { decrement: 1 } },
+        })
+        return
+      }
 
-    if (jobClaim.count === 0) {
-      // Another handler already claimed this job — release the slot
-      await prisma.modelConcurrencyLimit.updateMany({
-        where: { modelId: FAL_GLOBAL_ID },
-        data: { currentActive: { decrement: 1 } },
+      const jobClaim = await prisma.generationQueue.updateMany({
+        where: { id: candidate.id, status: 'queued' },
+        data: { status: 'processing', startedAt: new Date() },
       })
-      return
+
+      if (jobClaim.count > 0) {
+        jobToProcess = candidate
+        break
+      }
+
+      // Another concurrent handler claimed this job — try the next oldest
+      triedIds.push(candidate.id)
     }
 
     // Extract stored FAL submission data
-    const params = nextJob.parameters as any
+    const params = jobToProcess!.parameters as any
     const falEndpoint: string | undefined = params.falEndpoint
     const falInput: Record<string, unknown> | undefined = params.falInput
     // Polling-based jobs (NB2, Kling, Video): skip webhook so only the status route handles completion
     const usePolling: boolean = params.usePolling === true
 
     if (!falEndpoint || !falInput) {
-      console.error(`Queued job #${nextJob.id} missing falEndpoint/falInput — failing it`)
+      console.error(`Queued job #${jobToProcess!.id} missing falEndpoint/falInput — failing it`)
       await prisma.generationQueue.update({
-        where: { id: nextJob.id },
+        where: { id: jobToProcess!.id },
         data: {
           status: 'failed',
           completedAt: new Date(),
@@ -127,7 +124,7 @@ export async function promoteNextQueuedJob(): Promise<void> {
     // Bump per-model counter only for webhook-based jobs (polling routes handle their own cleanup)
     if (!usePolling) {
       await prisma.modelConcurrencyLimit.updateMany({
-        where: { modelId: nextJob.modelId },
+        where: { modelId: jobToProcess!.modelId },
         data: { currentActive: { increment: 1 } },
       })
     }
@@ -139,26 +136,22 @@ export async function promoteNextQueuedJob(): Promise<void> {
       submitOptions.webhookUrl = `${appUrl}/api/webhooks/fal`
     }
 
-    // Wrap FAL submit so that a transient error doesn't leave the job stuck in
-    // 'processing' forever with no falRequestId and the counter permanently incremented.
     try {
       const { request_id } = await fal.queue.submit(falEndpoint, submitOptions)
 
-      // Record the FAL request ID so the webhook/status-poller can find this job
       await prisma.generationQueue.update({
-        where: { id: nextJob.id },
+        where: { id: jobToProcess!.id },
         data: { falRequestId: request_id },
       })
 
       console.log(
-        `[fal-queue] Promoted job #${nextJob.id} (${nextJob.modelId}) → FAL ${falEndpoint} (request_id: ${request_id})`
+        `[fal-queue] Promoted job #${jobToProcess!.id} (${jobToProcess!.modelId}) → FAL ${falEndpoint} (request_id: ${request_id})`
       )
     } catch (submitErr) {
-      console.error(`[fal-queue] FAL submit failed for promoted job #${nextJob.id} (${nextJob.modelId}):`, submitErr)
+      console.error(`[fal-queue] FAL submit failed for promoted job #${jobToProcess!.id} (${jobToProcess!.modelId}):`, submitErr)
 
-      // Mark the job as failed so it doesn't stay stuck in 'processing'
       await prisma.generationQueue.update({
-        where: { id: nextJob.id },
+        where: { id: jobToProcess!.id },
         data: {
           status: 'failed',
           completedAt: new Date(),
@@ -166,16 +159,14 @@ export async function promoteNextQueuedJob(): Promise<void> {
         },
       }).catch(e => console.error('[fal-queue] Failed to mark job as failed:', e))
 
-      // Release the global slot we claimed at the start of this function
       await prisma.modelConcurrencyLimit.updateMany({
         where: { modelId: FAL_GLOBAL_ID },
         data: { currentActive: { decrement: 1 } },
       }).catch(e => console.error('[fal-queue] Failed to decrement global counter:', e))
 
-      // Also undo the per-model bump if we did one
       if (!usePolling) {
         await prisma.modelConcurrencyLimit.updateMany({
-          where: { modelId: nextJob.modelId },
+          where: { modelId: jobToProcess!.modelId },
           data: { currentActive: { decrement: 1 } },
         }).catch(e => console.error('[fal-queue] Failed to decrement per-model counter:', e))
       }
