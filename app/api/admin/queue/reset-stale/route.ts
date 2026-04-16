@@ -6,7 +6,7 @@ import { syncActiveCounters } from '../stats/route';
 // A job is considered stale if it has been in "processing" for more than
 // STALE_MINUTES minutes. FAL.ai's own timeout is well under 30 minutes,
 // so any job older than that will never receive a webhook callback.
-const STALE_MINUTES = 30;
+const STALE_MINUTES = 10;
 
 export async function POST(request: Request) {
   try {

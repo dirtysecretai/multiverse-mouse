@@ -5,7 +5,7 @@ import { syncActiveCounters } from '@/app/api/admin/queue/stats/route'
 
 // Jobs stuck in 'processing' longer than this are considered dead and are
 // automatically reset so their slots can be reused.
-const STALE_MINUTES = 30
+const STALE_MINUTES = 10
 
 /**
  * GET /api/cron/drain-queue

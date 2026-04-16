@@ -1,38 +1,19 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-// Any job stuck in 'processing' for longer than this is considered dead.
-// FAL.ai's own timeout is well under 30 minutes, and sync models (Gemini)
-// finish in under 2 minutes, so 30 min is a safe threshold.
-const STALE_MINUTES = 30;
-
-// GET - Fetch queue statistics, auto-clearing phantom 'processing' rows
-export async function GET(request: Request) {
+// GET - Fetch queue statistics (pure read — no side effects)
+//
+// IMPORTANT: This endpoint intentionally does NOT call syncActiveCounters() or
+// reset stale jobs.  It is polled every 5 seconds by the admin page, so any
+// SET operation here races with webhook DECREMENTs and causes counter drift
+// (counter goes below actual → extra job gets promoted → counter above maxConcurrent).
+//
+// Counter sync and stale-job cleanup are handled by:
+//   • /api/admin/queue/sync-counters  (manual)
+//   • /api/admin/queue/reset-stale    (manual)
+//   • /api/cron/drain-queue           (automatic, every minute)
+export async function GET() {
   try {
-    const staleThreshold = new Date(Date.now() - STALE_MINUTES * 60 * 1000);
-
-    // Auto-clean stale processing jobs (mark failed only — counter sync happens below)
-    const staleJobs = await prisma.generationQueue.findMany({
-      where: { status: 'processing', startedAt: { lt: staleThreshold } },
-      select: { id: true, modelId: true },
-    });
-
-    if (staleJobs.length > 0) {
-      const staleIds = staleJobs.map(j => j.id);
-      await prisma.generationQueue.updateMany({
-        where: { id: { in: staleIds } },
-        data: {
-          status: 'failed',
-          completedAt: new Date(),
-          errorMessage: `Auto-reset: stuck in processing for over ${STALE_MINUTES} minutes`,
-        },
-      });
-      console.log(`Auto-reset ${staleJobs.length} stale processing job(s)`);
-    }
-
-    // Always recalculate currentActive from ground truth (self-heals any drift / negative values)
-    await syncActiveCounters();
-
     const [totalQueued, totalProcessing, totalCompleted, totalFailed] = await Promise.all([
       prisma.generationQueue.count({ where: { status: 'queued' } }),
       prisma.generationQueue.count({ where: { status: 'processing' } }),
@@ -50,8 +31,10 @@ export async function GET(request: Request) {
 // Recalculate currentActive for every model from the actual count of
 // 'processing' queue rows.  This is the only source of truth and prevents
 // the counter from going negative due to double-decrements.
-// The synthetic 'fal-global' limit tracks the total across ALL FAL models
-// (all queue entries are FAL jobs; Gemini is synchronous and has no queue rows).
+//
+// Only call this after you have confirmed no in-flight webhook DECREMENTs exist
+// (e.g. immediately after force-failing stale jobs, or from the kick endpoint
+// which runs before any concurrent promotions start).
 export async function syncActiveCounters() {
   const [processingByModel, totalFalProcessing] = await Promise.all([
     prisma.generationQueue.groupBy({
@@ -75,7 +58,6 @@ export async function syncActiveCounters() {
 
   await Promise.all(
     allLimits.map(limit => {
-      // fal-global uses the total processing count across all FAL models
       const actual =
         limit.modelId === FAL_GLOBAL_ID
           ? totalFalProcessing

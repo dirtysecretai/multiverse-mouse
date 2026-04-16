@@ -138,6 +138,22 @@ export default function AdminQueuePage() {
     }
   };
 
+  const recoverStuck = async () => {
+    if (!confirm('This re-queues ALL currently processing jobs and resubmits them to FAL.\n\nOnly use when FAL shows 0 active but your DB shows jobs stuck in processing.\n\nContinue?')) return;
+    try {
+      const res = await fetch('/api/admin/queue/recover', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        fetchData();
+      } else {
+        alert(data.error || 'Recovery failed');
+      }
+    } catch {
+      alert('Recovery failed');
+    }
+  };
+
   const runDiagnostic = async () => {
     try {
       const res = await fetch('/api/admin/queue/diagnostic');
@@ -316,6 +332,13 @@ export default function AdminQueuePage() {
               </h1>
             </div>
           </div>
+          <button
+            onClick={recoverStuck}
+            className="px-3 py-2 rounded-lg bg-yellow-900/50 hover:bg-yellow-800/60 border border-yellow-500/40 text-yellow-400 text-xs font-bold transition-all"
+            title="Re-queue all stuck processing jobs (use when FAL shows 0 active but DB shows processing)"
+          >
+            Recover Stuck
+          </button>
           <button
             onClick={runDiagnostic}
             className="px-3 py-2 rounded-lg bg-purple-900/50 hover:bg-purple-800/60 border border-purple-500/40 text-purple-400 text-xs font-bold transition-all"
