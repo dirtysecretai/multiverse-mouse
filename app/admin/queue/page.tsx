@@ -138,6 +138,37 @@ export default function AdminQueuePage() {
     }
   };
 
+  const runDiagnostic = async () => {
+    try {
+      const res = await fetch('/api/admin/queue/diagnostic');
+      const data = await res.json();
+      const lines = [
+        `=== QUEUE DIAGNOSTIC ===`,
+        ``,
+        `Global limit: ${data.globalLimit?.currentActive ?? '?'} / ${data.globalLimit?.maxConcurrent ?? '?'}`,
+        `Queued: ${data.queued}`,
+        ``,
+        `Processing breakdown:`,
+        `  • Submitted to FAL (has request ID): ${data.processing.withFalRequestId}`,
+        `  • NOT submitted to FAL (no request ID): ${data.processing.withoutFalRequestId}`,
+        `  • Older than 5 min: ${data.processing.olderThan5Min}`,
+        `  • Older than 30 min (dead): ${data.processing.olderThan30Min}`,
+        ``,
+        `Webhook URL: ${data.webhookUrl}`,
+        `APP_URL source: ${data.appUrlSource}`,
+        ``,
+        `Last completed job: ${data.recentActivity.lastCompleted ? `#${data.recentActivity.lastCompleted.id} (${data.recentActivity.lastCompleted.model}), ${Math.round(data.recentActivity.lastCompleted.secondsAgo / 60)}m ago` : 'none'}`,
+        `Last failed job: ${data.recentActivity.lastFailed ? `#${data.recentActivity.lastFailed.id}, ${Math.round((data.recentActivity.lastFailed.secondsAgo ?? 0) / 60)}m ago — ${data.recentActivity.lastFailed.error}` : 'none'}`,
+        ``,
+        `=== DIAGNOSIS ===`,
+        ...data.diagnosis,
+      ];
+      alert(lines.join('\n'));
+    } catch {
+      alert('Diagnostic failed');
+    }
+  };
+
   const fetchData = async () => {
     try {
       const [limitsRes, queueRes, statsRes] = await Promise.all([
@@ -285,6 +316,13 @@ export default function AdminQueuePage() {
               </h1>
             </div>
           </div>
+          <button
+            onClick={runDiagnostic}
+            className="px-3 py-2 rounded-lg bg-purple-900/50 hover:bg-purple-800/60 border border-purple-500/40 text-purple-400 text-xs font-bold transition-all"
+            title="Show diagnostic info: webhook URL, FAL submission status, last completed job"
+          >
+            Diagnostic
+          </button>
           <button
             onClick={kickQueue}
             className="px-3 py-2 rounded-lg bg-green-900/50 hover:bg-green-800/60 border border-green-500/40 text-green-400 text-xs font-bold transition-all"
