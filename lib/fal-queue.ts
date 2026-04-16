@@ -159,17 +159,23 @@ export async function promoteNextQueuedJob(): Promise<void> {
         },
       }).catch(e => console.error('[fal-queue] Failed to mark job as failed:', e))
 
-      await prisma.modelConcurrencyLimit.updateMany({
-        where: { modelId: FAL_GLOBAL_ID },
-        data: { currentActive: { decrement: 1 } },
-      }).catch(e => console.error('[fal-queue] Failed to decrement global counter:', e))
-
-      if (!usePolling) {
-        await prisma.modelConcurrencyLimit.updateMany({
-          where: { modelId: jobToProcess!.modelId },
+      // Decrement counters — the slot is now free
+      await Promise.all([
+        prisma.modelConcurrencyLimit.updateMany({
+          where: { modelId: FAL_GLOBAL_ID },
           data: { currentActive: { decrement: 1 } },
-        }).catch(e => console.error('[fal-queue] Failed to decrement per-model counter:', e))
-      }
+        }).catch(e => console.error('[fal-queue] Failed to decrement global counter:', e)),
+        ...(usePolling ? [] : [
+          prisma.modelConcurrencyLimit.updateMany({
+            where: { modelId: jobToProcess!.modelId },
+            data: { currentActive: { decrement: 1 } },
+          }).catch(e => console.error('[fal-queue] Failed to decrement per-model counter:', e)),
+        ]),
+      ])
+
+      // Immediately try to fill the freed slot with the next queued job so a
+      // single FAL submit failure doesn't leave a slot empty until the next cron tick.
+      promoteNextQueuedJob().catch(e => console.error('[fal-queue] Re-promote after submit failure:', e))
     }
   } catch (err) {
     console.error('[fal-queue] promoteNextQueuedJob error:', err)
