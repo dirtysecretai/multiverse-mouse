@@ -123,6 +123,21 @@ export default function AdminQueuePage() {
     }
   };
 
+  const kickQueue = async () => {
+    try {
+      const res = await fetch('/api/admin/queue/kick', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        fetchData();
+      } else {
+        alert(data.error || 'Failed to kick queue');
+      }
+    } catch {
+      alert('Failed to kick queue');
+    }
+  };
+
   const fetchData = async () => {
     try {
       const [limitsRes, queueRes, statsRes] = await Promise.all([
@@ -270,6 +285,13 @@ export default function AdminQueuePage() {
               </h1>
             </div>
           </div>
+          <button
+            onClick={kickQueue}
+            className="px-3 py-2 rounded-lg bg-green-900/50 hover:bg-green-800/60 border border-green-500/40 text-green-400 text-xs font-bold transition-all"
+            title="Sync counters then promote all waiting queued jobs into processing (fixes stuck queue)"
+          >
+            Kick Queue
+          </button>
           <button
             onClick={syncCounters}
             className="px-3 py-2 rounded-lg bg-cyan-900/50 hover:bg-cyan-800/60 border border-cyan-500/40 text-cyan-400 text-xs font-bold transition-all"
