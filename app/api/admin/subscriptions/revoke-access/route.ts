@@ -29,14 +29,23 @@ export async function POST(req: NextRequest) {
 
     // Update the subscription - set to cancelled and end it immediately
     const now = new Date();
+
+    // Fetch existing metadata so we can merge manualOverrideAt without wiping other fields
+    const existing = await prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      select: { metadata: true },
+    });
+    const existingMeta: any = existing?.metadata ?? {};
+
     const subscription = await prisma.subscription.update({
       where: { id: subscriptionId },
       data: {
         status: 'cancelled',
         autoRenew: false,
         cancelledAt: now,
-        endDate: now, // End access immediately
-        updatedAt: now
+        endDate: now,
+        updatedAt: now,
+        metadata: { ...existingMeta, manualOverrideAt: now.toISOString(), revokedManually: true } as any,
       },
       include: {
         user: {

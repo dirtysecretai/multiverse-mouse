@@ -447,6 +447,7 @@ function SelectDropdown({
   downloading,
   deleting,
   downloadProgress,
+  downloadError,
 }: {
   open: boolean
   onToggle: () => void
@@ -458,6 +459,7 @@ function SelectDropdown({
   downloading: boolean
   deleting: boolean
   downloadProgress?: { done: number; total: number } | null
+  downloadError?: string | null
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -547,6 +549,9 @@ function SelectDropdown({
                     </span>
                   )}
                 </button>
+                {downloadError && (
+                  <p className="text-[11px] text-red-400 px-1 leading-snug">{downloadError}</p>
+                )}
                 {confirmDelete ? (
                   <div className="rounded-lg border border-red-500/40 bg-red-500/8 p-2.5 space-y-2">
                     <p className="text-[11px] text-red-300 leading-snug">
@@ -804,14 +809,33 @@ function RefDropdown({
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
             <span className="text-sm font-semibold text-white">Reference Images</span>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-500 font-mono">
-                {library.length}/{libraryLimit} · {activeCount} on
-                {modelMaxRefs > 0 ? ` (max ${modelMaxRefs})` : ""}
-              </span>
+              {/* Stacked Total / Active pills */}
+              <div className="flex flex-col gap-1">
+                {/* Library slots pill */}
+                <div className="flex items-center justify-between gap-2 px-2.5 py-1 rounded-md border border-white/10 bg-black/60" title="Total images saved in your library">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wide font-medium">Total</span>
+                  <span className={`text-xs font-mono font-bold ${library.length >= libraryLimit ? "text-amber-400" : "text-slate-300"}`}>
+                    {library.length}/{libraryLimit}
+                  </span>
+                </div>
+                {/* Active refs pill */}
+                <div className={`flex items-center justify-between gap-2 px-2.5 py-1 rounded-md border ${
+                  atLimit
+                    ? "border-amber-500/30 bg-amber-500/10"
+                    : activeCount > 0
+                    ? "border-cyan-500/25 bg-black/60"
+                    : "border-white/8 bg-black/40"
+                }`} title={modelMaxRefs > 0 ? `Images currently sent with your generation — max ${modelMaxRefs} for this model` : "Images currently sent with your generation"}>
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wide font-medium">Active</span>
+                  <span className={`text-xs font-mono font-bold ${atLimit ? "text-amber-400" : activeCount > 0 ? "text-cyan-400" : "text-slate-500"}`}>
+                    {activeCount}{modelMaxRefs > 0 ? `/${modelMaxRefs}` : ""}
+                  </span>
+                </div>
+              </div>
               {library.length > 0 && !selectMode && (
                 <button
                   onClick={() => setSelectMode(true)}
-                  className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors px-1.5 py-0.5 rounded border border-white/10 hover:border-white/20"
+                  className="text-[10px] font-bold text-slate-300 hover:text-white transition-all h-7 px-3 rounded-md border border-white/15 bg-white/6 hover:bg-white/10 hover:border-white/25 whitespace-nowrap flex items-center justify-center"
                 >
                   Select
                 </button>
@@ -819,7 +843,7 @@ function RefDropdown({
               {library.length > 0 && !selectMode && (
                 <button
                   onClick={handleClearAll}
-                  className="text-[10px] text-rose-500/70 hover:text-rose-400 transition-colors px-1.5 py-0.5 rounded border border-rose-500/20 hover:border-rose-500/40"
+                  className="text-[10px] font-bold text-rose-400 hover:text-rose-300 transition-all h-7 px-3 rounded-md border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 hover:border-rose-500/50 whitespace-nowrap flex items-center justify-center"
                 >
                   Clear all
                 </button>
@@ -834,6 +858,15 @@ function RefDropdown({
               )}
             </div>
           </div>
+
+          {/* Description */}
+          {!selectMode && (
+            <div className="px-4 py-2.5 border-b border-white/5 bg-white/2">
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                Upload images here to use as visual references. <span className="text-white">Tap an image to toggle it on/off</span> — only <span className="text-cyan-400">active</span> images are sent with your generation. Your library is saved between sessions.
+              </p>
+            </div>
+          )}
 
           {/* Upload button — hidden in select mode */}
           {!selectMode && (
@@ -1809,7 +1842,7 @@ function ImageDetailModal({
           </div>
 
           {/* Mobile: compact prompt + model only */}
-          <div className="sm:hidden px-4 pt-3 pb-2">
+          <div className="sm:hidden px-4 pt-3 pb-3">
             <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-2">{image.prompt}</p>
             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
               <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-mono">{modelName}</span>
@@ -1817,6 +1850,11 @@ function ImageDetailModal({
               {image.quality && <span className="px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-mono">{image.quality.toUpperCase()}</span>}
               {formattedDate && <span className="text-[10px] text-slate-600">{formattedDate}</span>}
             </div>
+            {!image.failed && image.id > 0 && (
+              <div className="mt-3 pt-3 border-t border-white/[0.06]">
+                <StarRatingWidget generationId={image.id} />
+              </div>
+            )}
           </div>
 
           {/* Actions */}
@@ -2043,7 +2081,7 @@ function VideoDetailModal({
           </div>
 
           {/* Mobile: compact info */}
-          <div className="sm:hidden px-4 pt-3 pb-2">
+          <div className="sm:hidden px-4 pt-3 pb-3">
             <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-2">{video.prompt}</p>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
               <span className="px-2 py-0.5 rounded-md bg-orange-500/10 border border-orange-500/20 text-orange-400 text-[10px] font-mono">{modelName}</span>
@@ -2052,6 +2090,11 @@ function VideoDetailModal({
               {video.duration && <span className="px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-mono">{video.duration}s</span>}
               {formattedDate && <span className="text-[10px] text-slate-600">{formattedDate}</span>}
             </div>
+            {!video.failed && video.id !== undefined && (
+              <div className="mt-3 pt-3 border-t border-white/[0.06]">
+                <StarRatingWidget generationId={video.id} />
+              </div>
+            )}
           </div>
 
           {/* Actions */}
@@ -4392,7 +4435,7 @@ function VideoPromptBar({
     : model.id === "kling-v3-motion"
     ? motionVideoDuration ? `${motionVideoDuration.toFixed(1)}s · 6/sec` : `≤${motionMaxSec}s · 6/sec`
     : model.id === "kling-v3"
-    ? `${duration}s · ${aspectRatio}${audioEnabled ? " · audio" : ""}`
+    ? `${duration}s${startFramePreview ? "" : ` · ${aspectRatio}`}${audioEnabled ? " · audio" : ""}`
     : model.id === "seedance-1.5"
     ? `${resolution} · ${duration}s · ${aspectRatio}${audioEnabled ? " · audio" : ""}`
     : isSD20FamilyBar
@@ -5072,6 +5115,7 @@ export default function PortalV2Page() {
   const [bulkDownloading, setBulkDownloading] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState<{ done: number; total: number } | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
 
   const handleSelectToggle = (id: number) => {
     setSelectedImageIds(prev => {
@@ -5090,6 +5134,7 @@ export default function PortalV2Page() {
     if (selectedImageIds.size === 0) return
     const ids = Array.from(selectedImageIds)
     setBulkDownloading(true)
+    setDownloadError(null)
     setDownloadProgress({ done: 0, total: ids.length })
 
     // Delay URL revocation — revoking immediately after a.click() causes silent
@@ -5110,15 +5155,14 @@ export default function PortalV2Page() {
       if (ids.length === 1) {
         // Single file — direct proxy download
         const res = await fetch(`/api/images/${ids[0]}?download=1`)
-        if (res.ok) {
-          const blob = await res.blob()
-          const ext = blob.type.includes("mp4") || blob.type.includes("video") ? "mp4"
-                    : blob.type.includes("webm") ? "webm"
-                    : blob.type.includes("jpeg") ? "jpg"
-                    : blob.type.includes("webp") ? "webp"
-                    : "png"
-          triggerDownload(blob, `file-${ids[0]}.${ext}`)
-        }
+        if (!res.ok) throw new Error(`Server error ${res.status}`)
+        const blob = await res.blob()
+        const ext = blob.type.includes("mp4") || blob.type.includes("video") ? "mp4"
+                  : blob.type.includes("webm") ? "webm"
+                  : blob.type.includes("jpeg") ? "jpg"
+                  : blob.type.includes("webp") ? "webp"
+                  : "png"
+        triggerDownload(blob, `file-${ids[0]}.${ext}`)
         setDownloadProgress({ done: 1, total: 1 })
       } else {
         // Multiple files — server builds the zip so the client never has to
@@ -5156,6 +5200,12 @@ export default function PortalV2Page() {
       }
     } catch (err) {
       console.error("Bulk download failed:", err)
+      const msg = err instanceof Error ? err.message : "Download failed"
+      setDownloadError(msg.includes("storage") || msg.includes("quota") || msg.includes("QuotaExceededError")
+        ? "Not enough storage space"
+        : msg.includes("Network") || msg.includes("fetch")
+          ? "Network error — check your connection"
+          : "Download failed")
     } finally {
       setBulkDownloading(false)
       setTimeout(() => setDownloadProgress(null), 600)
@@ -6404,6 +6454,7 @@ export default function PortalV2Page() {
               downloading={bulkDownloading}
               deleting={bulkDeleting}
               downloadProgress={downloadProgress}
+              downloadError={downloadError}
             />
             <RefDropdown
               open={openDropdown === "refs"}

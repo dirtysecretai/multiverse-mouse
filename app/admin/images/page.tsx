@@ -44,6 +44,7 @@ interface UserOption {
   id: number
   email: string
   name: string | null
+  generationCount: number
 }
 
 interface PaginationInfo {
@@ -109,6 +110,7 @@ export default function AdminImagesPage() {
   const [allUsers, setAllUsers]         = useState<UserOption[]>([])
   const [userSearch, setUserSearch]     = useState('')
   const [userPickerOpen, setUserPickerOpen] = useState(false)
+  const [userSort, setUserSort]         = useState<'gens-desc' | 'gens-asc' | 'az' | 'za'>('gens-desc')
   const pickerRef = useRef<HTMLDivElement>(null)
 
   // Detail modal
@@ -173,8 +175,7 @@ export default function AdminImagesPage() {
       if (res.ok) {
         const data = await res.json()
         const users: UserOption[] = (Array.isArray(data) ? data : data.users ?? [])
-          .map((u: any) => ({ id: u.id, email: u.email, name: u.name ?? null }))
-          .sort((a: UserOption, b: UserOption) => a.email.localeCompare(b.email))
+          .map((u: any) => ({ id: u.id, email: u.email, name: u.name ?? null, generationCount: u.generationCount ?? 0 }))
         setAllUsers(users)
       }
     } catch {}
@@ -229,10 +230,18 @@ export default function AdminImagesPage() {
     })
   }
 
-  const filteredUsers = allUsers.filter(u =>
-    !userSearch || u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
-    (u.name && u.name.toLowerCase().includes(userSearch.toLowerCase()))
-  )
+  const filteredUsers = allUsers
+    .filter(u =>
+      !userSearch || u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
+      (u.name && u.name.toLowerCase().includes(userSearch.toLowerCase()))
+    )
+    .sort((a, b) => {
+      if (userSort === 'gens-desc') return b.generationCount - a.generationCount || a.email.localeCompare(b.email)
+      if (userSort === 'gens-asc')  return a.generationCount - b.generationCount || a.email.localeCompare(b.email)
+      if (userSort === 'az')        return a.email.localeCompare(b.email)
+      if (userSort === 'za')        return b.email.localeCompare(a.email)
+      return 0
+    })
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -394,6 +403,28 @@ export default function AdminImagesPage() {
                     </div>
                   </div>
 
+                  {/* Sort row */}
+                  <div className="flex items-center gap-1 px-2 py-1.5 border-b border-white/4">
+                    {([
+                      { value: 'gens-desc', label: 'Most' },
+                      { value: 'gens-asc',  label: 'Least' },
+                      { value: 'az',        label: 'A→Z' },
+                      { value: 'za',        label: 'Z→A' },
+                    ] as const).map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setUserSort(opt.value)}
+                        className={`flex-1 py-1 rounded-md text-[10px] font-semibold transition-all ${
+                          userSort === opt.value
+                            ? 'bg-white/10 text-white'
+                            : 'text-slate-600 hover:text-slate-400'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
                   {/* Actions row */}
                   <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/4">
                     <span className="text-[10px] text-slate-600">{filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}</span>
@@ -431,7 +462,13 @@ export default function AdminImagesPage() {
 
                             <div className="flex-1 min-w-0">
                               <p className="text-xs text-white truncate">{user.email}</p>
-                              {user.name && <p className="text-[10px] text-slate-500 truncate">{user.name}</p>}
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {user.name && <p className="text-[10px] text-slate-500 truncate">{user.name}</p>}
+                                {user.name && <span className="text-[10px] text-slate-700">·</span>}
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {user.generationCount.toLocaleString()} gen{user.generationCount !== 1 ? 's' : ''}
+                                </span>
+                              </div>
                             </div>
                           </button>
                         )

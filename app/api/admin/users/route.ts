@@ -8,6 +8,9 @@ export async function GET() {
     // Fetch all users with their related data
     const users = await prisma.user.findMany({
       include: {
+        _count: {
+          select: { generatedImages: { where: { isDeleted: false } } }
+        },
         tickets: true,
         subscriptions: {
           where: {
@@ -86,7 +89,8 @@ export async function GET() {
         ...user.ticketPurchases.map(p => p.amount)
       ].reduce((sum, amount) => sum + amount, 0),
 
-      totalPurchases: user.purchases.length + user.ticketPurchases.length
+      totalPurchases: user.purchases.length + user.ticketPurchases.length,
+      generationCount: user._count.generatedImages
     }))
 
     return NextResponse.json({

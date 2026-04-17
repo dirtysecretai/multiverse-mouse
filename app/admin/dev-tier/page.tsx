@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, CreditCard, AlertCircle, CheckCircle, XCircle, ToggleLeft, ToggleRight, Trash2, DollarSign, Calendar, User, Mail, RefreshCw, Gift, UserPlus, CalendarClock, Search } from "lucide-react"
+import { ArrowLeft, CreditCard, AlertCircle, CheckCircle, XCircle, ToggleLeft, ToggleRight, Trash2, DollarSign, Calendar, User, Mail, RefreshCw, Gift, UserPlus, CalendarClock, Search, CloudLightning, ShieldCheck, MinusCircle, AlertTriangle } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 interface SubscriptionTransaction {
@@ -35,6 +35,7 @@ interface Subscription {
   paypalSubscriptionId: string | null
   paypalOrderId: string | null
   paypalCaptureId: string | null
+  lsSubscriptionId: string | null
   metadata: any
   createdAt: string
   updatedAt: string
@@ -54,15 +55,26 @@ export default function DevTierAnalytics() {
   const [error, setError] = useState<string | null>(null)
   const [processingId, setProcessingId] = useState<number | null>(null)
   const [syncing, setSyncing] = useState(false)
-  const [syncResult, setSyncResult] = useState<{ synced: number; failed: number; results: any[] } | null>(null)
+  const [syncResult, setSyncResult] = useState<{ synced: number; skipped: number; failed: number; results: any[] } | null>(null)
 
-  // Grant access state
+  // Grant access state (top form — by email)
   const [grantEmail, setGrantEmail] = useState('')
   const [grantCycle, setGrantCycle] = useState('monthly')
   const [grantEndDate, setGrantEndDate] = useState('')
   const [grantTickets, setGrantTickets] = useState(true)
   const [granting, setGranting] = useState(false)
   const [grantResult, setGrantResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  // Per-card inline grant form
+  const [cardGrantId, setCardGrantId]       = useState<number | null>(null)
+  const [cardGrantCycle, setCardGrantCycle] = useState('monthly')
+  const [cardGrantEndDate, setCardGrantEndDate] = useState('')
+  const [cardGrantTickets, setCardGrantTickets] = useState(true)
+  const [cardGranting, setCardGranting]     = useState(false)
+
+  // Per-card sync
+  const [syncingSubId, setSyncingSubId]     = useState<number | null>(null)
+  const [syncSingleResults, setSyncSingleResults] = useState<Record<number, { success: boolean; message: string }>>({})
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
@@ -98,6 +110,45 @@ export default function DevTierAnalytics() {
   useEffect(() => {
     fetchSubscriptions()
   }, [])
+
+  // Auto end-date from billing cycle
+  function calcEndDateLocal(cycle: string): string {
+    const d = new Date()
+    if (cycle === 'biweekly') d.setDate(d.getDate() + 14)
+    else if (cycle === 'monthly') d.setMonth(d.getMonth() + 1)
+    else if (cycle === 'yearly') d.setFullYear(d.getFullYear() + 1)
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+  }
+
+  // Auto-fill top form end date when cycle changes
+  useEffect(() => {
+    setGrantEndDate(calcEndDateLocal(grantCycle))
+  }, [grantCycle])
+
+  // Init top form end date on mount
+  useEffect(() => {
+    setGrantEndDate(calcEndDateLocal('monthly'))
+  }, [])
+
+  const deleteRecord = async (subscriptionId: number, userEmail: string) => {
+    if (!confirm(`⚠️ Permanently delete this subscription record for ${userEmail}?\n\nThis removes it from the database entirely. The user's active subscription (if any) is not affected.`)) return
+    setProcessingId(subscriptionId)
+    try {
+      const res = await fetch(
+        `/api/admin/subscriptions?id=${subscriptionId}&password=${encodeURIComponent(sessionStorage.getItem('admin-password') || '')}`,
+        { method: 'DELETE' }
+      )
+      if (!res.ok) {
+        const d = await res.json()
+        throw new Error(d.error || 'Failed to delete')
+      }
+      await fetchSubscriptions()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete record')
+    } finally {
+      setProcessingId(null)
+    }
+  }
 
   const toggleAutoRenew = async (subscriptionId: number, currentAutoRenew: boolean) => {
     if (!confirm(`Are you sure you want to ${currentAutoRenew ? 'disable' : 'enable'} auto-renew for this subscription?`)) {
@@ -179,11 +230,7 @@ export default function DevTierAnalytics() {
           'Content-Type': 'application/json',
           'x-admin-password': sessionStorage.getItem('admin-password') || ''
         },
-        body: JSON.stringify({
-          subscriptionId,
-          ticketAmount: tickets,
-          description
-        })
+        body: JSON.stringify({ subscriptionId, ticketAmount: tickets, description })
       })
 
       if (!response.ok) {
@@ -193,9 +240,47 @@ export default function DevTierAnalytics() {
 
       const data = await response.json()
       await fetchSubscriptions()
-      alert(`✅ Successfully distributed ${tickets} tickets!\n\nPrevious balance: ${data.transaction.previousBalance}\nNew balance: ${data.transaction.newBalance}`)
+      alert(`✅ Distributed ${tickets} tickets!\n\nPrevious: ${data.transaction.previousBalance} → New: ${data.transaction.newBalance}`)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to distribute tickets')
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
+  const revokeTickets = async (subscriptionId: number, userEmail: string) => {
+    const ticketAmount = prompt(`How many tickets would you like to REVOKE from ${userEmail}?\n(Balance will not go below 0)`)
+    if (!ticketAmount) return
+
+    const tickets = parseInt(ticketAmount)
+    if (isNaN(tickets) || tickets <= 0) {
+      alert('Please enter a valid positive number')
+      return
+    }
+
+    const description = prompt(`Optional: Add a reason for this revocation`) || undefined
+
+    setProcessingId(subscriptionId)
+    try {
+      const response = await fetch('/api/admin/subscriptions/revoke-tickets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': sessionStorage.getItem('admin-password') || ''
+        },
+        body: JSON.stringify({ subscriptionId, ticketAmount: tickets, description })
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to revoke tickets')
+      }
+
+      const data = await response.json()
+      await fetchSubscriptions()
+      alert(`⚠️ Revoked ${data.transaction.ticketsRevoked} tickets!\n\nPrevious: ${data.transaction.previousBalance} → New: ${data.transaction.newBalance}`)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to revoke tickets')
     } finally {
       setProcessingId(null)
     }
@@ -211,7 +296,7 @@ export default function DevTierAnalytics() {
       })
       const data = await res.json()
       if (data.success) {
-        setSyncResult({ synced: data.synced, failed: data.failed, results: data.results })
+        setSyncResult({ synced: data.synced, skipped: data.skipped ?? 0, failed: data.failed, results: data.results })
       } else {
         alert(data.error || 'Sync failed')
       }
@@ -254,6 +339,72 @@ export default function DevTierAnalytics() {
       setGrantResult({ success: false, message: 'Request failed' })
     } finally {
       setGranting(false)
+    }
+  }
+
+  const openCardGrant = (subId: number) => {
+    setCardGrantId(subId)
+    setCardGrantCycle('monthly')
+    setCardGrantEndDate(calcEndDateLocal('monthly'))
+    setCardGrantTickets(true)
+  }
+
+  // Re-activates the specific subscription record in place (avoids "already has active" conflict)
+  const grantAccessByCard = async (subscriptionId: number) => {
+    setCardGranting(true)
+    try {
+      const res = await fetch('/api/admin/subscriptions/reactivate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': sessionStorage.getItem('admin-password') || '',
+        },
+        body: JSON.stringify({
+          subscriptionId,
+          billingCycle: cardGrantCycle,
+          deliverTickets: cardGrantTickets,
+          endDate: cardGrantEndDate || null,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        const ticketMsg = data.ticketsDelivered > 0 ? ` + ${data.ticketsDelivered} tickets` : ''
+        setGrantResult({ success: true, message: `Access granted${ticketMsg}` })
+        setCardGrantId(null)
+        await fetchSubscriptions()
+      } else {
+        alert(data.error || 'Failed to grant access')
+      }
+    } catch {
+      alert('Request failed')
+    } finally {
+      setCardGranting(false)
+    }
+  }
+
+  const syncSingle = async (subId: number) => {
+    setSyncingSubId(subId)
+    setSyncSingleResults(prev => { const n = { ...prev }; delete n[subId]; return n })
+    try {
+      const res = await fetch('/api/admin/subscriptions/sync-ls-single', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': sessionStorage.getItem('admin-password') || '',
+        },
+        body: JSON.stringify({ subscriptionId: subId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSyncSingleResults(prev => ({ ...prev, [subId]: { success: true, message: `LS: ${data.lsStatus} → DB: ${data.ourStatus}` } }))
+        await fetchSubscriptions()
+      } else {
+        setSyncSingleResults(prev => ({ ...prev, [subId]: { success: false, message: data.error || 'Sync failed' } }))
+      }
+    } catch {
+      setSyncSingleResults(prev => ({ ...prev, [subId]: { success: false, message: 'Request failed' } }))
+    } finally {
+      setSyncingSubId(null)
     }
   }
 
@@ -463,8 +614,8 @@ export default function DevTierAnalytics() {
         <div className="mb-8 p-5 rounded-xl border border-orange-500/30 bg-orange-500/5">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h2 className="text-sm font-bold text-orange-400 uppercase tracking-wider mb-1">Sync Cancelled Subscriptions → LemonSqueezy</h2>
-              <p className="text-xs text-slate-500">Finds all subscriptions cancelled on this site but not yet cancelled on LS, and cancels them now.</p>
+              <h2 className="text-sm font-bold text-orange-400 uppercase tracking-wider mb-1">Bidirectional LemonSqueezy Sync</h2>
+              <p className="text-xs text-slate-500">Pulls LS cancellations into DB · Updates renewal dates · Pushes our cancellations to LS. Manual admin overrides are preserved unless the user acts on LS after.</p>
             </div>
             <button
               onClick={syncLsCancellations}
@@ -478,22 +629,23 @@ export default function DevTierAnalytics() {
 
           {syncResult && (
             <div className="mt-4 pt-4 border-t border-orange-500/20">
-              <div className="flex items-center gap-4 mb-3">
+              <div className="flex items-center gap-4 mb-3 flex-wrap">
                 <span className="text-sm text-green-400 font-bold">✓ {syncResult.synced} synced</span>
+                {syncResult.skipped > 0 && <span className="text-sm text-yellow-400 font-bold">⊘ {syncResult.skipped} skipped (manual override)</span>}
                 {syncResult.failed > 0 && <span className="text-sm text-red-400 font-bold">✗ {syncResult.failed} failed</span>}
-                {syncResult.synced === 0 && syncResult.failed === 0 && (
-                  <span className="text-sm text-slate-400">No unsynced cancellations found.</span>
+                {syncResult.synced === 0 && syncResult.failed === 0 && syncResult.skipped === 0 && (
+                  <span className="text-sm text-slate-400">Nothing to sync.</span>
                 )}
               </div>
               {syncResult.results.length > 0 && (
                 <div className="space-y-1 max-h-40 overflow-y-auto">
                   {syncResult.results.map((r, i) => (
-                    <div key={i} className="flex items-center gap-3 text-xs font-mono">
-                      <span className={r.status === 'synced' ? 'text-green-400' : 'text-red-400'}>
-                        {r.status === 'synced' ? '✓' : '✗'}
+                    <div key={i} className="flex items-center gap-3 text-xs font-mono flex-wrap">
+                      <span className={r.status === 'synced' ? 'text-green-400' : r.status === 'skipped' ? 'text-yellow-400' : 'text-red-400'}>
+                        {r.status === 'synced' ? '✓' : r.status === 'skipped' ? '⊘' : '✗'}
                       </span>
                       <span className="text-slate-400">{r.email}</span>
-                      <span className="text-slate-600">ls:{r.lsId}</span>
+                      <span className="text-slate-600">{r.action}</span>
                       {r.error && <span className="text-red-400">{r.error}</span>}
                     </div>
                   ))}
@@ -547,22 +699,33 @@ export default function DevTierAnalytics() {
 
         {!loading && !error && subscriptions.length > 0 && (
           <div className="space-y-4">
-            {subscriptions
-              .filter(sub => !searchQuery || sub.user.email.toLowerCase().includes(searchQuery.toLowerCase()))
-              .map((sub) => (
-              <div
+            {(() => {
+              // Detect users with multiple subscription records
+              const userSubCounts: Record<number, number> = {}
+              subscriptions.forEach(s => { userSubCounts[s.userId] = (userSubCounts[s.userId] || 0) + 1 })
+
+              return subscriptions
+                .filter(sub => !searchQuery || sub.user.email.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map((sub) => {
+                  const isDuplicate = userSubCounts[sub.userId] > 1
+                  return <div
                 key={sub.id}
                 className="p-6 rounded-xl border-2 border-slate-700 bg-slate-900/60 backdrop-blur-sm hover:border-slate-600 transition-all"
               >
                 {/* User Info Header */}
                 <div className="flex items-start justify-between mb-4 pb-4 border-b border-slate-700">
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
+                    <div className="flex items-center gap-3 mb-2 flex-wrap">
                       <User className="text-cyan-400" size={20} />
                       <h3 className="text-lg font-bold text-white">
                         {sub.user.name || 'Unknown User'}
                       </h3>
                       {getStatusBadge(sub.status)}
+                      {isDuplicate && (
+                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-bold border border-yellow-500/40">
+                          <AlertTriangle size={11} /> DUPLICATE SUB
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-sm text-slate-400 mb-1">
                       <Mail size={14} />
@@ -613,40 +776,153 @@ export default function DevTierAnalytics() {
 
                   {/* Action Buttons */}
                   <div className="flex flex-col gap-2 items-end">
-                    {sub.status === 'active' && (
-                      <div className="flex gap-2 flex-wrap justify-end">
-                        <button
-                          onClick={() => distributeTickets(sub.id, sub.user.email)}
-                          disabled={processingId === sub.id}
-                          className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-purple-800 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors"
-                          title="Manually distribute tickets"
-                        >
-                          <Gift size={18} />
-                          Give Tickets
-                        </button>
 
-                        <button
-                          onClick={() => toggleAutoRenew(sub.id, sub.autoRenew)}
-                          disabled={processingId === sub.id}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all ${
-                            sub.autoRenew
-                              ? 'bg-green-600 hover:bg-green-500 text-white'
-                              : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-                          } disabled:opacity-50 disabled:cursor-not-allowed`}
-                          title={sub.autoRenew ? 'Auto-renew enabled' : 'Auto-renew disabled'}
-                        >
-                          {sub.autoRenew ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
-                          {processingId === sub.id ? 'Processing...' : sub.autoRenew ? 'Auto-Renew ON' : 'Auto-Renew OFF'}
-                        </button>
+                    {/* Row 1: status-specific actions */}
+                    <div className="flex gap-2 flex-wrap justify-end">
+                      {/* Give Tickets — all cards */}
+                      <button
+                        onClick={() => distributeTickets(sub.id, sub.user.email)}
+                        disabled={processingId === sub.id}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:bg-purple-800 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
+                        title="Manually distribute tickets"
+                      >
+                        <Gift size={15} />
+                        Give Tickets
+                      </button>
 
+                      {/* Revoke Tickets — all cards */}
+                      <button
+                        onClick={() => revokeTickets(sub.id, sub.user.email)}
+                        disabled={processingId === sub.id}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-rose-700 hover:bg-rose-600 disabled:bg-rose-900 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
+                        title="Deduct tickets from user"
+                      >
+                        <MinusCircle size={15} />
+                        Revoke Tickets
+                      </button>
+
+                      {/* Sync LS — only if has lsSubscriptionId */}
+                      {sub.lsSubscriptionId && (
                         <button
-                          onClick={() => revokeAccess(sub.id, sub.user.email)}
-                          disabled={processingId === sub.id}
-                          className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 disabled:bg-red-800 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors"
+                          onClick={() => syncSingle(sub.id)}
+                          disabled={syncingSubId === sub.id}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-orange-700 hover:bg-orange-600 disabled:bg-orange-900 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
+                          title="Force-sync this subscription from LemonSqueezy"
                         >
-                          <Trash2 size={18} />
-                          Revoke Access
+                          <CloudLightning size={15} className={syncingSubId === sub.id ? 'animate-pulse' : ''} />
+                          {syncingSubId === sub.id ? 'Syncing…' : 'Sync LS'}
                         </button>
+                      )}
+
+                      {/* Active-only actions */}
+                      {sub.status === 'active' && (
+                        <>
+                          <button
+                            onClick={() => toggleAutoRenew(sub.id, sub.autoRenew)}
+                            disabled={processingId === sub.id}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-sm transition-all ${
+                              sub.autoRenew
+                                ? 'bg-green-600 hover:bg-green-500 text-white'
+                                : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            {sub.autoRenew ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
+                            {processingId === sub.id ? 'Processing...' : sub.autoRenew ? 'Auto-Renew ON' : 'Auto-Renew OFF'}
+                          </button>
+
+                          <button
+                            onClick={() => revokeAccess(sub.id, sub.user.email)}
+                            disabled={processingId === sub.id}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:bg-red-800 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
+                          >
+                            <Trash2 size={15} />
+                            Revoke Access
+                          </button>
+                        </>
+                      )}
+
+                      {/* Non-active: Grant Access + Delete Record */}
+                      {sub.status !== 'active' && (
+                        <>
+                          <button
+                            onClick={() => cardGrantId === sub.id ? setCardGrantId(null) : openCardGrant(sub.id)}
+                            disabled={cardGranting}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 disabled:bg-cyan-900 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
+                          >
+                            <ShieldCheck size={15} />
+                            Grant Access
+                          </button>
+                          <button
+                            onClick={() => deleteRecord(sub.id, sub.user.email)}
+                            disabled={processingId === sub.id}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300 hover:text-white rounded-lg font-bold text-sm transition-colors"
+                            title="Permanently delete this subscription record"
+                          >
+                            <Trash2 size={15} />
+                            Delete Record
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Per-card sync result */}
+                    {syncSingleResults[sub.id] && (
+                      <div className={`text-xs px-3 py-1.5 rounded-lg font-mono ${syncSingleResults[sub.id].success ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>
+                        {syncSingleResults[sub.id].success ? '✓' : '✗'} {syncSingleResults[sub.id].message}
+                      </div>
+                    )}
+
+                    {/* Inline Grant Access form */}
+                    {cardGrantId === sub.id && (
+                      <div className="mt-2 p-4 rounded-xl border border-cyan-500/30 bg-cyan-500/5 w-full max-w-md">
+                        <p className="text-xs font-bold text-cyan-400 mb-3 uppercase tracking-wider">Grant Dev Tier Access</p>
+                        <div className="flex flex-wrap gap-2 items-end">
+                          <div>
+                            <label className="text-xs text-slate-400 mb-1 block">Plan</label>
+                            <select
+                              value={cardGrantCycle}
+                              onChange={e => { setCardGrantCycle(e.target.value); setCardGrantEndDate(calcEndDateLocal(e.target.value)) }}
+                              className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-cyan-500"
+                            >
+                              <option value="biweekly">Biweekly · 250 tickets</option>
+                              <option value="monthly">Monthly · 500 tickets</option>
+                              <option value="yearly">Yearly · 6000 tickets</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-400 mb-1 block">End Date</label>
+                            <input
+                              type="datetime-local"
+                              value={cardGrantEndDate}
+                              onChange={e => setCardGrantEndDate(e.target.value)}
+                              className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-cyan-500"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 pb-1">
+                            <input
+                              type="checkbox"
+                              id={`cardTickets-${sub.id}`}
+                              checked={cardGrantTickets}
+                              onChange={e => setCardGrantTickets(e.target.checked)}
+                              className="w-4 h-4 accent-cyan-500"
+                            />
+                            <label htmlFor={`cardTickets-${sub.id}`} className="text-xs text-slate-300 cursor-pointer">Deliver tickets</label>
+                          </div>
+                          <button
+                            onClick={() => grantAccessByCard(sub.id)}
+                            disabled={cardGranting}
+                            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-cyan-900 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
+                          >
+                            <UserPlus size={14} />
+                            {cardGranting ? 'Granting...' : 'Confirm'}
+                          </button>
+                          <button
+                            onClick={() => setCardGrantId(null)}
+                            className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm font-bold transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -881,7 +1157,7 @@ export default function DevTierAnalytics() {
                   </div>
                 )}
               </div>
-            ))}
+          })})()}
           </div>
         )}
       </div>

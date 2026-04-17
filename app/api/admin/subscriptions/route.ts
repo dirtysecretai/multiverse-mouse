@@ -73,7 +73,7 @@ const BILLING_PRICE_MAP: Record<string, number> = {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { password, userEmail, tier, endDate, billingCycle, deliverTickets } = body;
+    const { password, userEmail, userId: bodyUserId, tier, endDate, billingCycle, deliverTickets } = body;
 
     if (password !== ADMIN_PASSWORD) {
       return NextResponse.json(
@@ -82,21 +82,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!userEmail || !tier) {
-      return NextResponse.json(
-        { error: 'userEmail and tier are required' },
-        { status: 400 }
-      );
+    if (!tier) {
+      return NextResponse.json({ error: 'tier is required' }, { status: 400 });
+    }
+    if (!userEmail && !bodyUserId) {
+      return NextResponse.json({ error: 'userEmail or userId is required' }, { status: 400 });
     }
 
-    // Find user by email
-    const user = await prisma.user.findUnique({
-      where: { email: userEmail }
-    });
+    // Find user by userId or email
+    const user = bodyUserId
+      ? await prisma.user.findUnique({ where: { id: bodyUserId } })
+      : await prisma.user.findFirst({ where: { email: userEmail } });
 
     if (!user) {
       return NextResponse.json(
-        { error: `User not found: ${userEmail}` },
+        { error: bodyUserId ? `User not found: id ${bodyUserId}` : `User not found: ${userEmail}` },
         { status: 404 }
       );
     }
@@ -116,6 +116,17 @@ export async function POST(req: NextRequest) {
     const cycle = billingCycle || 'monthly'
     const price = BILLING_PRICE_MAP[cycle] ?? null
 
+    // Auto-calculate end date from billing cycle if not explicitly provided
+    const now = new Date()
+    let resolvedEndDate: Date | null = endDate ? new Date(endDate) : null
+    if (!resolvedEndDate) {
+      const d = new Date(now)
+      if (cycle === 'biweekly') d.setDate(d.getDate() + 14)
+      else if (cycle === 'monthly') d.setMonth(d.getMonth() + 1)
+      else if (cycle === 'yearly') d.setFullYear(d.getFullYear() + 1)
+      resolvedEndDate = d
+    }
+
     // Create subscription
     const subscription = await prisma.subscription.create({
       data: {
@@ -124,10 +135,11 @@ export async function POST(req: NextRequest) {
         status:      'active',
         billingCycle: cycle,
         billingAmount: price,
-        startDate:   new Date(),
-        endDate:     endDate ? new Date(endDate) : null,
+        startDate:   now,
+        endDate:     resolvedEndDate,
+        nextBillingDate: resolvedEndDate,
         autoRenew:   false, // manual grant — no auto-renew by default
-        metadata:    { grantedManually: true, billingCycle: cycle } as any,
+        metadata:    { grantedManually: true, billingCycle: cycle, manualOverrideAt: now.toISOString() } as any,
       },
       include: {
         user: { select: { id: true, email: true, name: true } }
