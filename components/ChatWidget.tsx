@@ -271,17 +271,21 @@ export default function ChatWidget({ sideTabOnly = false }: { sideTabOnly?: bool
 
   return (
     <>
-      {/* ── SIDE-TAB + SLIDE-IN DRAWER (mobile always; desktop when sideTabOnly) ── */}
+      {/* ══════════════════════════════════════════════════════════
+          MOBILE: slide-in drawer + backdrop (all modes)
+          DESKTOP image mode: floating pill → bottom-right box
+          DESKTOP video mode: side tab → right-side floating panel (no backdrop)
+      ══════════════════════════════════════════════════════════ */}
 
-      {/* Backdrop */}
+      {/* ── MOBILE: backdrop ── */}
       <div
-        className={`${sideTabOnly ? 'fixed' : 'sm:hidden fixed'} inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        className={`sm:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
         onClick={() => setOpen(false)}
       />
 
-      {/* Side tab — visible when closed */}
+      {/* ── MOBILE: side tab (visible when closed) ── */}
       <div
-        className={`${sideTabOnly ? 'fixed' : 'sm:hidden fixed'} right-0 top-1/2 -translate-y-1/2 z-50 transition-opacity duration-200 ${open ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+        className={`sm:hidden fixed right-0 top-1/2 -translate-y-1/2 z-50 transition-opacity duration-200 ${open ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
       >
         <button
           onClick={() => setOpen(true)}
@@ -299,14 +303,14 @@ export default function ChatWidget({ sideTabOnly = false }: { sideTabOnly?: bool
         </button>
       </div>
 
-      {/* Slide-in drawer */}
+      {/* ── MOBILE: slide-in drawer ── */}
       <div
-        className={`${sideTabOnly ? 'fixed' : 'sm:hidden fixed'} top-0 bottom-0 right-0 z-50 w-[85vw] max-w-[320px] flex flex-col bg-[#080d1a]/98 border-l border-white/10 shadow-2xl shadow-black/60 transition-transform duration-300 ease-in-out ${open ? 'translate-x-0' : 'translate-x-full'}`}
+        className={`sm:hidden fixed top-0 bottom-0 right-0 z-50 w-[85vw] max-w-[320px] flex flex-col bg-[#080d1a]/98 border-l border-white/10 shadow-2xl shadow-black/60 transition-transform duration-300 ease-in-out ${open ? 'translate-x-0' : 'translate-x-full'}`}
       >
         {panelContent}
       </div>
 
-      {/* ── DESKTOP: floating pill + bottom-right box (only when not sideTabOnly) ── */}
+      {/* ── DESKTOP image mode: floating pill → bottom-right box ── */}
 
       {!sideTabOnly && !open && (
         <button
@@ -321,6 +325,33 @@ export default function ChatWidget({ sideTabOnly = false }: { sideTabOnly?: bool
 
       {!sideTabOnly && open && (
         <div className="hidden sm:flex fixed bottom-5 right-5 z-50 flex-col w-[360px] h-[520px] max-h-[calc(100vh-3rem)] rounded-2xl border border-white/10 bg-[#080d1a]/95 backdrop-blur-xl shadow-2xl shadow-black/50 overflow-hidden">
+          {panelContent}
+        </div>
+      )}
+
+      {/* ── DESKTOP video mode: side tab → right-side floating panel (no backdrop, no interaction block) ── */}
+
+      {sideTabOnly && !open && (
+        <div className="hidden sm:block fixed right-0 top-1/2 -translate-y-1/2 z-50">
+          <button
+            onClick={() => setOpen(true)}
+            className="flex flex-col items-center gap-2 px-1.5 py-4 rounded-l-2xl bg-[#080d1a]/95 border border-r-0 border-cyan-500/30 backdrop-blur-sm shadow-lg shadow-black/40 text-cyan-400 hover:text-cyan-300 transition-colors"
+            aria-label="Open Studio Guide"
+          >
+            <Bot size={15} />
+            <span
+              className="text-[9px] font-black tracking-widest uppercase text-cyan-400/70"
+              style={{ writingMode: 'vertical-lr', transform: 'rotate(180deg)' }}
+            >
+              Guide
+            </span>
+            <ChevronRight size={11} className="text-cyan-500/50" />
+          </button>
+        </div>
+      )}
+
+      {sideTabOnly && open && (
+        <div className="hidden sm:flex fixed right-4 top-16 z-50 flex-col w-[340px] h-[500px] max-h-[calc(100vh-8rem)] rounded-2xl border border-white/10 bg-[#080d1a]/95 backdrop-blur-xl shadow-2xl shadow-black/50 overflow-hidden">
           {panelContent}
         </div>
       )}
