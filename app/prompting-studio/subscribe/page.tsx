@@ -59,6 +59,12 @@ export default function SubscribePage() {
   const [loading, setLoading] = useState(true);
   const [acceptedTOS, setAcceptedTOS] = useState(false);
   const [hasSubscription, setHasSubscription] = useState(false);
+  const [subscriptionDetails, setSubscriptionDetails] = useState<{
+    billingCycle?: string | null;
+    nextBillingDate?: string | null;
+    endDate?: string | null;
+    startDate?: string | null;
+  } | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
@@ -84,6 +90,7 @@ export default function SubscribePage() {
       const subData = await subRes.json();
       if (subData.success && subData.hasPromptStudioDev) {
         setHasSubscription(true);
+        if (subData.subscription) setSubscriptionDetails(subData.subscription);
       }
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -122,29 +129,128 @@ export default function SubscribePage() {
 
   if (!user) return null;
 
-  // Already subscribed
+  // Already subscribed — full benefits view
   if (hasSubscription) {
-    return (
-      <div className="min-h-screen bg-[#050810] text-white">
-        <div className="fixed inset-0 bg-[linear-gradient(rgba(0,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
+    const cycleLabel: Record<string, string> = {
+      biweekly: 'Biweekly',
+      monthly: 'Monthly',
+      yearly: 'Yearly',
+    };
+    const renewDate = subscriptionDetails?.nextBillingDate || subscriptionDetails?.endDate;
+    const formattedRenew = renewDate
+      ? new Date(renewDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+      : null;
+    const cycle = subscriptionDetails?.billingCycle || null;
 
-        <div className="relative z-10 max-w-2xl mx-auto px-4 py-16">
-          <div className="text-center p-12 rounded-xl border-2 border-green-500/30 bg-green-900/20">
-            <Sparkles className="mx-auto text-green-400 mb-6" size={64} />
-            <h2 className="text-3xl font-bold text-green-400 mb-3">You're Already Subscribed!</h2>
-            <p className="text-slate-300 mb-6 text-lg">You have full access to the Development Tier.</p>
-            <div className="flex gap-4 justify-center">
-              <Link href="/dashboard">
-                <Button className="bg-green-600 hover:bg-green-500 text-white font-bold">
-                  Back to Dashboard
-                </Button>
-              </Link>
-              <Link href="/subscriptions">
-                <Button className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-semibold">
-                  Manage Subscription
-                </Button>
-              </Link>
+    return (
+      <div className="min-h-screen bg-[#050810] text-white relative overflow-hidden">
+        <div className="fixed inset-0 bg-[linear-gradient(rgba(0,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
+        <div className="fixed top-20 left-20 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl" />
+        <div className="fixed bottom-20 right-20 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl" />
+
+        <div className="relative z-10 max-w-3xl mx-auto px-4 py-10">
+          {/* Back link */}
+          <Link href="/prompting-studio" className="text-slate-500 hover:text-cyan-400 text-sm mb-6 inline-flex items-center gap-2 transition-colors">
+            <ArrowLeft size={15} />
+            Back to Studio
+          </Link>
+
+          {/* Active badge header */}
+          <div className="flex items-center gap-4 mb-8">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500/30 to-cyan-500/30 border border-purple-500/30 flex items-center justify-center shrink-0">
+              <FlaskRound size={28} className="text-purple-400" />
             </div>
+            <div>
+              <div className="flex items-center gap-2.5 mb-0.5">
+                <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">
+                  DEVELOPMENT TIER
+                </h1>
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-green-500/15 border border-green-500/30 text-green-400">
+                  Active
+                </span>
+              </div>
+              <p className="text-slate-400 text-sm">
+                {cycle ? `${cycleLabel[cycle] ?? cycle} plan` : 'Subscription plan'}
+                {formattedRenew && <span className="text-slate-500"> · Renews {formattedRenew}</span>}
+              </p>
+            </div>
+          </div>
+
+          {/* Stat highlights */}
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            {[
+              { value: '30%', label: 'off all ticket purchases', color: 'purple' },
+              { value: '8×', label: 'concurrent generations', color: 'cyan' },
+              { value: '500', label: 'tickets per cycle', color: 'green' },
+            ].map(({ value, label, color }) => (
+              <div key={value} className={`p-4 rounded-xl border text-center
+                ${color === 'purple' ? 'bg-purple-500/8 border-purple-500/20' :
+                  color === 'cyan'   ? 'bg-cyan-500/8 border-cyan-500/20' :
+                                       'bg-green-500/8 border-green-500/20'}`}>
+                <div className={`text-2xl font-black mb-1
+                  ${color === 'purple' ? 'text-purple-400' :
+                    color === 'cyan'   ? 'text-cyan-400' :
+                                         'text-green-400'}`}>
+                  {value}
+                </div>
+                <div className="text-[10px] text-slate-500 leading-tight">{label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Feature list */}
+          <div className="rounded-2xl border border-purple-500/20 bg-slate-900/60 backdrop-blur-sm overflow-hidden mb-6">
+            <div className="px-5 py-4 border-b border-white/5 flex items-center gap-2">
+              <Crown size={15} className="text-cyan-400" />
+              <span className="font-bold text-white text-sm">Your Active Benefits</span>
+              <span className="ml-auto text-[10px] text-slate-500">Everything below is unlocked for your account</span>
+            </div>
+            <div className="px-5 py-4 grid sm:grid-cols-2 gap-3">
+              {[
+                { text: '30% off all ticket package purchases', highlight: true },
+                { text: '250–500 tickets auto-delivered each billing cycle', highlight: true },
+                { text: 'Up to 8 concurrent generations (6 image + 2 video)', highlight: true },
+                { text: '100 reference image slots in the Refs library', highlight: true },
+                { text: 'AI-powered prompt generation (Gemini models)', highlight: false },
+                { text: 'Early access to new experimental features', highlight: false },
+              ].map((f) => (
+                <div key={f.text} className="flex items-start gap-2.5">
+                  <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5
+                    ${f.highlight ? 'bg-cyan-500/15 border border-cyan-500/30' : 'bg-white/5 border border-white/10'}`}>
+                    <Check size={9} className={f.highlight ? 'text-cyan-400' : 'text-slate-600'} />
+                  </div>
+                  <span className={`text-sm leading-snug ${f.highlight ? 'text-white font-medium' : 'text-slate-500'}`}>
+                    {f.text}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Free tier reminder */}
+          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 mb-8">
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              <span className="text-slate-300 font-semibold">Free tier features are also included</span> — Main Scanner, Legacy Scanner, Video Scanner, all AI models, and 2 concurrent generations.
+            </p>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap gap-3">
+            <Link href="/prompting-studio">
+              <button className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white text-sm font-bold hover:opacity-90 transition-opacity">
+                Go to Studio
+              </button>
+            </Link>
+            <Link href="/dashboard">
+              <button className="px-5 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/8 text-slate-300 hover:text-white text-sm font-semibold transition-all">
+                Dashboard
+              </button>
+            </Link>
+            <Link href="/subscriptions">
+              <button className="px-5 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/8 text-slate-300 hover:text-white text-sm font-semibold transition-all">
+                Manage Subscription
+              </button>
+            </Link>
           </div>
         </div>
       </div>

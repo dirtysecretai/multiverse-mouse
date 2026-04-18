@@ -45,7 +45,9 @@ export async function GET(req: NextRequest) {
         tier: subscription.tier,
         status: subscription.status,
         startDate: subscription.startDate,
-        endDate: subscription.endDate
+        endDate: subscription.endDate,
+        billingCycle: subscription.billingCycle,
+        nextBillingDate: subscription.nextBillingDate,
       } : null
     });
 

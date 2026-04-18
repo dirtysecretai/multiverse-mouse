@@ -354,6 +354,44 @@ const VIDEO_MODEL_CONFIGS: VideoModelConfig[] = [
 ]
 const VIDEO_MODELS = VIDEO_MODEL_CONFIGS.map(m => m.name)
 
+// Cost tier indicators — $ cheap · $$ mid · $$$ expensive
+const IMAGE_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
+  "flash-scanner-v2.5": "$",
+  "seedream-4.5":        "$",
+  "seedream-5-lite":     "$",
+  "flux-2":              "$",
+  "kling-v3-image":      "$",
+  "kling-o3-image":      "$$",
+  "wan-2.7-pro":         "$$",
+  "nano-banana-pro-2":   "$$",
+  "pro-scanner-v3":      "$$$",
+  "nano-banana-pro":     "$$$",
+}
+const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
+  "lipsync-v3":         "$",
+  "seedance-1.5":       "$$",
+  "wan-2.5":            "$$",
+  "kling-v3-motion":    "$$$",
+  "seedance-2.0-fast":  "$$$",
+  "seedance-2.0":       "$$$",
+  "kling-v3":           "$$$",
+}
+function CostBadge({ tier }: { tier: "$" | "$$" | "$$$" }) {
+  const color = tier === "$"   ? "text-green-400"
+              : tier === "$$"  ? "text-amber-400"
+              :                  "text-rose-400"
+  return (
+    <span className={`font-mono text-[10px] font-bold shrink-0 ${color}`}>{tier}</span>
+  )
+}
+// Name-keyed versions for the taskbar (which works with model names, not IDs)
+const IMAGE_MODEL_COST_BY_NAME: Record<string, "$" | "$$" | "$$$"> = Object.fromEntries(
+  IMAGE_MODEL_CONFIGS.map(m => [m.name, IMAGE_MODEL_COST[m.id] ?? "$"])
+)
+const VIDEO_MODEL_COST_BY_NAME: Record<string, "$" | "$$" | "$$$"> = Object.fromEntries(
+  VIDEO_MODEL_CONFIGS.map(m => [m.name, VIDEO_MODEL_COST[m.id] ?? "$$"])
+)
+
 const PROMPT_MODELS = [
   { id: "gemini-3-flash",       label: "Gemini 3 Flash" },
   { id: "gemini-2.0-flash-exp", label: "Gemini 2.0 Flash Exp" },
@@ -372,6 +410,7 @@ function TaskbarDropdown({
   onToggle,
   onSelect,
   activeItem,
+  itemCosts,
 }: {
   label: string
   icon: React.ElementType
@@ -380,10 +419,13 @@ function TaskbarDropdown({
   onToggle: () => void
   onSelect?: (item: string) => void
   activeItem?: string
+  itemCosts?: Record<string, "$" | "$$" | "$$$">
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
+
+  const activeCost = activeItem && itemCosts ? itemCosts[activeItem] : undefined
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -413,6 +455,7 @@ function TaskbarDropdown({
       >
         <Icon size={15} />
         {label}
+        {activeCost && <CostBadge tier={activeCost} />}
         <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
@@ -425,13 +468,14 @@ function TaskbarDropdown({
               <button
                 key={item}
                 onClick={() => { onSelect?.(item); onToggle() }}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between gap-2 ${
                   activeItem === item
                     ? "text-white bg-white/8"
                     : "text-slate-300 hover:bg-white/5 hover:text-white"
                 }`}
               >
-                {item}
+                <span>{item}</span>
+                {itemCosts?.[item] && <CostBadge tier={itemCosts[item]} />}
               </button>
             ))
           )}
@@ -3249,18 +3293,19 @@ function PromptBox({
               </button>
 
               {showModelPicker && (
-                <div className="absolute bottom-full left-0 mb-2 w-48 rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-md shadow-2xl overflow-hidden z-50">
+                <div className="absolute bottom-full left-0 mb-2 w-52 rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-md shadow-2xl overflow-hidden z-50">
                   {IMAGE_MODEL_CONFIGS.map((m) => (
                     <button
                       key={m.id}
                       onClick={() => { onModelChange(m); setShowModelPicker(false) }}
-                      className={`w-full text-left px-3 py-2 text-[12px] transition-colors ${
+                      className={`w-full text-left px-3 py-2 text-[12px] transition-colors flex items-center justify-between gap-2 ${
                         m.id === model.id
                           ? "text-white bg-white/8"
                           : "text-slate-400 hover:text-white hover:bg-white/5"
                       }`}
                     >
-                      {m.name}
+                      <span>{m.name}</span>
+                      {IMAGE_MODEL_COST[m.id] && <CostBadge tier={IMAGE_MODEL_COST[m.id]} />}
                     </button>
                   ))}
                 </div>
@@ -4651,7 +4696,7 @@ function VideoPromptBar({
             <ChevronDown size={10} className={`text-slate-500 transition-transform ${modelOpen ? "rotate-180" : ""}`} />
           </button>
           {modelOpen && (
-            <div className="absolute bottom-full mb-1.5 left-0 bg-slate-900 border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[140px]">
+            <div className="absolute bottom-full mb-1.5 left-0 bg-slate-900 border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[180px]">
               {VIDEO_MODEL_CONFIGS.map(m => (
                 <button
                   key={m.id}
@@ -4663,7 +4708,8 @@ function VideoPromptBar({
                   }`}
                 >
                   {m.id === model.id && <span className="w-1 h-1 rounded-full bg-orange-400 shrink-0" />}
-                  {m.name}
+                  <span className="flex-1">{m.name}</span>
+                  {VIDEO_MODEL_COST[m.id] && <CostBadge tier={VIDEO_MODEL_COST[m.id]} />}
                 </button>
               ))}
             </div>
@@ -5016,7 +5062,7 @@ function ShopDropdown({
   useEffect(() => {
     if (open && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect()
-      setMenuPos({ top: rect.bottom + 8, left: Math.min(rect.left, window.innerWidth - 216) })
+      setMenuPos({ top: rect.bottom + 8, left: Math.min(rect.left, window.innerWidth - 328) })
     }
   }, [open])
 
@@ -5041,35 +5087,87 @@ function ShopDropdown({
       </button>
 
       {open && (
-        <div className="fixed w-52 rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-md shadow-2xl overflow-hidden z-[9999]" style={{ top: menuPos.top, left: menuPos.left }}>
-          <button
-            onClick={() => handleNav("/buy-tickets")}
-            className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors flex items-center gap-2.5"
-          >
-            <Ticket size={13} className="text-cyan-400/70 shrink-0" />
-            <div>
-              <p className="text-[13px]">Ticket Dispenser</p>
-              <p className="text-[10px] text-slate-500">Purchase ticket packs</p>
-            </div>
-          </button>
-          <button
-            onClick={() => handleNav("/prompting-studio/subscribe")}
-            className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors flex items-center gap-2.5"
-          >
-            <User size={13} className="text-fuchsia-400/70 shrink-0" />
-            <div>
-              <p className="text-[13px]">Dev Tier</p>
-              <p className="text-[10px] text-slate-500">Unlock subscription perks</p>
-            </div>
-          </button>
+        <div className="fixed w-80 rounded-2xl border border-white/10 bg-[#0a0f1e] backdrop-blur-xl shadow-2xl shadow-black/70 z-[9999] overflow-hidden" style={{ top: menuPos.top, left: menuPos.left }}>
+
+          {/* ── Tickets card ── */}
+          <div className="p-3">
+            <button
+              onClick={() => handleNav("/buy-tickets")}
+              className="w-full rounded-xl border border-white/10 bg-slate-800/60 hover:bg-slate-700/50 hover:border-white/20 transition-all group overflow-hidden"
+            >
+              <div className="px-4 py-3.5 text-left">
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-slate-700 border border-white/10 flex items-center justify-center shrink-0">
+                      <Ticket size={14} className="text-slate-200" />
+                    </div>
+                    <span className="text-[13px] font-bold text-white">Ticket Dispenser</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-500 group-hover:text-slate-300 transition-colors">Buy →</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Tickets power every generation. Each image or video costs tickets — the amount depends on the model. Packs are one-time purchases and never expire.
+                </p>
+              </div>
+              <div className="px-4 py-2 border-t border-white/8 bg-slate-800/80 flex items-center justify-between">
+                <span className="text-[10px] text-slate-500 font-medium">Packs from 25 → 1,000 tickets</span>
+                <span className="text-[10px] font-bold text-slate-400 group-hover:text-white transition-colors">Shop now →</span>
+              </div>
+            </button>
+          </div>
+
+          <div className="mx-3 border-t border-white/6" />
+
+          {/* ── Dev Tier card ── */}
+          <div className="p-3">
+            <button
+              onClick={() => handleNav("/prompting-studio/subscribe")}
+              className="w-full rounded-xl border border-white/10 bg-slate-800/60 hover:bg-slate-700/50 hover:border-white/20 transition-all group overflow-hidden"
+            >
+              <div className="px-4 py-3.5 text-left">
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-slate-700 border border-white/10 flex items-center justify-center shrink-0">
+                      <Sparkles size={13} className="text-slate-200" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-bold text-white">Dev Tier</span>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 bg-slate-700 border border-white/10 px-1.5 py-0.5 rounded-full">Subscription</span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-500 group-hover:text-slate-300 transition-colors">View →</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
+                  Unlock the full studio with a recurring plan — tickets auto-delivered every cycle, discounts on purchases, and more slots.
+                </p>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                  {[
+                    { label: "30% off all ticket purchases", bright: true },
+                    { label: "250–500 tickets per cycle", bright: true },
+                    { label: "8 concurrent generations", bright: true },
+                    { label: "100 Refs slots (2× free tier)", bright: true },
+                    { label: "AI prompt generation", bright: false },
+                    { label: "Early feature access", bright: false },
+                  ].map(({ label, bright }) => (
+                    <div key={label} className="flex items-start gap-1.5">
+                      <Check size={9} className={`shrink-0 mt-0.5 ${bright ? "text-slate-300" : "text-slate-600"}`} />
+                      <span className={`text-[10px] leading-snug ${bright ? "text-slate-200" : "text-slate-500"}`}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="px-4 py-2 border-t border-white/8 bg-slate-800/80 flex items-center justify-between">
+                <span className="text-[10px] text-slate-500 font-medium">Biweekly · Monthly · Yearly</span>
+                <span className="text-[10px] font-bold text-slate-400 group-hover:text-white transition-colors">See plans →</span>
+              </div>
+            </button>
+          </div>
+
           {loginPrompt && (
-            <div className="px-4 py-3 border-t border-white/5 bg-orange-500/5 space-y-1">
-              <p className="text-[11px] text-orange-300/90 font-medium">Sign in required</p>
+            <div className="mx-3 mb-3 px-3.5 py-3 rounded-xl border border-white/10 bg-slate-800/60 space-y-1">
+              <p className="text-[11px] text-slate-200 font-semibold">Sign in required</p>
               <p className="text-[10px] text-slate-500">You need to be logged in to visit the shop.</p>
-              <a
-                href="/dashboard"
-                className="text-[11px] text-orange-400 hover:text-orange-300 hover:underline transition-colors"
-              >
+              <a href="/dashboard" className="text-[11px] text-slate-400 hover:text-white hover:underline transition-colors">
                 Go to login →
               </a>
             </div>
@@ -6407,8 +6505,8 @@ export default function PortalV2Page() {
         {/* Mobile-only top row: branding + queue + tickets + profile + dashboard */}
         <div className="flex sm:hidden items-center justify-between px-3 h-9 border-b border-white/5">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 border border-cyan-500/20 flex items-center justify-center shrink-0">
-              <Sparkles size={11} className="text-cyan-400" />
+            <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+              <Sparkles size={11} className="text-white/50" />
             </div>
             <div className="w-px h-3 bg-white/10" />
             <QueueDisplay active={activeJobCount} max={maxConcurrent} label="img" />
@@ -6434,12 +6532,12 @@ export default function PortalV2Page() {
           {/* Wordmark — desktop only */}
           <div className="hidden sm:flex items-center gap-2 shrink-0 mr-3">
             <div className="flex items-center gap-1.5">
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 border border-cyan-500/20 flex items-center justify-center">
-                <Sparkles size={12} className="text-cyan-400" />
+              <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
+                <Sparkles size={12} className="text-white/50" />
               </div>
               <div className="flex flex-col leading-none">
-                <span className="text-[11px] font-black tracking-tight bg-gradient-to-r from-cyan-400 to-fuchsia-400 bg-clip-text text-transparent">AI Design Studio</span>
-                <span className="text-[8px] font-mono text-slate-600 tracking-widest uppercase">Prompt Protocol</span>
+                <span className="text-[11px] font-black tracking-tight text-white/90">AI Design Studio</span>
+                <span className="text-[8px] font-mono text-white/20 tracking-widest uppercase">Prompt Protocol</span>
               </div>
             </div>
             <div className="w-px h-4 bg-white/8" />
@@ -6453,6 +6551,7 @@ export default function PortalV2Page() {
               onToggle={() => toggle("image")}
               onSelect={handleSelectImageModel}
               activeItem={selectedModel.name}
+              itemCosts={IMAGE_MODEL_COST_BY_NAME}
             />
             <TaskbarDropdown
               label="Video"
@@ -6462,6 +6561,7 @@ export default function PortalV2Page() {
               onToggle={() => toggle("video")}
               onSelect={handleSelectVideoModel}
               activeItem={scannerMode === "video" ? selectedVideoModel.name : undefined}
+              itemCosts={VIDEO_MODEL_COST_BY_NAME}
             />
             <TextDropdown
               open={openDropdown === "text"}
@@ -6470,19 +6570,6 @@ export default function PortalV2Page() {
               imageModelName={selectedModel.name}
               onUsePrompt={handleUsePrompt}
               signedIn={user !== null}
-            />
-            <SelectDropdown
-              open={openDropdown === "select"}
-              onToggle={() => toggle("select")}
-              selectMode={selectMode}
-              onToggleSelectMode={handleToggleSelectMode}
-              selectedCount={selectedImageIds.size}
-              onDownloadAll={handleBulkDownload}
-              onDeleteAll={handleBulkDelete}
-              downloading={bulkDownloading}
-              deleting={bulkDeleting}
-              downloadProgress={downloadProgress}
-              downloadError={downloadError}
             />
             <RefDropdown
               open={openDropdown === "refs"}
@@ -6503,6 +6590,19 @@ export default function PortalV2Page() {
               open={openDropdown === "shop"}
               onToggle={() => toggle("shop")}
               user={user}
+            />
+            <SelectDropdown
+              open={openDropdown === "select"}
+              onToggle={() => toggle("select")}
+              selectMode={selectMode}
+              onToggleSelectMode={handleToggleSelectMode}
+              selectedCount={selectedImageIds.size}
+              onDownloadAll={handleBulkDownload}
+              onDeleteAll={handleBulkDelete}
+              downloading={bulkDownloading}
+              deleting={bulkDeleting}
+              downloadProgress={downloadProgress}
+              downloadError={downloadError}
             />
             <NewsDropdown
               open={openDropdown === "news"}
