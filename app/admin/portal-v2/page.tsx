@@ -138,8 +138,14 @@ async function compressFileToDataUrl(file: File, maxSize = 800, quality = 0.72):
         }
         const canvas = document.createElement("canvas")
         canvas.width = w; canvas.height = h
-        canvas.getContext("2d")?.drawImage(img, 0, 0, w, h)
-        resolve(canvas.toDataURL("image/jpeg", quality))
+        const ctx = canvas.getContext("2d")
+        if (!ctx) { reject(new Error("Canvas unavailable")); return }
+        ctx.drawImage(img, 0, 0, w, h)
+        const result = canvas.toDataURL("image/jpeg", quality)
+        // Release image src and canvas to help mobile browsers free memory sooner
+        img.src = ""
+        canvas.width = 0; canvas.height = 0
+        resolve(result)
       }
       img.onerror = () => reject(new Error("Failed to load image"))
       img.src = ev.target?.result as string
@@ -713,14 +719,17 @@ function RefDropdown({
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const [selectMode, setSelectMode] = useState(false)
   const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set())
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
   const activeCount = disabled ? 0 : activeIds.filter((id) => library.some((img) => img.id === id)).length
   const atLimit = !disabled && modelMaxRefs > 0 && activeCount >= modelMaxRefs
 
-  // Exit select mode when dropdown closes
+  // Exit select mode + clear errors when dropdown closes
   useEffect(() => {
     if (!open) {
       setSelectMode(false)
       setSelectedForDelete(new Set())
+      setUploadError(null)
     }
   }, [open])
 
@@ -745,14 +754,28 @@ function RefDropdown({
     const files = Array.from(e.target.files || [])
     e.target.value = ""
     if (!files.length) return
-    const toProcess = files.slice(0, libraryLimit - library.length)
-    const items: RefImage[] = await Promise.all(
-      toProcess.map(async (file) => ({
-        id: `lib-${Date.now()}-${Math.random()}`,
-        url: await compressFileToDataUrl(file),
-      }))
-    )
-    onUpload(items)
+    const slots = libraryLimit - library.length
+    if (slots <= 0) {
+      setUploadError(`Library is full (${libraryLimit}/${libraryLimit})`)
+      return
+    }
+    const toProcess = files.slice(0, slots)
+    setUploadError(null)
+    setUploading(true)
+    try {
+      const items: RefImage[] = await Promise.all(
+        toProcess.map(async (file) => ({
+          id: `lib-${Date.now()}-${Math.random()}`,
+          url: await compressFileToDataUrl(file),
+        }))
+      )
+      onUpload(items)
+    } catch (err) {
+      console.error("Ref upload failed:", err)
+      setUploadError("Upload failed — try again or use a smaller image")
+    } finally {
+      setUploading(false)
+    }
   }
 
   const handleToggle = (img: RefImage) => {
@@ -880,13 +903,18 @@ function RefDropdown({
                 onChange={handleFileChange}
               />
               <button
-                onClick={() => library.length < libraryLimit && fileInputRef.current?.click()}
-                disabled={library.length >= libraryLimit}
+                onClick={() => { if (!uploading && library.length < libraryLimit) { setUploadError(null); fileInputRef.current?.click() } }}
+                disabled={library.length >= libraryLimit || uploading}
                 className="w-full py-2 rounded-lg border border-dashed border-white/10 text-[11px] text-slate-400 hover:text-white hover:border-white/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                <Plus size={11} />
-                {library.length >= libraryLimit ? `Library full (${libraryLimit}/${libraryLimit})` : `Upload Images · ${libraryLimit - library.length} slots left`}
+                {uploading
+                  ? <><div className="w-2.5 h-2.5 rounded-full border border-slate-500 border-t-slate-200 animate-spin" />Compressing…</>
+                  : <><Plus size={11} />{library.length >= libraryLimit ? `Library full (${libraryLimit}/${libraryLimit})` : `Upload Images · ${libraryLimit - library.length} slots left`}</>
+                }
               </button>
+              {uploadError && (
+                <p className="text-[10px] text-red-400 mt-1.5 px-1 leading-snug">{uploadError}</p>
+              )}
             </div>
           )}
 
