@@ -21,11 +21,11 @@ import * as path from 'path'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const UPLOAD_CONCURRENCY = 1    // sequential — avoids Vercel Blob rate limiting
-const DB_CONCURRENCY     = 2    // parallel DB updates
-const DB_BATCH           = 50   // records per DB query
+const UPLOAD_CONCURRENCY = 6    // parallel uploads
+const DB_CONCURRENCY     = 4    // parallel DB updates
+const DB_BATCH           = 100  // records per DB query
 const RETRY_ATTEMPTS     = 3    // retries for transient errors
-const DELAY_BETWEEN_MS   = 150  // ms between each fetch
+const DELAY_BETWEEN_MS   = 0    // no delay
 const ERROR_LOG = path.join(process.cwd(), 'scripts', 'migrate-errors.log')
 
 const BUCKET     = process.env.R2_BUCKET_NAME!
@@ -97,7 +97,7 @@ async function pool<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]>
 
 function progress(label: string, done: number, total: number) {
   const pct = total > 0 ? ((done / total) * 100).toFixed(1) : '0'
-  process.stdout.write(`\r  ${label}: ${done}/${total} (${pct}%)   `)
+  console.log(`  ${label}: ${done}/${total} (${pct}%)`)
 }
 
 // ─── Fetch from Vercel Blob ───────────────────────────────────────────────────
