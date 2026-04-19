@@ -2,7 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { cookies } from 'next/headers'
 import { getUserFromSession } from '@/lib/auth'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 import prisma from '@/lib/prisma'
 import { getTicketCost, getModelById } from '@/config/ai-models.config'
 
@@ -138,10 +138,10 @@ export async function POST(req: Request) {
         }
         if (!imageBytes) throw new Error('No image data in Gemini response')
 
-        // ── Upload to Vercel Blob ───────────────────────────────────────
+        // ── Upload to R2 ────────────────────────────────────────────────
         const buffer = Buffer.from(imageBytes, 'base64')
         const filename = `universe-scan-${userId}-${Date.now()}.png`
-        const blob = await put(filename, buffer, { access: 'public', contentType: 'image/png' })
+        const url = await uploadToR2(filename, buffer, 'image/png')
 
         // ── Save GeneratedImage ─────────────────────────────────────────
         const expiresAt = new Date()
@@ -150,7 +150,7 @@ export async function POST(req: Request) {
           data: {
             userId,
             prompt: promptStr,
-            imageUrl: blob.url,
+            imageUrl: url,
             model,
             ticketCost,
             referenceImageUrls,
@@ -176,7 +176,7 @@ export async function POST(req: Request) {
           data: {
             status:       'completed',
             completedAt:  new Date(),
-            resultUrl:    blob.url,
+            resultUrl:    url,
             resultImageId: savedImage.id,
             parameters: {
               source: 'main-scanner',
@@ -184,7 +184,7 @@ export async function POST(req: Request) {
               quality,
               aspectRatio,
               referenceImageUrls,
-              completedImageUrls: [blob.url],
+              completedImageUrls: [url],
               completedImageIds:  [savedImage.id],
             },
           },

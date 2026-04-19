@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 import { getTicketCost, getModelById } from '@/config/ai-models.config'
 import { fal } from "@fal-ai/client"
 
@@ -267,13 +267,10 @@ export async function POST(request: Request) {
               const uploadedUrl = await fal.storage.upload(blob)
               imageUrls.push(uploadedUrl)
 
-              // Also save to permanent Vercel Blob storage for the DB record
+              // Also save to permanent R2 storage for the DB record
               const refFilename = `reference-${user.id}-${Date.now()}-${imageUrls.length}.jpg`
-              const refBlob = await put(refFilename, imageBuffer, {
-                access: 'public',
-                contentType: 'image/jpeg',
-              })
-              permanentReferenceUrls.push(refBlob.url)
+              const refUrl = await uploadToR2(refFilename, imageBuffer, 'image/jpeg')
+              permanentReferenceUrls.push(refUrl)
             } catch (uploadError) {
               console.error('Failed to upload reference image:', uploadError)
             }
@@ -293,12 +290,12 @@ export async function POST(request: Request) {
           const falImageUrl = result.data.images?.[0]?.url
           if (!falImageUrl) throw new Error('FAL.ai did not return an image')
 
-          // Download from FAL temporary storage and re-host on Vercel Blob
+          // Download from FAL temporary storage and re-host on R2
           const falRes = await fetch(falImageUrl)
           const imageBuffer = Buffer.from(await falRes.arrayBuffer())
           const filename = `universe-scan-${user.id}-${Date.now()}.png`
-          const blob = await put(filename, imageBuffer, { access: 'public', contentType: 'image/png' })
-          console.log(`Sync image uploaded to Blob: ${blob.url}`)
+          const syncUrl = await uploadToR2(filename, imageBuffer, 'image/png')
+          console.log(`Sync image uploaded to R2: ${syncUrl}`)
 
           // Save to database
           const expiresAt = new Date()
@@ -307,7 +304,7 @@ export async function POST(request: Request) {
             data: {
               userId: user.id,
               prompt: prompt.trim(),
-              imageUrl: blob.url,
+              imageUrl: syncUrl,
               model,
               ticketCost: skipTickets ? 0 : ticketCost,
               referenceImageUrls: permanentReferenceUrls,
@@ -331,7 +328,7 @@ export async function POST(request: Request) {
           const newBalance = Math.max(0, syncRawBalance - syncRawReserved)
 
           console.log('=== FAL.AI SYNC GENERATION COMPLETE ===')
-          return NextResponse.json({ imageUrl: blob.url, newBalance, modelUsed: selectedModel.displayName })
+          return NextResponse.json({ imageUrl: syncUrl, newBalance, modelUsed: selectedModel.displayName })
 
         } else {
           // ─── ASYNC SUBMIT TO FAL.AI (main portal queue flow) ─────────
@@ -695,13 +692,10 @@ export async function POST(request: Request) {
           const refBuffer = Buffer.from(base64Data, 'base64')
           const refFilename = `reference-${user.id}-${Date.now()}-${i}.jpg`
 
-          const refBlob = await put(refFilename, refBuffer, {
-            access: 'public',
-            contentType: 'image/jpeg',
-          })
+          const refUrl = await uploadToR2(refFilename, refBuffer, 'image/jpeg')
 
-          permanentReferenceUrls.push(refBlob.url)
-          console.log(`Reference image ${i + 1} uploaded: ${refBlob.url}`)
+          permanentReferenceUrls.push(refUrl)
+          console.log(`Reference image ${i + 1} uploaded: ${refUrl}`)
         } catch (refErr) {
           console.error(`Failed to upload reference image ${i + 1}:`, refErr)
         }
@@ -720,14 +714,11 @@ export async function POST(request: Request) {
     
     for (let i = 0; i < buffersToUpload.length; i++) {
       const filename = `universe-scan-${user.id}-${Date.now()}-${i}.png`
-      
-      const blob = await put(filename, buffersToUpload[i], {
-        access: 'public',
-        contentType: 'image/png',
-      })
 
-      console.log(`Image ${i + 1} uploaded: ${blob.url}`)
-      
+      const blobUrl = await uploadToR2(filename, buffersToUpload[i], 'image/png')
+
+      console.log(`Image ${i + 1} uploaded: ${blobUrl}`)
+
       // Save each image to database
       const expiresAt = new Date()
       expiresAt.setFullYear(expiresAt.getFullYear() + 100)
@@ -736,7 +727,7 @@ export async function POST(request: Request) {
         data: {
           userId: user.id,
           prompt: prompt.trim(),
-          imageUrl: blob.url,
+          imageUrl: blobUrl,
           model,
           ticketCost: skipTickets ? 0 : (isMultiImage ? 0 : ticketCost), // 0 for admin mode, only charge for first image in multi-gen
           referenceImageUrls: permanentReferenceUrls, // Save reference images used
@@ -746,7 +737,7 @@ export async function POST(request: Request) {
         },
       })
 
-      uploadedImages.push({ url: blob.url, id: String(savedImage.id) })
+      uploadedImages.push({ url: blobUrl, id: String(savedImage.id) })
       console.log(`Image ${i + 1} saved to database: ${savedImage.id}`)
     }
 

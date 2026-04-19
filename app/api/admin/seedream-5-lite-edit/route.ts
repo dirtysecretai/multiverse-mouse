@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 import { PrismaClient } from '@prisma/client'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
@@ -142,11 +142,8 @@ export async function POST(req: Request) {
         }
         const buffer = Buffer.from(await res.arrayBuffer())
         const filename = `sd5-lite-edit-${Date.now()}-${i}.png`
-        const blob = await put(filename, buffer, {
-          access: 'public',
-          contentType: 'image/png',
-        })
-        hostedImages.push({ url: blob.url, width: falImg.width, height: falImg.height })
+        const url = await uploadToR2(filename, buffer, 'image/png')
+        hostedImages.push({ url, width: falImg.width, height: falImg.height })
       } catch (downloadErr) {
         console.error(`Failed to re-host image ${i + 1}:`, downloadErr)
       }

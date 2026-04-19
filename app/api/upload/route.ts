@@ -1,8 +1,5 @@
 import { NextResponse } from 'next/server';
-
-// This endpoint automatically detects the environment:
-// - Local: Uses file system
-// - Vercel: Uses Vercel Blob
+import { uploadToR2, deleteFromR2 } from '@/lib/r2';
 
 export async function POST(request: Request) {
   try {
@@ -34,71 +31,21 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Check if we're on Vercel (has BLOB_READ_WRITE_TOKEN)
-    const isVercel = !!process.env.BLOB_READ_WRITE_TOKEN;
-    console.log('Environment:', isVercel ? 'Vercel (Blob)' : 'Local (File System)');
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    const timestamp = Date.now();
+    const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const key = `galleries/${timestamp}-${safeName}`;
 
-    if (isVercel) {
-      // VERCEL: Use Vercel Blob Storage
-      console.log('Using Vercel Blob storage...');
-      
-      const { put } = await import('@vercel/blob');
-      
-      const blob = await put(file.name, file, {
-        access: 'public',
-      });
+    const imageUrl = await uploadToR2(key, buffer, file.type);
+    console.log('R2 upload successful:', imageUrl);
 
-      console.log('Blob upload successful:', blob.url);
-
-      return NextResponse.json({ 
-        success: true, 
-        imageUrl: blob.url,
-        filename: file.name,
-        storage: 'vercel-blob'
-      });
-
-    } else {
-      // LOCAL: Use file system
-      console.log('Using local file system...');
-      
-      const { writeFile, mkdir } = await import('fs/promises');
-      const { join } = await import('path');
-      const { existsSync } = await import('fs');
-
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-
-      // Create uploads directory if it doesn't exist
-      const uploadsDir = join(process.cwd(), 'public', 'uploads', 'galleries');
-      
-      if (!existsSync(uploadsDir)) {
-        console.log('Creating uploads directory...');
-        await mkdir(uploadsDir, { recursive: true });
-      }
-
-      // Generate unique filename
-      const timestamp = Date.now();
-      const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-      const filename = `${timestamp}-${originalName}`;
-      const filepath = join(uploadsDir, filename);
-
-      console.log('Writing to:', filepath);
-
-      // Write file
-      await writeFile(filepath, buffer);
-
-      console.log('File written successfully!');
-
-      // Return URL path (relative to public/)
-      const imageUrl = `/uploads/galleries/${filename}`;
-
-      return NextResponse.json({ 
-        success: true, 
-        imageUrl,
-        filename,
-        storage: 'local-filesystem'
-      });
-    }
+    return NextResponse.json({
+      success: true,
+      imageUrl,
+      filename: file.name,
+      storage: 'r2'
+    });
 
   } catch (error: any) {
     console.error('Upload error:', error);
@@ -121,36 +68,9 @@ export async function DELETE(request: Request) {
     }
 
     console.log('Delete request for:', imageUrl);
-
-    // Check if we're on Vercel
-    const isVercel = !!process.env.BLOB_READ_WRITE_TOKEN;
-
-    if (isVercel && imageUrl.includes('vercel-storage.com')) {
-      // VERCEL: Delete from Blob storage
-      const { del } = await import('@vercel/blob');
-      await del(imageUrl);
-      console.log('Blob deleted successfully');
-
-      return NextResponse.json({ success: true, storage: 'vercel-blob' });
-
-    } else {
-      // LOCAL: Delete from file system
-      const { unlink } = await import('fs/promises');
-      const { join } = await import('path');
-
-      // Extract filename from URL
-      const filename = imageUrl.split('/').pop();
-      if (!filename) {
-        return NextResponse.json({ error: 'Invalid imageUrl' }, { status: 400 });
-      }
-
-      const filepath = join(process.cwd(), 'public', 'uploads', 'galleries', filename);
-      
-      await unlink(filepath);
-      console.log('File deleted successfully');
-
-      return NextResponse.json({ success: true, storage: 'local-filesystem' });
-    }
+    await deleteFromR2(imageUrl);
+    console.log('R2 delete successful');
+    return NextResponse.json({ success: true, storage: 'r2' });
 
   } catch (error: any) {
     console.error('Delete error:', error);

@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fal } from "@fal-ai/client";
 import { PrismaClient } from '@prisma/client';
-import { put } from '@vercel/blob';
+import { uploadToR2 } from '@/lib/r2';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const prisma = new PrismaClient();
@@ -63,13 +63,10 @@ export async function POST(req: NextRequest) {
             const refBuffer = Buffer.from(base64Data, 'base64');
             const refFilename = `prompting-studio/${userId}/reference-${Date.now()}-${i}.jpg`;
 
-            const refBlob = await put(refFilename, refBuffer, {
-              access: 'public',
-              contentType: 'image/jpeg',
-            });
+            const refUrl = await uploadToR2(refFilename, refBuffer, 'image/jpeg');
 
-            permanentReferenceUrls.push(refBlob.url);
-            console.log(`✅ Reference image ${i + 1} uploaded: ${refBlob.url}`);
+            permanentReferenceUrls.push(refUrl);
+            console.log(`✅ Reference image ${i + 1} uploaded: ${refUrl}`);
           } else {
             // It's already a URL - keep it
             permanentReferenceUrls.push(refImage);
@@ -583,15 +580,10 @@ export async function POST(req: NextRequest) {
           const imageBuffer = Buffer.from(base64Data, 'base64');
           console.log(`✅ Decoded base64, size: ${(imageBuffer.length / 1024 / 1024).toFixed(2)} MB`);
           
-          // Upload to Vercel Blob
+          // Upload to R2
           const filename = `prompting-studio/${userId}/${Date.now()}-gemini.png`;
-          const blob = await put(filename, imageBuffer, {
-            access: 'public',
-            contentType: mimeType,
-          });
-          
-          imageUrl = blob.url;
-          console.log('✅ Uploaded Gemini image to Blob:', imageUrl);
+          imageUrl = await uploadToR2(filename, imageBuffer, mimeType);
+          console.log('✅ Uploaded Gemini image to R2:', imageUrl);
           break;
         }
       }
@@ -707,15 +699,10 @@ export async function POST(req: NextRequest) {
           const imageBuffer = Buffer.from(base64Data, 'base64');
           console.log(`✅ Decoded base64, size: ${(imageBuffer.length / 1024 / 1024).toFixed(2)} MB`);
 
-          // Upload to Vercel Blob
+          // Upload to R2
           const filename = `prompting-studio/${userId}/${Date.now()}-gemini-flash.png`;
-          const blob = await put(filename, imageBuffer, {
-            access: 'public',
-            contentType: mimeType,
-          });
-
-          imageUrl = blob.url;
-          console.log('✅ Uploaded Gemini Flash image to Blob:', imageUrl);
+          imageUrl = await uploadToR2(filename, imageBuffer, mimeType);
+          console.log('✅ Uploaded Gemini Flash image to R2:', imageUrl);
           break;
         }
       }
@@ -753,9 +740,9 @@ export async function POST(req: NextRequest) {
         const buf = Buffer.from(await imgRes.arrayBuffer());
         console.log(`Downloaded image ${i + 1}, size: ${(buf.length / 1024 / 1024).toFixed(2)} MB`);
         const fname = `prompting-studio/${userId}/${Date.now() + i}-${model}.png`;
-        const uploaded = await put(fname, buf, { access: 'public', contentType: 'image/png' });
-        allBlobUrls.push(uploaded.url);
-        console.log(`✅ Uploaded image ${i + 1} to Vercel Blob: ${uploaded.url}`);
+        const uploadedUrl = await uploadToR2(fname, buf, 'image/png');
+        allBlobUrls.push(uploadedUrl);
+        console.log(`✅ Uploaded image ${i + 1} to R2: ${uploadedUrl}`);
       }
     } else {
       // Single image
@@ -764,9 +751,9 @@ export async function POST(req: NextRequest) {
       const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
       console.log(`Downloaded image, size: ${(imageBuffer.length / 1024 / 1024).toFixed(2)} MB`);
       const filename = `prompting-studio/${userId}/${Date.now()}-${model}.png`;
-      const uploaded = await put(filename, imageBuffer, { access: 'public', contentType: 'image/png' });
-      allBlobUrls.push(uploaded.url);
-      console.log('✅ Uploaded to Vercel Blob:', uploaded.url);
+      const uploadedUrl = await uploadToR2(filename, imageBuffer, 'image/png');
+      allBlobUrls.push(uploadedUrl);
+      console.log('✅ Uploaded to R2:', uploadedUrl);
     }
 
     const primaryBlobUrl = allBlobUrls[0];

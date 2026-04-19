@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 import prisma from '@/lib/prisma'
 import { syncAndClaimFalSlot } from '@/lib/admin-queue-helpers'
 import { getUserFromSession } from '@/lib/auth'
@@ -59,12 +59,9 @@ export async function POST(req: Request) {
           const falBlob = new Blob([buffer], { type: mimeType })
           const falUrl = await fal.storage.upload(falBlob)
           const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg'
-          const vBlob = await put(`reference-wan27-${Date.now()}-${i}.${ext}`, buffer, {
-            access: 'public',
-            contentType: mimeType,
-          })
+          const vUrl = await uploadToR2(`reference-wan27-${Date.now()}-${i}.${ext}`, buffer, mimeType)
           hostedUrls.push(falUrl)
-          permanentReferenceUrls.push(vBlob.url)
+          permanentReferenceUrls.push(vUrl)
         } else {
           hostedUrls.push(imgUrl)
           permanentReferenceUrls.push(imgUrl)

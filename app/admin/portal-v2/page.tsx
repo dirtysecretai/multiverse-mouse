@@ -6560,7 +6560,7 @@ export default function PortalV2Page() {
               open={openDropdown === "video"}
               onToggle={() => toggle("video")}
               onSelect={handleSelectVideoModel}
-              activeItem={scannerMode === "video" ? selectedVideoModel.name : undefined}
+              activeItem={selectedVideoModel.name}
               itemCosts={VIDEO_MODEL_COST_BY_NAME}
             />
             <TextDropdown
@@ -6674,6 +6674,29 @@ export default function PortalV2Page() {
             configOverride={configOverride}
           />
         </>
+      ) : !user ? (
+        /* Video — not signed in */
+        <div className="flex flex-col items-center justify-center py-24 px-4">
+          <div className="w-full max-w-sm text-center">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 border border-white/10 flex items-center justify-center mx-auto mb-5">
+              <User size={28} className="text-slate-400" />
+            </div>
+            <h2 className="text-lg font-bold text-white mb-1">Sign in to get started</h2>
+            <p className="text-sm text-slate-500 mb-6">Your generations and saved work will appear here.</p>
+            <div className="flex flex-col gap-2">
+              <Link href="/login" className="block">
+                <button className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-fuchsia-500 text-black text-sm font-bold hover:opacity-90 transition-opacity">
+                  Sign In
+                </button>
+              </Link>
+              <Link href="/signup" className="block">
+                <button className="w-full py-2.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 text-sm font-medium hover:bg-white/10 hover:text-white transition-all">
+                  Create Account
+                </button>
+              </Link>
+            </div>
+          </div>
+        </div>
       ) : (
         /* Video scanner — sidebar on desktop, drawer on mobile */
         <div style={{ height: "calc(100vh - 48px)" }} className="flex overflow-hidden relative">

@@ -1,7 +1,7 @@
 // app/api/upload-audio/route.ts
 // Upload audio files to Vercel Blob storage
 
-import { put } from '@vercel/blob';
+import { uploadToR2 } from '@/lib/r2';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
@@ -33,14 +33,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Upload to Vercel Blob
-    const blob = await put(`audio-${Date.now()}-${file.name}`, file, {
-      access: 'public',
-    });
+    // Upload to R2
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const url = await uploadToR2(`audio-${Date.now()}-${file.name}`, buffer, file.type);
 
     return NextResponse.json({
       success: true,
-      url: blob.url
+      url
     });
   } catch (error) {
     console.error('Failed to upload audio file:', error);

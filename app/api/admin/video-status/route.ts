@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma'
 import { releaseQueueSlot } from '@/lib/admin-queue-helpers'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 
 fal.config({ credentials: process.env.FAL_KEY! })
 
@@ -68,9 +68,8 @@ export async function POST(req: Request) {
           const ext = contentType.includes('webm') ? 'webm' : 'mp4'
           const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
           const filename = `video-admin-${Date.now()}.${ext}`
-          const blob = await put(filename, videoBuffer, { access: 'public', contentType })
-          permanentVideoUrl = blob.url
-          console.log(`[admin/video-status] Uploaded video to blob: ${blob.url}`)
+          permanentVideoUrl = await uploadToR2(filename, videoBuffer, contentType)
+          console.log(`[admin/video-status] Uploaded video to blob: ${permanentVideoUrl}`)
         }
       } catch (uploadErr) {
         console.error('[admin/video-status] Failed to upload video to blob (using FAL URL as fallback):', uploadErr)

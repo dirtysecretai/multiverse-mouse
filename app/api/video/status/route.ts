@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { fal } from "@fal-ai/client";
 import { getUserFromSession } from '@/lib/auth';
 import { cookies } from 'next/headers';
-import { put } from '@vercel/blob';
+import { uploadToR2 } from '@/lib/r2';
 
 const prisma = new PrismaClient();
 
@@ -78,9 +78,8 @@ export async function POST(request: NextRequest) {
           const ext = contentType.includes('webm') ? 'webm' : 'mp4'
           const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
           const filename = `video-${user.id}-${Date.now()}.${ext}`
-          const blob = await put(filename, videoBuffer, { access: 'public', contentType })
-          permanentVideoUrl = blob.url
-          console.log(`[video/status] Uploaded video to blob: ${blob.url}`)
+          permanentVideoUrl = await uploadToR2(filename, videoBuffer, contentType)
+          console.log(`[video/status] Uploaded video to blob: ${permanentVideoUrl}`)
         }
       } catch (uploadErr) {
         console.error('[video/status] Failed to upload video to blob (using FAL URL as fallback):', uploadErr)

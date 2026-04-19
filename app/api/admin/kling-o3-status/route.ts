@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 import prisma from '@/lib/prisma'
 import { releaseQueueSlot } from '@/lib/admin-queue-helpers'
 import { getUserFromSession } from '@/lib/auth'
@@ -45,11 +45,8 @@ export async function POST(req: Request) {
           const buffer = Buffer.from(await res.arrayBuffer())
           const ext = format === 'jpeg' ? 'jpg' : format
           const filename = `kling-o3-${Date.now()}-${i}.${ext}`
-          const blob = await put(filename, buffer, {
-            access: 'public',
-            contentType: `image/${format === 'jpeg' ? 'jpeg' : format}`,
-          })
-          hostedImages.push({ url: blob.url, width: falImg.width, height: falImg.height })
+          const url = await uploadToR2(filename, buffer, `image/${format === 'jpeg' ? 'jpeg' : format}`)
+          hostedImages.push({ url, width: falImg.width, height: falImg.height })
         } catch (e) {
           console.error(`kling-o3-status: failed to re-host image ${i}:`, e)
         }

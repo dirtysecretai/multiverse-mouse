@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { getUserFromSession } from '@/lib/auth';
 import { cookies } from 'next/headers';
-import { put } from '@vercel/blob';
+import { uploadToR2 } from '@/lib/r2';
 
 const prisma = new PrismaClient();
 
@@ -118,16 +118,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Upload to Vercel Blob
-    const blob = await put(`carousel/${user.id}/${side}-${Date.now()}.${file.name.split('.').pop()}`, file, {
-      access: 'public',
-    });
+    // Upload to R2
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const url = await uploadToR2(`carousel/${user.id}/${side}-${Date.now()}.${file.name.split('.').pop()}`, fileBuffer, file.type);
 
     // Create carousel image record
     const carouselImage = await prisma.carouselImage.create({
       data: {
         userId: user.id,
-        imageUrl: blob.url,
+        imageUrl: url,
         side: side,
         position: position,
         isActive: true

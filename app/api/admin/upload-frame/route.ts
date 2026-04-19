@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 
 // POST /api/admin/upload-frame
 // Accepts a base64-encoded file, uploads it to Vercel Blob, returns the public URL.
@@ -21,8 +21,8 @@ export async function POST(req: Request) {
     // Normalize QuickTime MIME type so downstream APIs (FAL, etc.) recognise the file
     const normalizedMime = mimeType === 'video/quicktime' ? 'video/mp4' : mimeType
     const safeName = `admin-upload-${Date.now()}.${ext}`
-    const blob = await put(safeName, buffer, { access: 'public', contentType: normalizedMime })
-    return NextResponse.json({ url: blob.url })
+    const url = await uploadToR2(safeName, buffer, normalizedMime)
+    return NextResponse.json({ url })
   } catch (error: any) {
     console.error('Frame upload error:', error)
     return NextResponse.json({ error: error.message || 'Upload failed' }, { status: 500 })

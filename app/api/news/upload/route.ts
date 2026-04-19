@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 
 const ALLOWED_TYPES = [
   'image/jpeg', 'image/png', 'image/gif', 'image/webp',
@@ -29,12 +29,9 @@ export async function POST(req: NextRequest) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
     const filename = `news/${Date.now()}-${safeName}`
 
-    const blob = await put(filename, buffer, {
-      access: 'public',
-      contentType: file.type,
-    })
+    const url = await uploadToR2(filename, buffer, file.type)
 
-    return NextResponse.json({ url: blob.url })
+    return NextResponse.json({ url })
   } catch (err) {
     console.error('POST /api/news/upload error:', err)
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 })

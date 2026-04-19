@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 import { PrismaClient } from '@prisma/client'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
@@ -75,11 +75,8 @@ export async function POST(req: Request) {
       const buffer = Buffer.from(await res.arrayBuffer())
       const ext = output_format === 'jpeg' ? 'jpg' : output_format
       const filename = `nb2-proto-${Date.now()}-${i}.${ext}`
-      const blob = await put(filename, buffer, {
-        access: 'public',
-        contentType: `image/${output_format === 'jpeg' ? 'jpeg' : output_format}`,
-      })
-      hostedImages.push({ url: blob.url, width: falImg.width, height: falImg.height })
+      const url = await uploadToR2(filename, buffer, `image/${output_format === 'jpeg' ? 'jpeg' : output_format}`)
+      hostedImages.push({ url, width: falImg.width, height: falImg.height })
     }
 
     // Save to DB under the first user (admin/site owner).

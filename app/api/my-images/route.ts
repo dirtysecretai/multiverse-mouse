@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
-import { del } from '@vercel/blob'
+import { deleteFromR2 } from '@/lib/r2'
 
 const prisma = new PrismaClient()
 
@@ -126,7 +126,7 @@ export async function DELETE(request: Request) {
     // Hard-delete the actual files from Vercel Blob storage (non-fatal if it fails)
     if (images.length > 0) {
       try {
-        await del(images.map(img => img.imageUrl))
+        await deleteFromR2(images.map(img => img.imageUrl))
       } catch (blobErr) {
         console.error('Blob deletion failed (non-fatal):', blobErr)
       }

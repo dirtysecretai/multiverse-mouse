@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 import prisma from '@/lib/prisma'
 import { FAL_GLOBAL_ID, promoteNextQueuedJob } from '@/lib/fal-queue'
 
@@ -150,11 +150,8 @@ export async function POST(request: Request) {
 
           // Upload to Vercel Blob
           const filename = `universe-scan-${queueItem.userId}-${Date.now()}-${i}.png`
-          const blob = await put(filename, imgBuffer, {
-            access: 'public',
-            contentType: 'image/png',
-          })
-          console.log(`Uploaded image ${i + 1} to blob: ${blob.url}`)
+          const url = await uploadToR2(filename, imgBuffer, 'image/png')
+          console.log(`Uploaded image ${i + 1} to blob: ${url}`)
 
           // Save to GeneratedImage table
           const ticketCostForThisImage = i === 0 && !isAdminMode ? queueItem.ticketCost : 0
@@ -163,7 +160,7 @@ export async function POST(request: Request) {
             data: {
               userId: queueItem.userId,
               prompt: params?.savePrompt || queueItem.prompt,
-              imageUrl: blob.url,
+              imageUrl: url,
               model: queueItem.modelId,
               ticketCost: isAdminMode ? 0 : ticketCostForThisImage,
               referenceImageUrls: (params?.referenceImageUrls as string[]) || [],
@@ -173,7 +170,7 @@ export async function POST(request: Request) {
             }
           })
 
-          uploadedImages.push({ url: blob.url, id: savedImage.id })
+          uploadedImages.push({ url, id: savedImage.id })
           console.log(`Saved GeneratedImage #${savedImage.id}`)
         } catch (imgError) {
           console.error(`Error processing image ${i + 1}:`, imgError)

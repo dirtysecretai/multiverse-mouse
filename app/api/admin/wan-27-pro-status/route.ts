@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 import prisma from '@/lib/prisma'
 import { releaseQueueSlot } from '@/lib/admin-queue-helpers'
 import { getUserFromSession } from '@/lib/auth'
@@ -43,11 +43,8 @@ export async function POST(req: Request) {
           if (!res.ok) continue
           const buffer = Buffer.from(await res.arrayBuffer())
           const filename = `wan27-${Date.now()}-${i}.png`
-          const blob = await put(filename, buffer, {
-            access: 'public',
-            contentType: 'image/png',
-          })
-          hostedImages.push({ url: blob.url, width: falImg.width, height: falImg.height })
+          const url = await uploadToR2(filename, buffer, 'image/png')
+          hostedImages.push({ url, width: falImg.width, height: falImg.height })
         } catch (e) {
           console.error(`wan-27-pro-status: failed to re-host image ${i}:`, e)
         }

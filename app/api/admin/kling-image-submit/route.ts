@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { fal } from '@fal-ai/client'
-import { put } from '@vercel/blob'
+import { uploadToR2 } from '@/lib/r2'
 import prisma from '@/lib/prisma'
 import { syncAndClaimFalSlot } from '@/lib/admin-queue-helpers'
 import { getUserFromSession } from '@/lib/auth'
@@ -47,11 +47,8 @@ export async function POST(req: Request) {
         const falBlob = new Blob([buffer], { type: mimeType })
         hostedUrl = await fal.storage.upload(falBlob)
         const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg'
-        const vBlob = await put(`reference-kling-v3-${Date.now()}.${ext}`, buffer, {
-          access: 'public',
-          contentType: mimeType,
-        })
-        permanentReferenceUrls.push(vBlob.url)
+        const vUrl = await uploadToR2(`reference-kling-v3-${Date.now()}.${ext}`, buffer, mimeType)
+        permanentReferenceUrls.push(vUrl)
       } else {
         // Already a permanent https:// URL
         permanentReferenceUrls.push(image_url)

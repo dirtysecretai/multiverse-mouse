@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { put } from '@vercel/blob';
+import { uploadToR2 } from '@/lib/r2';
 
 const prisma = new PrismaClient();
 
@@ -29,13 +29,10 @@ export async function POST(request: Request) {
           const buffer = Buffer.from(base64Content, 'base64');
 
           const filename = `echo-${Date.now()}-${i}.${extension}`;
-          const blob = await put(filename, buffer, {
-            access: 'public',
-            contentType: `image/${extension}`
-          });
+          const url = await uploadToR2(filename, buffer, `image/${extension}`);
 
-          imageUrls.push(blob.url);
-          console.log(`Image ${i + 1} uploaded:`, blob.url);
+          imageUrls.push(url);
+          console.log(`Image ${i + 1} uploaded:`, url);
         }
       }
     }

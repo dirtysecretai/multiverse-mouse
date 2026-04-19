@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
-import { put, del } from '@vercel/blob'
+import { uploadToR2, deleteFromR2 } from '@/lib/r2'
 
 const prisma = new PrismaClient()
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
@@ -41,19 +41,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Upload to Vercel Blob
+    // Upload to R2
     const arrayBuffer = await image.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
-    const blob = await put(
+    const url = await uploadToR2(
       `carousel-${side}-${Date.now()}.${image.name.split('.').pop()}`,
       buffer,
-      { access: 'public', contentType: image.type }
+      image.type
     )
 
     // Save to database
     const carousel = await prisma.carouselImage.create({
       data: {
-        imageUrl: blob.url,
+        imageUrl: url,
         side: side,
         position: position || 0,
         isActive: true
@@ -112,7 +112,7 @@ export async function DELETE(request: Request) {
 
     // Try to delete blob (may not exist)
     try {
-      await del(carousel.imageUrl)
+      await deleteFromR2(carousel.imageUrl)
     } catch (err) {
       console.log('Could not delete blob (might not exist):', err)
     }
