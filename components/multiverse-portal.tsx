@@ -174,26 +174,28 @@ export default function MultiversePortalLegacy() {
         const rescanRefImages = localStorage.getItem('rescan_reference_images')
         localStorage.removeItem('rescan_reference_images')
         if (rescanRefImages) {
-          try {
-            const refUrls: string[] = JSON.parse(rescanRefImages)
-            if (Array.isArray(refUrls) && refUrls.length > 0) {
-              const base64s = await Promise.all(
-                refUrls.slice(0, 8).map(url =>
-                  fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`)
-                    .then(r => r.blob())
-                    .then(blob => new Promise<string>((resolve, reject) => {
-                      const reader = new FileReader()
-                      reader.onload = () => resolve(reader.result as string)
-                      reader.onerror = reject
-                      reader.readAsDataURL(blob)
-                    }))
+          ;(async () => {
+            try {
+              const refUrls: string[] = JSON.parse(rescanRefImages)
+              if (Array.isArray(refUrls) && refUrls.length > 0) {
+                const base64s = await Promise.all(
+                  refUrls.slice(0, 8).map(url =>
+                    fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`)
+                      .then(r => r.blob())
+                      .then(blob => new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader()
+                        reader.onload = () => resolve(reader.result as string)
+                        reader.onerror = reject
+                        reader.readAsDataURL(blob)
+                      }))
+                  )
                 )
-              )
-              setReferenceImages(base64s)
+                setReferenceImages(base64s)
+              }
+            } catch (e) {
+              console.error('Failed to load rescan reference images:', e)
             }
-          } catch (e) {
-            console.error('Failed to load rescan reference images:', e)
-          }
+          })()
         }
 
         // Scroll to scanner section after a brief delay

@@ -9,7 +9,6 @@ import { Scan, Upload, X, Wand2, Zap, ArrowLeft, Ticket, ChevronDown, Image as I
 import Link from 'next/link';
 import { getModelConfig, getAllModels } from '../modelConfig';
 import { SavedModelPicker } from '@/components/SavedModelPicker';
-import { upload } from '@vercel/blob/client';
 
 interface GeneratedImage {
   id: string;
@@ -648,10 +647,10 @@ export default function LegacyScanner() {
       if (referenceImages.length > 0) {
         for (const file of referenceImages) {
           try {
-            const blob = await upload(file.name, file, {
-              access: 'public',
-              handleUploadUrl: '/api/upload-reference',
-            });
+            const fd = new FormData();
+            fd.append('file', file);
+            const res = await fetch('/api/upload-reference', { method: 'POST', body: fd });
+            const blob = await res.json();
             if (blob.url) referenceUrls.push(blob.url);
           } catch (err) {
             console.error('Failed to upload reference:', err);
