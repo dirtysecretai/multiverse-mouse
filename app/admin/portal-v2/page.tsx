@@ -181,9 +181,12 @@ async function compressBlobToDataUrl(blob: Blob, maxSize = 1920, quality = 0.85)
 
 async function refImageToBase64(img: RefImage): Promise<string> {
   if (img.file) return compressFileToDataUrl(img.file, 1920, 0.85)
+  // Data URLs are already base64 — no network fetch needed
+  if (img.url.startsWith("data:")) return img.url
   // Route through our proxy to avoid CORS issues on Safari when fetching cross-origin R2 URLs
   const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(img.url)}`
   const res = await fetch(proxyUrl)
+  if (!res.ok) throw new Error(`Failed to load reference image (${res.status})`)
   const blob = await res.blob()
   return compressBlobToDataUrl(blob, 1920, 0.85)
 }
@@ -5186,47 +5189,13 @@ export default function PortalV2Page() {
   const [selectedModel, setSelectedModel] = useState<ImageModelConfig>(
     () => IMAGE_MODEL_CONFIGS.find(m => m.id === "nano-banana-pro-2")!
   )
-  const [pendingSlots, setPendingSlots] = useState<PendingSlot[]>(() => {
-    if (typeof window === "undefined") return []
-    try {
-      const stored = sessionStorage.getItem("pv2-pending-slots")
-      if (stored) return JSON.parse(stored) as PendingSlot[]
-    } catch {}
-    return []
-  })
+  const [pendingSlots, setPendingSlots] = useState<PendingSlot[]>([])
   const [freshImages, setFreshImages] = useState<ImageItem[]>([])
   // Restored failures from a previous session — kept separate so they can be
   // interleaved with DB images by timestamp instead of crowding the top of the feed.
-  const [savedFails, setSavedFails] = useState<ImageItem[]>(() => {
-    if (typeof window === "undefined") return []
-    try {
-      const stored = sessionStorage.getItem("pv2-failed-images")
-      if (stored) return JSON.parse(stored) as ImageItem[]
-    } catch {}
-    return []
-  })
-  const [refLibrary, setRefLibrary] = useState<RefImage[]>(() => {
-    if (typeof window === "undefined") return []
-    try {
-      const stored = localStorage.getItem("pv2-ref-library")
-      if (stored) {
-        const { library } = JSON.parse(stored)
-        if (Array.isArray(library)) return library
-      }
-    } catch {}
-    return []
-  })
-  const [activeRefIds, setActiveRefIds] = useState<string[]>(() => {
-    if (typeof window === "undefined") return []
-    try {
-      const stored = localStorage.getItem("pv2-ref-library")
-      if (stored) {
-        const { activeIds } = JSON.parse(stored)
-        if (Array.isArray(activeIds)) return activeIds
-      }
-    } catch {}
-    return []
-  })
+  const [savedFails, setSavedFails] = useState<ImageItem[]>([])
+  const [refLibrary, setRefLibrary] = useState<RefImage[]>([])
+  const [activeRefIds, setActiveRefIds] = useState<string[]>([])
   const [hasPromptStudioDev, setHasPromptStudioDev] = useState(false)
   const [promptOverride, setPromptOverride] = useState<{ text: string; version: number }>({ text: "", version: 0 })
   const [videoPromptOverride, setVideoPromptOverride] = useState<{ text: string; version: number }>({ text: "", version: 0 })
@@ -5374,29 +5343,8 @@ export default function PortalV2Page() {
   const [videoEndFramePreview, setVideoEndFramePreview] = useState<string | null>(null)
   const [videoEndFrameUrl, setVideoEndFrameUrl] = useState<string | null>(null)
   const [videoItems, setVideoItems] = useState<VideoItem[]>([])
-  const [videoPendingSlots, setVideoPendingSlots] = useState<VideoPendingSlot[]>(() => {
-    if (typeof window === "undefined") return []
-    try {
-      const stored = sessionStorage.getItem("pv2-video-pending-slots")
-      if (stored) {
-        const slots = JSON.parse(stored) as VideoPendingSlot[]
-        // Keep slots up to 90 min old — startVideoPolling will immediately fail ones
-        // that are past the poll timeout (20 min) so they show a failed tile instead
-        // of being silently dropped.
-        const cutoff = Date.now() - 90 * 60 * 1000
-        return slots.filter(s => !s.startedAt || s.startedAt > cutoff)
-      }
-    } catch {}
-    return []
-  })
-  const [savedVideoFails, setSavedVideoFails] = useState<VideoItem[]>(() => {
-    if (typeof window === "undefined") return []
-    try {
-      const stored = sessionStorage.getItem("pv2-video-failed-items")
-      if (stored) return JSON.parse(stored) as VideoItem[]
-    } catch {}
-    return []
-  })
+  const [videoPendingSlots, setVideoPendingSlots] = useState<VideoPendingSlot[]>([])
+  const [savedVideoFails, setSavedVideoFails] = useState<VideoItem[]>([])
   const [videoGenerating, setVideoGenerating] = useState(false)
   const videoPollingIntervals = useRef<Record<string, ReturnType<typeof setInterval>>>({})
   const [videoConfigOpen, setVideoConfigOpen] = useState(false)
@@ -6191,39 +6139,11 @@ export default function PortalV2Page() {
     pollingIntervals.current[queueId] = interval
   }, [handlePrependImage, handleRemovePending, handleUpdatePending, handleBalanceChange])
 
-  // Persist loading pending slots so they survive a refresh (failed slots live in freshImages now).
-  useEffect(() => {
-    try {
-      sessionStorage.setItem("pv2-pending-slots", JSON.stringify(pendingSlots.filter(s => s.status !== "failed")))
-    } catch {}
-  }, [pendingSlots])
-
-  // Persist video pending slots so they survive a refresh.
-  useEffect(() => {
-    try {
-      sessionStorage.setItem("pv2-video-pending-slots", JSON.stringify(videoPendingSlots))
-    } catch {}
-  }, [videoPendingSlots])
-
   // Start/resume polling whenever pending slots change (handles new generations + page refresh restore).
   // Skip queued slots (no requestId yet) — startQueuePollingForVideoSlot handles those.
   useEffect(() => {
     videoPendingSlots.forEach(slot => { if (slot.requestId) startVideoPolling(slot) })
   }, [videoPendingSlots, startVideoPolling])
-
-  // Persist failed feed tiles for the next refresh (interleaved with DB images by timestamp).
-  useEffect(() => {
-    try {
-      sessionStorage.setItem("pv2-failed-images", JSON.stringify(savedFails))
-    } catch {}
-  }, [savedFails])
-
-  // Persist failed video tiles so they survive a refresh.
-  useEffect(() => {
-    try {
-      sessionStorage.setItem("pv2-video-failed-items", JSON.stringify(savedVideoFails))
-    } catch {}
-  }, [savedVideoFails])
 
   // Queue limits — owner accounts: unlimited, dev tier: 6 image / 2 video, free: 2 image / 1 video
   const isOwner = user?.email === "dirtysecretai@gmail.com" || user?.email === "promptandprotocol@gmail.com"
@@ -6287,12 +6207,57 @@ export default function PortalV2Page() {
   const REF_STORAGE_KEY = "pv2-ref-library"
   const SETTINGS_STORAGE_KEY = "pv2-settings"
 
-  // Persist ref library + active IDs whenever they change
+  // Single effect: first run = restore all session/local storage, subsequent runs = persist.
+  // This prevents the "save empty defaults over stored values" race that occurs when
+  // useState lazy-initialisers read storage on the client but return [] on the server,
+  // causing a hydration mismatch. By initialising all six states as [] and loading here,
+  // server and client always agree on the initial render.
+  const storageInitialized = useRef(false)
   useEffect(() => {
-    try {
-      localStorage.setItem(REF_STORAGE_KEY, JSON.stringify({ library: refLibrary, activeIds: activeRefIds }))
-    } catch { /* QuotaExceededError — silently skip */ }
-  }, [refLibrary, activeRefIds])
+    if (!storageInitialized.current) {
+      storageInitialized.current = true
+      // pendingSlots
+      try {
+        const stored = sessionStorage.getItem("pv2-pending-slots")
+        if (stored) setPendingSlots(JSON.parse(stored) as PendingSlot[])
+      } catch {}
+      // savedFails
+      try {
+        const stored = sessionStorage.getItem("pv2-failed-images")
+        if (stored) setSavedFails(JSON.parse(stored) as ImageItem[])
+      } catch {}
+      // videoPendingSlots (drop slots > 90 min old)
+      try {
+        const stored = sessionStorage.getItem("pv2-video-pending-slots")
+        if (stored) {
+          const slots = JSON.parse(stored) as VideoPendingSlot[]
+          const cutoff = Date.now() - 90 * 60 * 1000
+          setVideoPendingSlots(slots.filter(s => !s.startedAt || s.startedAt > cutoff))
+        }
+      } catch {}
+      // savedVideoFails
+      try {
+        const stored = sessionStorage.getItem("pv2-video-failed-items")
+        if (stored) setSavedVideoFails(JSON.parse(stored) as VideoItem[])
+      } catch {}
+      // ref library + active IDs
+      try {
+        const stored = localStorage.getItem(REF_STORAGE_KEY)
+        if (stored) {
+          const { library, activeIds } = JSON.parse(stored)
+          if (Array.isArray(library)) setRefLibrary(library)
+          if (Array.isArray(activeIds)) setActiveRefIds(activeIds)
+        }
+      } catch {}
+      return // Don't save on the restore run
+    }
+    // Persist all storage-backed state
+    try { sessionStorage.setItem("pv2-pending-slots", JSON.stringify(pendingSlots.filter(s => s.status !== "failed"))) } catch {}
+    try { sessionStorage.setItem("pv2-failed-images", JSON.stringify(savedFails)) } catch {}
+    try { sessionStorage.setItem("pv2-video-pending-slots", JSON.stringify(videoPendingSlots)) } catch {}
+    try { sessionStorage.setItem("pv2-video-failed-items", JSON.stringify(savedVideoFails)) } catch {}
+    try { localStorage.setItem(REF_STORAGE_KEY, JSON.stringify({ library: refLibrary, activeIds: activeRefIds })) } catch {}
+  }, [pendingSlots, savedFails, videoPendingSlots, savedVideoFails, refLibrary, activeRefIds])
 
   // Single effect: first run = restore from localStorage, subsequent runs = save.
   // This prevents the "save default over stored value" race that separate restore/save effects cause.

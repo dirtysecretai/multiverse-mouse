@@ -16,6 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "AI Design Studio | Custom AI Content",
   description: "Exclusive AI-generated galleries, commissions, and custom content",
+  formatDetection: { telephone: false },
   openGraph: {
     title: "AI Design Studio | Custom AI Content",
     description: "Exclusive AI-generated galleries, commissions, and custom content",
@@ -36,8 +37,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
+        suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
