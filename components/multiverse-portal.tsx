@@ -170,18 +170,30 @@ export default function MultiversePortalLegacy() {
         setCoordinates(rescanPrompt)
         localStorage.removeItem('rescan_prompt')
 
-        // Also load reference images if they exist
+        // Also load reference images if they exist — fetch via proxy to avoid CORS on Safari
         const rescanRefImages = localStorage.getItem('rescan_reference_images')
+        localStorage.removeItem('rescan_reference_images')
         if (rescanRefImages) {
           try {
-            const refUrls = JSON.parse(rescanRefImages)
+            const refUrls: string[] = JSON.parse(rescanRefImages)
             if (Array.isArray(refUrls) && refUrls.length > 0) {
-              setReferenceImages(refUrls)
+              const base64s = await Promise.all(
+                refUrls.slice(0, 8).map(url =>
+                  fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`)
+                    .then(r => r.blob())
+                    .then(blob => new Promise<string>((resolve, reject) => {
+                      const reader = new FileReader()
+                      reader.onload = () => resolve(reader.result as string)
+                      reader.onerror = reject
+                      reader.readAsDataURL(blob)
+                    }))
+                )
+              )
+              setReferenceImages(base64s)
             }
           } catch (e) {
-            console.error('Failed to parse rescan reference images:', e)
+            console.error('Failed to load rescan reference images:', e)
           }
-          localStorage.removeItem('rescan_reference_images')
         }
 
         // Scroll to scanner section after a brief delay
@@ -592,7 +604,7 @@ export default function MultiversePortalLegacy() {
     try {
       const base64Images = await Promise.all(
         model.referenceImageUrls.map(url =>
-          fetch(url)
+          fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`)
             .then(r => r.blob())
             .then(blob => new Promise<string>((resolve, reject) => {
               const reader = new FileReader()

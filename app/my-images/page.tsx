@@ -38,6 +38,10 @@ export default function MyImagesGalleryPage() {
   const [pagination, setPagination] = useState<PaginationInfo>({ page: 1, limit: 8, total: 0, totalPages: 0 })
   const [typeFilter, setTypeFilter] = useState<'all' | 'image' | 'video'>('all')
 
+  // Jump-to-page
+  const [goToPageTop, setGoToPageTop]       = useState('')
+  const [goToPageBottom, setGoToPageBottom] = useState('')
+
   // Multi-select & delete state
   const [isSelectMode, setIsSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -282,6 +286,83 @@ export default function MyImagesGalleryPage() {
           </div>
         </div>
 
+        {/* Pagination — top */}
+        {pagination.totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mb-6">
+            <button
+              onClick={() => handlePageChange(pagination.page - 1)}
+              disabled={pagination.page <= 1 || isLoading}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 hover:text-white text-xs disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronLeft size={13} />
+              Prev
+            </button>
+
+            <div className="flex items-center gap-1">
+              {pagination.page > 2 && (
+                <>
+                  <button onClick={() => handlePageChange(1)} className="w-8 h-8 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 text-xs transition-all">1</button>
+                  {pagination.page > 3 && <span className="text-slate-600 text-xs px-1">…</span>}
+                </>
+              )}
+              {pagination.page > 1 && (
+                <button onClick={() => handlePageChange(pagination.page - 1)} className="w-8 h-8 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 text-xs transition-all">{pagination.page - 1}</button>
+              )}
+              <button className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 font-bold text-xs">{pagination.page}</button>
+              {pagination.page < pagination.totalPages && (
+                <button onClick={() => handlePageChange(pagination.page + 1)} className="w-8 h-8 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 text-xs transition-all">{pagination.page + 1}</button>
+              )}
+              {pagination.page < pagination.totalPages - 1 && (
+                <>
+                  {pagination.page < pagination.totalPages - 2 && <span className="text-slate-600 text-xs px-1">…</span>}
+                  <button onClick={() => handlePageChange(pagination.totalPages)} className="w-8 h-8 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 text-xs transition-all">{pagination.totalPages}</button>
+                </>
+              )}
+            </div>
+
+            <button
+              onClick={() => handlePageChange(pagination.page + 1)}
+              disabled={pagination.page >= pagination.totalPages || isLoading}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 text-slate-400 hover:text-white text-xs disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              Next
+              <ChevronRight size={13} />
+            </button>
+
+            <span className="hidden sm:inline text-[10px] text-slate-600 font-mono ml-2">{pagination.total.toLocaleString()} total</span>
+
+            <form
+              onSubmit={e => {
+                e.preventDefault()
+                const n = parseInt(goToPageTop)
+                if (!isNaN(n) && n >= 1 && n <= pagination.totalPages) {
+                  handlePageChange(n)
+                  setGoToPageTop('')
+                }
+              }}
+              className="flex items-center gap-1.5 ml-2"
+            >
+              <span className="text-[10px] text-slate-600 hidden sm:inline">Go to</span>
+              <input
+                type="number"
+                min={1}
+                max={pagination.totalPages}
+                value={goToPageTop}
+                onChange={e => setGoToPageTop(e.target.value)}
+                placeholder={String(pagination.page)}
+                className="w-16 px-2 py-1.5 rounded-lg border border-white/8 bg-white/4 text-white text-xs text-center placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <button
+                type="submit"
+                disabled={!goToPageTop || isLoading}
+                className="px-2.5 py-1.5 rounded-lg border border-white/8 bg-white/4 hover:bg-white/8 text-slate-300 text-xs disabled:opacity-30 transition-all"
+              >
+                Go
+              </button>
+            </form>
+          </div>
+        )}
+
         {/* Grid */}
         {isLoading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -439,7 +520,37 @@ export default function MyImagesGalleryPage() {
                   <ChevronRight size={13} />
                 </button>
 
-                <span className="hidden sm:inline text-[10px] text-slate-600 font-mono ml-2">{pagination.total} total</span>
+                <span className="hidden sm:inline text-[10px] text-slate-600 font-mono ml-2">{pagination.total.toLocaleString()} total</span>
+
+                <form
+                  onSubmit={e => {
+                    e.preventDefault()
+                    const n = parseInt(goToPageBottom)
+                    if (!isNaN(n) && n >= 1 && n <= pagination.totalPages) {
+                      handlePageChange(n)
+                      setGoToPageBottom('')
+                    }
+                  }}
+                  className="flex items-center gap-1.5 ml-2"
+                >
+                  <span className="text-[10px] text-slate-600 hidden sm:inline">Go to</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={pagination.totalPages}
+                    value={goToPageBottom}
+                    onChange={e => setGoToPageBottom(e.target.value)}
+                    placeholder={String(pagination.page)}
+                    className="w-16 px-2 py-1.5 rounded-lg border border-white/8 bg-white/4 text-white text-xs text-center placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!goToPageBottom || isLoading}
+                    className="px-2.5 py-1.5 rounded-lg border border-white/8 bg-white/4 hover:bg-white/8 text-slate-300 text-xs disabled:opacity-30 transition-all"
+                  >
+                    Go
+                  </button>
+                </form>
               </div>
             )}
           </>

@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     if (type === 'video') {
       whereClause = { ...whereClause, NOT: { videoMetadata: { equals: Prisma.JsonNull } } }
     } else if (type === 'image') {
-      whereClause = { ...whereClause, videoMetadata: { equals: Prisma.JsonNull } }
+      whereClause = { ...whereClause, videoMetadata: { equals: Prisma.AnyNull } }
     }
 
     if (userIds.length > 0) {

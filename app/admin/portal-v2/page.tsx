@@ -181,8 +181,9 @@ async function compressBlobToDataUrl(blob: Blob, maxSize = 1920, quality = 0.85)
 
 async function refImageToBase64(img: RefImage): Promise<string> {
   if (img.file) return compressFileToDataUrl(img.file, 1920, 0.85)
-  // URL-based ref (e.g. from the image popup reference button) — fetch, compress, then encode
-  const res = await fetch(img.url)
+  // Route through our proxy to avoid CORS issues on Safari when fetching cross-origin R2 URLs
+  const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(img.url)}`
+  const res = await fetch(proxyUrl)
   const blob = await res.blob()
   return compressBlobToDataUrl(blob, 1920, 0.85)
 }

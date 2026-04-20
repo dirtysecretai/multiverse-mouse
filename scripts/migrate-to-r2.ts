@@ -21,8 +21,8 @@ import * as path from 'path'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const UPLOAD_CONCURRENCY = 6    // parallel uploads
-const DB_CONCURRENCY     = 4    // parallel DB updates
+const UPLOAD_CONCURRENCY = 3    // parallel uploads
+const DB_CONCURRENCY     = 2    // parallel DB updates
 const DB_BATCH           = 100  // records per DB query
 const RETRY_ATTEMPTS     = 3    // retries for transient errors
 const DELAY_BETWEEN_MS   = 0    // no delay
@@ -70,7 +70,7 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
     try {
       return await fn()
     } catch (err: any) {
-      const isTransient = err?.code === 'P5010' || err?.code === 'P1001' || err?.code === 'ETIMEDOUT'
+      const isTransient = err?.code === 'P5010' || err?.code === 'P1001' || err?.code === 'ETIMEDOUT' || err?.code === 'P2024'
       if (isTransient && attempt < RETRY_ATTEMPTS) {
         await sleep(1000 * 2 ** attempt)
         continue
@@ -108,22 +108,29 @@ type FetchResult =
   | { status: 'error'; message: string }
 
 async function fetchBlob(url: string): Promise<FetchResult> {
-  try {
-    await sleep(DELAY_BETWEEN_MS)
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(30_000),
-      headers: BLOB_TOKEN ? { Authorization: `Bearer ${BLOB_TOKEN}` } : {},
-    })
-    if (res.status === 403 || res.status === 404) return { status: 'dead' }
-    if (!res.ok) return { status: 'error', message: `HTTP ${res.status}` }
-    return {
-      status: 'ok',
-      buf: Buffer.from(await res.arrayBuffer()),
-      contentType: res.headers.get('content-type') || 'image/png',
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+    try {
+      await sleep(DELAY_BETWEEN_MS)
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(30_000),
+        headers: BLOB_TOKEN ? { Authorization: `Bearer ${BLOB_TOKEN}` } : {},
+      })
+      if (res.status === 403 || res.status === 404) return { status: 'dead' }
+      if (!res.ok) return { status: 'error', message: `HTTP ${res.status}` }
+      return {
+        status: 'ok',
+        buf: Buffer.from(await res.arrayBuffer()),
+        contentType: res.headers.get('content-type') || 'image/png',
+      }
+    } catch (err: any) {
+      if (attempt < RETRY_ATTEMPTS) {
+        await sleep(500 * attempt)
+        continue
+      }
+      return { status: 'error', message: err.message }
     }
-  } catch (err: any) {
-    return { status: 'error', message: err.message }
   }
+  return { status: 'error', message: 'unreachable' }
 }
 
 // ─── Counters ─────────────────────────────────────────────────────────────────
@@ -270,6 +277,68 @@ async function migrateTrainingData() {
   console.log()
 }
 
+// ─── Carousel Images ──────────────────────────────────────────────────────────
+
+async function migrateCarouselImages() {
+  const total = await withRetry(
+    () => (prisma as any).carouselImage.count({
+      where: { imageUrl: { contains: 'vercel-storage' } },
+    }),
+    'count CarouselImage'
+  ) as number
+
+  if (total === 0) { console.log('  CarouselImage — nothing to migrate'); return }
+  console.log(`\n  CarouselImage — ${total} records`)
+
+  let done = 0
+  let cursor: number | undefined
+
+  while (true) {
+    const rows: { id: number; imageUrl: string }[] = await withRetry(
+      () => (prisma as any).carouselImage.findMany({
+        where: { imageUrl: { contains: 'vercel-storage' } },
+        select: { id: true, imageUrl: true },
+        take: DB_BATCH,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { id: 'asc' },
+      }),
+      'fetch CarouselImage batch'
+    )
+    if (rows.length === 0) break
+    cursor = rows[rows.length - 1].id
+
+    const tasks = rows.map(row => async () => {
+      if (!isVercelUrl(row.imageUrl)) { totalSkipped++; done++; progress('CarouselImage', done, total); return }
+
+      const key = extractKey(row.imageUrl)
+      const fetched = await fetchBlob(row.imageUrl)
+
+      if (fetched.status === 'dead') {
+        totalDead++
+      } else if (fetched.status === 'ok') {
+        await withRetry(
+          () => r2.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: fetched.buf, ContentType: fetched.contentType })),
+          `r2 upload ${key}`
+        )
+        await withRetry(
+          () => (prisma as any).carouselImage.update({ where: { id: row.id }, data: { imageUrl: `${PUBLIC_URL}/${key}` } }),
+          `db update carousel ${row.id}`
+        )
+        totalMigrated++
+      } else {
+        totalErrors++
+        logError(`FAILED carousel id=${row.id} url=${row.imageUrl} error=${fetched.message}`)
+      }
+
+      done++
+      progress('CarouselImage', done, total)
+    })
+
+    await pool(tasks, UPLOAD_CONCURRENCY)
+  }
+  console.log()
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -290,7 +359,7 @@ async function main() {
 
   await migrateGeneratedImages()
   await migrateTrainingData()
-  // Carousel images skipped — no longer public
+  await migrateCarouselImages()
 
   const elapsed = ((Date.now() - start) / 1000 / 60).toFixed(1)
 
