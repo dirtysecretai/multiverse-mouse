@@ -190,35 +190,55 @@ function MigrationPanel() {
 type CleanupStatus = 'checking' | 'idle' | 'running' | 'paused' | 'done' | 'error'
 
 function BlobCleanupPanel() {
-  const [status, setStatus]       = useState<CleanupStatus>('checking')
-  // hasMore = true means there are likely more than 1 000 blobs (we only sample the first page)
-  const [firstPageCount, setFirstPageCount] = useState<number | null>(null)
-  const [hasMoreBlobs, setHasMoreBlobs]     = useState(false)
-  const [deleted, setDeleted]     = useState(0)
-  const [errorMsg, setErrorMsg]   = useState<string | null>(null)
-  const runningRef                = useRef(false)
-  const adminPassword             = typeof window !== 'undefined'
-                                      ? sessionStorage.getItem('admin-password') ?? ''
-                                      : ''
+  const [status, setStatus]     = useState<CleanupStatus>('checking')
+  const [total, setTotal]       = useState<number | null>(null)   // null = still counting
+  const [counting, setCounting] = useState(true)                  // full count in progress
+  const [deleted, setDeleted]   = useState(0)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const runningRef              = useRef(false)
 
+  const adminPassword = typeof window !== 'undefined'
+    ? sessionStorage.getItem('admin-password') ?? ''
+    : ''
   const authHeaders = { 'x-admin-password': adminPassword }
 
-  // On mount: quick single-page check — fast, never times out
   useEffect(() => {
-    const check = async () => {
+    // 1. Quick check first (single page) — shows idle/done almost instantly
+    const quickCheck = async () => {
       try {
-        const res  = await fetch(`/api/admin/blob-cleanup?t=${Date.now()}`, { headers: authHeaders })
+        const res  = await fetch(`/api/admin/blob-cleanup?quick=1&t=${Date.now()}`, { headers: authHeaders })
         const data = await res.json()
         if (data.error) throw new Error(data.error)
-        setFirstPageCount(data.count ?? 0)
-        setHasMoreBlobs(data.hasMore ?? false)
-        setStatus(data.count === 0 && !data.hasMore ? 'done' : 'idle')
+        if (data.total === 0 && !data.hasMore) {
+          setTotal(0)
+          setStatus('done')
+          setCounting(false)
+          return false // no blobs — skip full count
+        }
+        setStatus('idle')
+        return true
       } catch (err: any) {
         setErrorMsg(err.message)
         setStatus('error')
+        setCounting(false)
+        return false
       }
     }
-    check()
+
+    // 2. Full count in background — updates total without blocking the UI
+    const fullCount = async () => {
+      try {
+        const res  = await fetch(`/api/admin/blob-cleanup?t=${Date.now()}`, { headers: authHeaders })
+        const data = await res.json()
+        if (!data.error) setTotal(data.total ?? 0)
+      } catch {
+        // non-fatal — UI still works without the total
+      } finally {
+        setCounting(false)
+      }
+    }
+
+    quickCheck().then(hasBlobs => { if (hasBlobs) fullCount() })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -232,14 +252,8 @@ function BlobCleanupPanel() {
 
     try {
       while (runningRef.current) {
-        const res = await fetch('/api/admin/blob-cleanup', {
-          method: 'POST',
-          headers: authHeaders,
-        })
-        if (res.status === 429) {
-          await delay(4000)
-          continue
-        }
+        const res = await fetch('/api/admin/blob-cleanup', { method: 'POST', headers: authHeaders })
+        if (res.status === 429) { await delay(4000); continue }
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
           throw new Error(data.error ?? `Server error ${res.status}`)
@@ -248,12 +262,8 @@ function BlobCleanupPanel() {
         if (data.error) throw new Error(data.error)
         const count = data.deleted ?? 0
         setDeleted(prev => prev + count)
-        if (count === 0) {
-          runningRef.current = false
-          setStatus('done')
-          break
-        }
-        await delay(500)
+        if (count === 0) { runningRef.current = false; setStatus('done'); break }
+        await delay(1000)
       }
     } catch (err: any) {
       runningRef.current = false
@@ -262,16 +272,10 @@ function BlobCleanupPanel() {
     }
   }
 
-  const pauseDeletion = () => {
-    runningRef.current = false
-    setStatus('paused')
-  }
+  const pauseDeletion = () => { runningRef.current = false; setStatus('paused') }
 
-  const blobLabel = firstPageCount !== null
-    ? hasMoreBlobs
-      ? `${firstPageCount.toLocaleString()}+ blobs`
-      : `${firstPageCount.toLocaleString()} blob${firstPageCount !== 1 ? 's' : ''}`
-    : null
+  const remaining = total !== null ? Math.max(0, total - deleted) : null
+  const pct       = total && total > 0 ? Math.min(100, (deleted / total) * 100) : 0
 
   return (
     <div className="rounded-xl bg-white/[0.03] border border-white/[0.07] p-4 space-y-4">
@@ -286,26 +290,36 @@ function BlobCleanupPanel() {
             <p className="text-[10px] text-slate-600 mt-0.5">Delete files from Vercel Blob</p>
           </div>
         </div>
-        {status === 'checking' && <Loader2 size={12} className="animate-spin text-slate-600" />}
-        {status === 'running' && (
-          <span className="flex items-center gap-1 text-[10px] text-amber-400/80">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-            Deleting
-          </span>
-        )}
-        {status === 'done' && (
-          <span className="flex items-center gap-1 text-[10px] text-emerald-400/80">
-            <CheckCircle2 size={11} className="text-emerald-400" />
-            Empty
-          </span>
-        )}
-        {status === 'paused' && (
-          <span className="flex items-center gap-1 text-[10px] text-slate-400/80">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-            Paused
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {counting && <Loader2 size={11} className="animate-spin text-slate-600" />}
+          {status === 'running' && (
+            <span className="flex items-center gap-1 text-[10px] text-amber-400/80">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              Deleting
+            </span>
+          )}
+          {status === 'done' && (
+            <span className="flex items-center gap-1 text-[10px] text-emerald-400/80">
+              <CheckCircle2 size={11} className="text-emerald-400" />
+              Empty
+            </span>
+          )}
+          {status === 'paused' && (
+            <span className="flex items-center gap-1 text-[10px] text-slate-400/80">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+              Paused
+            </span>
+          )}
+        </div>
       </div>
+
+      {/* Checking spinner (before quick check returns) */}
+      {status === 'checking' && (
+        <div className="flex items-center gap-2 text-[11px] text-slate-600">
+          <Loader2 size={12} className="animate-spin" />
+          Checking Vercel Blob…
+        </div>
+      )}
 
       {/* Error */}
       {status === 'error' && (
@@ -328,31 +342,50 @@ function BlobCleanupPanel() {
         </div>
       )}
 
-      {/* Counter (idle / running / paused) */}
+      {/* Progress counter (idle / running / paused) */}
       {(status === 'idle' || status === 'running' || status === 'paused') && (
         <>
           <div className="rounded-lg bg-white/[0.03] border border-white/[0.05] p-3 space-y-2">
             <div className="flex items-end justify-between">
               <div>
-                <p className="text-[10px] text-slate-600 uppercase tracking-widest">Deleted this session</p>
+                <p className="text-[10px] text-slate-600 uppercase tracking-widest">Deleted</p>
                 <p className="text-2xl font-bold text-white tabular-nums leading-none mt-0.5">
                   {deleted.toLocaleString()}
+                  {total !== null && (
+                    <span className="text-sm font-normal text-slate-600"> / {total.toLocaleString()}</span>
+                  )}
                 </p>
               </div>
-              {blobLabel && status === 'idle' && deleted === 0 && (
-                <p className="text-[10px] text-orange-400/70 tabular-nums text-right">
-                  {blobLabel} on Vercel
-                </p>
+              <div className="text-right">
+                {total !== null ? (
+                  <>
+                    <p className="text-[10px] text-slate-600 tabular-nums">{pct.toFixed(1)}%</p>
+                    {remaining !== null && remaining > 0 && (
+                      <p className="text-[10px] text-orange-400/70 tabular-nums mt-0.5">
+                        {remaining.toLocaleString()} remaining
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-[10px] text-slate-600 tabular-nums">counting…</p>
+                )}
+              </div>
+            </div>
+
+            {/* Progress bar: determinate once total is known, indeterminate while counting */}
+            <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+              {total !== null ? (
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-red-500 to-orange-500 transition-all duration-500"
+                  style={{ width: `${pct}%` }}
+                />
+              ) : (
+                <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-red-500 to-orange-500 opacity-50 animate-pulse" />
               )}
             </div>
-            {/* Indeterminate progress bar while running (we don't know the total) */}
+
             {status === 'running' && (
-              <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
-                <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-red-500 to-orange-500 animate-[slide_1.5s_ease-in-out_infinite]" />
-              </div>
-            )}
-            {status === 'running' && (
-              <p className="text-[10px] text-amber-400/70">Deleting in batches of 250…</p>
+              <p className="text-[10px] text-amber-400/70">Deleting in batches of 100…</p>
             )}
           </div>
 

@@ -22,15 +22,28 @@ async function listBlobs(limit: number, cursor?: string) {
 
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
 
-// GET — quick single-page check; never paginates so it can't timeout
+// GET — paginate all blobs for exact total count
+// ?quick=1 returns only the first page (fast check) for the initial UI load
 export async function GET(req: Request) {
   if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const quick = new URL(req.url).searchParams.get('quick') === '1'
   try {
-    const data = await listBlobs(1000)
-    return NextResponse.json(
-      { count: data.blobs.length, hasMore: data.hasMore },
-      { headers: { 'Cache-Control': 'no-store' } }
-    )
+    if (quick) {
+      const data = await listBlobs(1000)
+      return NextResponse.json(
+        { total: data.blobs.length, hasMore: data.hasMore },
+        { headers: { 'Cache-Control': 'no-store' } }
+      )
+    }
+    // Full count — paginate everything
+    let total = 0
+    let cursor: string | undefined
+    do {
+      const data = await listBlobs(1000, cursor)
+      total += data.blobs.length
+      cursor = data.hasMore ? data.cursor : undefined
+    } while (cursor)
+    return NextResponse.json({ total }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
