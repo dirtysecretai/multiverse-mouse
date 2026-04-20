@@ -187,35 +187,39 @@ function MigrationPanel() {
 
 // ─── Blob Cleanup Panel ───────────────────────────────────────────────────────
 
-type CleanupStatus = 'counting' | 'idle' | 'running' | 'paused' | 'done' | 'error'
+type CleanupStatus = 'checking' | 'idle' | 'running' | 'paused' | 'done' | 'error'
 
 function BlobCleanupPanel() {
-  const [status, setStatus]     = useState<CleanupStatus>('counting')
-  const [total, setTotal]       = useState<number | null>(null)
-  const [deleted, setDeleted]   = useState(0)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const runningRef              = useRef(false)
+  const [status, setStatus]       = useState<CleanupStatus>('checking')
+  // hasMore = true means there are likely more than 1 000 blobs (we only sample the first page)
+  const [firstPageCount, setFirstPageCount] = useState<number | null>(null)
+  const [hasMoreBlobs, setHasMoreBlobs]     = useState(false)
+  const [deleted, setDeleted]     = useState(0)
+  const [errorMsg, setErrorMsg]   = useState<string | null>(null)
+  const runningRef                = useRef(false)
+  const adminPassword             = typeof window !== 'undefined'
+                                      ? sessionStorage.getItem('admin-password') ?? ''
+                                      : ''
 
-  // On mount: count all blobs to get the starting total
+  const authHeaders = { 'x-admin-password': adminPassword }
+
+  // On mount: quick single-page check — fast, never times out
   useEffect(() => {
-    const count = async () => {
+    const check = async () => {
       try {
-        const res  = await fetch(`/api/admin/blob-cleanup?t=${Date.now()}`)
+        const res  = await fetch(`/api/admin/blob-cleanup?t=${Date.now()}`, { headers: authHeaders })
         const data = await res.json()
         if (data.error) throw new Error(data.error)
-        if (data.total === 0) {
-          setTotal(0)
-          setStatus('done')
-        } else {
-          setTotal(data.total)
-          setStatus('idle')
-        }
+        setFirstPageCount(data.count ?? 0)
+        setHasMoreBlobs(data.hasMore ?? false)
+        setStatus(data.count === 0 && !data.hasMore ? 'done' : 'idle')
       } catch (err: any) {
         setErrorMsg(err.message)
         setStatus('error')
       }
     }
-    count()
+    check()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const startDeletion = async () => {
@@ -228,10 +232,17 @@ function BlobCleanupPanel() {
 
     try {
       while (runningRef.current) {
-        const res  = await fetch('/api/admin/blob-cleanup', { method: 'POST' })
+        const res = await fetch('/api/admin/blob-cleanup', {
+          method: 'POST',
+          headers: authHeaders,
+        })
         if (res.status === 429) {
-          await delay(3000)
+          await delay(4000)
           continue
+        }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data.error ?? `Server error ${res.status}`)
         }
         const data = await res.json()
         if (data.error) throw new Error(data.error)
@@ -242,8 +253,7 @@ function BlobCleanupPanel() {
           setStatus('done')
           break
         }
-        // Small pause between batches to avoid rate limiting
-        await delay(400)
+        await delay(500)
       }
     } catch (err: any) {
       runningRef.current = false
@@ -257,8 +267,11 @@ function BlobCleanupPanel() {
     setStatus('paused')
   }
 
-  const remaining  = total !== null ? Math.max(0, total - deleted) : null
-  const pct        = total && total > 0 ? Math.min(100, (deleted / total) * 100) : 0
+  const blobLabel = firstPageCount !== null
+    ? hasMoreBlobs
+      ? `${firstPageCount.toLocaleString()}+ blobs`
+      : `${firstPageCount.toLocaleString()} blob${firstPageCount !== 1 ? 's' : ''}`
+    : null
 
   return (
     <div className="rounded-xl bg-white/[0.03] border border-white/[0.07] p-4 space-y-4">
@@ -273,6 +286,7 @@ function BlobCleanupPanel() {
             <p className="text-[10px] text-slate-600 mt-0.5">Delete files from Vercel Blob</p>
           </div>
         </div>
+        {status === 'checking' && <Loader2 size={12} className="animate-spin text-slate-600" />}
         {status === 'running' && (
           <span className="flex items-center gap-1 text-[10px] text-amber-400/80">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
@@ -292,14 +306,6 @@ function BlobCleanupPanel() {
           </span>
         )}
       </div>
-
-      {/* Counting spinner */}
-      {status === 'counting' && (
-        <div className="flex items-center gap-2 text-[11px] text-slate-600">
-          <Loader2 size={12} className="animate-spin" />
-          Counting blobs on Vercel…
-        </div>
-      )}
 
       {/* Error */}
       {status === 'error' && (
@@ -322,35 +328,31 @@ function BlobCleanupPanel() {
         </div>
       )}
 
-      {/* Progress counter */}
-      {(status === 'idle' || status === 'running' || status === 'paused') && total !== null && (
+      {/* Counter (idle / running / paused) */}
+      {(status === 'idle' || status === 'running' || status === 'paused') && (
         <>
           <div className="rounded-lg bg-white/[0.03] border border-white/[0.05] p-3 space-y-2">
             <div className="flex items-end justify-between">
               <div>
-                <p className="text-[10px] text-slate-600 uppercase tracking-widest">Deleted</p>
+                <p className="text-[10px] text-slate-600 uppercase tracking-widest">Deleted this session</p>
                 <p className="text-2xl font-bold text-white tabular-nums leading-none mt-0.5">
                   {deleted.toLocaleString()}
-                  <span className="text-sm font-normal text-slate-600"> / {total.toLocaleString()}</span>
                 </p>
               </div>
-              <div className="text-right">
-                <p className="text-[10px] text-slate-600 tabular-nums">{pct.toFixed(1)}%</p>
-                {remaining !== null && (
-                  <p className="text-[10px] text-orange-400/70 tabular-nums mt-0.5">
-                    {remaining.toLocaleString()} remaining
-                  </p>
-                )}
-              </div>
+              {blobLabel && status === 'idle' && deleted === 0 && (
+                <p className="text-[10px] text-orange-400/70 tabular-nums text-right">
+                  {blobLabel} on Vercel
+                </p>
+              )}
             </div>
-            <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-red-500 to-orange-500 transition-all duration-500"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
+            {/* Indeterminate progress bar while running (we don't know the total) */}
             {status === 'running' && (
-              <p className="text-[10px] text-amber-400/70">Deleting in batches of 1,000…</p>
+              <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-red-500 to-orange-500 animate-[slide_1.5s_ease-in-out_infinite]" />
+              </div>
+            )}
+            {status === 'running' && (
+              <p className="text-[10px] text-amber-400/70">Deleting in batches of 250…</p>
             )}
           </div>
 
@@ -358,7 +360,7 @@ function BlobCleanupPanel() {
           {status === 'idle' && (
             <div className="flex items-start gap-2 text-[11px] text-amber-400/70 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2.5">
               <AlertCircle size={12} className="mt-0.5 shrink-0" />
-              <span>This permanently deletes all files from Vercel Blob. Only proceed after confirming the R2 migration is 100% complete.</span>
+              <span>Permanently deletes all files from Vercel Blob. Only proceed after confirming the R2 migration is 100% complete.</span>
             </div>
           )}
         </>

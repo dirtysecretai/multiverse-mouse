@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server"
 
-const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN!
-const BLOB_API   = 'https://blob.vercel-storage.com'
-const HEADERS    = { authorization: `Bearer ${BLOB_TOKEN}`, 'x-api-version': '7' }
+const BLOB_TOKEN  = process.env.BLOB_READ_WRITE_TOKEN!
+const ADMIN_PASS  = process.env.ADMIN_PASSWORD
+const BLOB_API    = 'https://blob.vercel-storage.com'
+const HEADERS     = { authorization: `Bearer ${BLOB_TOKEN}`, 'x-api-version': '7' }
+const BATCH_SIZE  = 100   // conservative — matches official Vercel recommendation
+const MAX_RETRIES = 3
+
+function checkAuth(req: Request) {
+  if (!ADMIN_PASS) return true
+  return req.headers.get('x-admin-password') === ADMIN_PASS
+}
 
 async function listBlobs(limit: number, cursor?: string) {
   const params = new URLSearchParams({ limit: String(limit) })
@@ -12,21 +20,15 @@ async function listBlobs(limit: number, cursor?: string) {
   return res.json() as Promise<{ blobs: { url: string }[]; cursor?: string; hasMore: boolean }>
 }
 
-// GET — paginate through all blobs to get exact total count
-export async function GET() {
+function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
+
+// GET — quick single-page check; never paginates so it can't timeout
+export async function GET(req: Request) {
+  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
-    let total = 0
-    let cursor: string | undefined
-
-    while (true) {
-      const data = await listBlobs(1000, cursor)
-      total += data.blobs.length
-      if (!data.hasMore) break
-      cursor = data.cursor
-    }
-
+    const data = await listBlobs(1000)
     return NextResponse.json(
-      { total },
+      { count: data.blobs.length, hasMore: data.hasMore },
       { headers: { 'Cache-Control': 'no-store' } }
     )
   } catch (err: any) {
@@ -34,31 +36,34 @@ export async function GET() {
   }
 }
 
-function sleep(ms: number) {
-  return new Promise(r => setTimeout(r, ms))
-}
-
-// POST — delete one batch of up to 250 blobs (smaller to avoid 429)
-export async function POST() {
+// POST — list + delete one batch; caller loops until deleted === 0
+export async function POST(req: Request) {
+  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
-    const data = await listBlobs(250)
-    if (data.blobs.length === 0) {
-      return NextResponse.json({ deleted: 0, hasMore: false })
-    }
-    const urls = data.blobs.map((b) => b.url)
+    const data = await listBlobs(BATCH_SIZE)
+    if (data.blobs.length === 0) return NextResponse.json({ deleted: 0, hasMore: false })
 
-    // Retry up to 4 times on 429 with exponential backoff
-    for (let attempt = 1; attempt <= 4; attempt++) {
-      const deleteRes = await fetch(`${BLOB_API}/delete`, {
-        method: 'POST',
+    const urls = data.blobs.map(b => b.url)
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const res = await fetch(`${BLOB_API}/delete`, {
+        method:  'POST',
         headers: { ...HEADERS, 'content-type': 'application/json' },
-        body: JSON.stringify({ urls }),
+        body:    JSON.stringify({ urls }),
       })
-      if (deleteRes.status === 429) {
-        if (attempt < 4) { await sleep(1500 * attempt); continue }
-        return NextResponse.json({ error: 'Rate limited — try again in a moment' }, { status: 429 })
+
+      if (res.status === 429) {
+        if (attempt >= MAX_RETRIES) {
+          return NextResponse.json({ error: 'Rate limited — retry in a moment' }, { status: 429 })
+        }
+        // Honour Retry-After if present, otherwise exponential backoff (2s, 4s, 8s)
+        const retryAfter = res.headers.get('retry-after')
+        const backoff = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt + 1) * 1000
+        await sleep(backoff)
+        continue
       }
-      if (!deleteRes.ok) throw new Error(`Blob delete failed: ${deleteRes.status}`)
+
+      if (!res.ok) throw new Error(`Delete failed: ${res.status}`)
       return NextResponse.json({ deleted: urls.length, hasMore: true })
     }
 
