@@ -175,6 +175,13 @@ model GeneratedImage {
   // re-polls a job whose response was lost (e.g. iOS app kill mid-response)
   falRequestId       String?
 
+  // Admin: mark images for AI training dataset export
+  markedForTraining  Boolean  @default(false)
+  adminTags          String[]
+  adminCaption       String?  @db.Text
+
+  bucketImages       DatasetBucketImage[]
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // NEW: Prompt Intelligence relations
@@ -186,6 +193,8 @@ model GeneratedImage {
   @@index([expiresAt])
   @@index([model]) // Index for analytics
   @@index([falRequestId]) // Idempotency lookups
+  @@index([markedForTraining]) // Dataset export queries
+  @@index([adminTags])         // Tag filter queries
 }
 
 // ============================================
@@ -802,6 +811,36 @@ model AdminAccount {
   updatedAt        DateTime @updatedAt
 
   @@index([email])
+}
+
+// ============================================
+// DATASET BUCKETS (Admin training data collections)
+// ============================================
+
+model DatasetBucket {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?  @db.Text
+  color       String?  // hex or tailwind color token for UI
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  images DatasetBucketImage[]
+
+  @@index([createdAt])
+}
+
+model DatasetBucketImage {
+  bucketId  Int
+  imageId   Int
+  addedAt   DateTime @default(now())
+
+  bucket DatasetBucket  @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+  image  GeneratedImage @relation(fields: [imageId],  references: [id], onDelete: Cascade)
+
+  @@id([bucketId, imageId])
+  @@index([bucketId])
+  @@index([imageId])
 }
 
 // ============================================
