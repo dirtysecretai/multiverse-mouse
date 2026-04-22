@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma'
 import { syncAndClaimFalSlot } from '@/lib/admin-queue-helpers'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
+import { checkUserConcurrency } from '@/lib/user-concurrency'
 
 fal.config({ credentials: process.env.FAL_KEY })
 
@@ -82,6 +83,14 @@ export async function POST(req: Request) {
     const sessionUser = token ? await getUserFromSession(token) : null
     const targetUserId: number | null = sessionUser?.id ?? null
     if (!targetUserId) return NextResponse.json({ error: 'Not authenticated — log in before using the admin scanner' }, { status: 401 })
+
+    const { allowed, activeCount, limit } = await checkUserConcurrency(targetUserId)
+    if (!allowed) {
+      return NextResponse.json(
+        { error: `Queue full (${activeCount}/${limit} active). Wait for a generation to finish.` },
+        { status: 429 }
+      )
+    }
 
     // Sync counter from ground truth, then atomically claim a slot
     const { claimed, maxConcurrent } = await syncAndClaimFalSlot()

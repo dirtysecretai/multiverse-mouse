@@ -33,6 +33,7 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const skip = (page - 1) * limit
     const type = searchParams.get('type') // 'image' | 'video' | null (all)
+    const falRequestIdsParam = searchParams.get('falRequestIds') // comma-separated list
 
     const VIDEO_MODELS = ['wan-2.5', 'kling-v3', 'kling-o3', 'kling-v3-motion', 'seedance-1.5', 'seedance-2.0', 'seedance-2.0-fast', 'lipsync-v3']
     const typeFilter = type === 'image'
@@ -40,6 +41,31 @@ export async function GET(request: Request) {
       : type === 'video'
       ? { model: { in: VIDEO_MODELS } }
       : {}
+
+    // Fast path: fetch by specific FAL request IDs (used by iOS restore to detect completed-while-closed jobs)
+    if (falRequestIdsParam) {
+      const ids = falRequestIdsParam.split(',').map(s => s.trim()).filter(Boolean)
+      const images = await prisma.generatedImage.findMany({
+        where: { userId: user.id, isDeleted: false, falRequestId: { in: ids } },
+        orderBy: { createdAt: 'desc' },
+      })
+      return NextResponse.json({
+        success: true,
+        images: images.map(img => ({
+          id: img.id,
+          prompt: img.prompt,
+          imageUrl: img.imageUrl,
+          model: img.model,
+          referenceImageUrls: img.referenceImageUrls || [],
+          createdAt: img.createdAt,
+          expiresAt: img.expiresAt,
+          quality: img.quality || null,
+          aspectRatio: img.aspectRatio || null,
+          videoMetadata: img.videoMetadata || null,
+          falRequestId: img.falRequestId || null,
+        })),
+      })
+    }
 
     const baseWhere = {
       userId: user.id,

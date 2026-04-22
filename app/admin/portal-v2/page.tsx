@@ -27,7 +27,8 @@ interface ImageItem {
 }
 
 type AspectRatio = "auto" | "1:1" | "2:3" | "3:2" | "4:5" | "5:4" | "3:4" | "4:3" | "9:16" | "16:9" | "21:9"
-type Quality = "1k" | "2k" | "3k" | "4k"
+  | "1024x768" | "1024x1024" | "1024x1536" | "1920x1080" | "2560x1440" | "3840x2160"
+type Quality = "1k" | "2k" | "3k" | "4k" | "low" | "medium" | "high"
 
 // --- IMAGE MODEL CONFIG ---
 interface ImageModelConfig {
@@ -55,21 +56,47 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
   { id: "flux-2",               apiId: "flux-2",                   name: "FLUX 2",              aspectRatios: ["1:1", "4:5", "9:16", "16:9"],                            supportsQuality: false, maxReferenceImages: 4,  isFal: true  },
   { id: "pro-scanner-v3",       apiId: "gemini-3-pro-image",       name: "Pro Scanner v3",      aspectRatios: ["1:1", "2:3", "3:2", "4:5", "3:4", "4:3", "9:16", "16:9"], supportsQuality: true,  maxReferenceImages: 8,  isFal: false },
   { id: "flash-scanner-v2.5",   apiId: "gemini-2.5-flash-image",   name: "Flash Scanner v2.5",  aspectRatios: ["1:1", "4:5", "9:16", "16:9"],                            supportsQuality: false, maxReferenceImages: 4,  isFal: false },
+  { id: "gpt-image-2",          apiId: "gpt-image-2",              name: "ChatGPT Images 2.0",  aspectRatios: ["1024x1024", "1024x768", "1024x1536", "1920x1080", "2560x1440", "3840x2160"], supportsQuality: true, qualityOptions: ["low", "medium", "high"], supportsOutputFormat: true, maxReferenceImages: 8, isFal: false, maxImages: 4 },
 ]
 
 // --- HELPERS ---
-function calcTicketCost(modelId: string, quality: Quality): number {
-  if (modelId === "nano-banana-pro")     return quality === "4k" ? 12 : 6
-  if (modelId === "nano-banana-pro-2")   return quality === "4k" ? 8 : 5
+function calcTicketCost(modelId: string, quality: Quality, aspectRatio?: AspectRatio): number {
+  if (modelId === "nano-banana-pro")     return quality === "4k" ? 14 : 7
+  if (modelId === "nano-banana-pro-2")   return quality === "4k" ? 10 : 6
   if (modelId === "seedream-4.5")        return quality === "4k" ? 2 : 1
   if (modelId === "seedream-5-lite")     return quality === "3k" ? 2 : 1
   if (modelId === "flux-2")             return 1
   if (modelId === "kling-v3-image")     return 2
   if (modelId === "kling-o3-image")     return quality === "4k" ? 4 : 2
   if (modelId === "wan-2.7-pro")        return 4
-  if (modelId === "pro-scanner-v3")     return quality === "4k" ? 10 : 5
+  if (modelId === "pro-scanner-v3")     return quality === "4k" ? 15 : 7
   if (modelId === "flash-scanner-v2.5") return 1
+  if (modelId === "gpt-image-2") {
+    if (quality === "low") return 1
+    if (quality === "medium") {
+      if (aspectRatio === "1024x1024" || aspectRatio === "2560x1440") return 3
+      if (aspectRatio === "3840x2160") return 4
+      return 2  // 1024x768, 1024x1536, 1920x1080
+    }
+    if (quality === "high") {
+      if (aspectRatio === "1024x1024") return 8
+      if (aspectRatio === "2560x1440") return 9
+      if (aspectRatio === "3840x2160") return 15
+      return 6  // 1024x768, 1024x1536, 1920x1080
+    }
+    return 1
+  }
   return 1
+}
+
+// Human-readable aspect ratio label for pixel-dimension tokens (e.g. "1920x1080" → "16:9")
+const PIXEL_DIM_RATIO: Record<string, string> = {
+  "1024x1024": "1:1",
+  "1024x768":  "4:3",
+  "1024x1536": "2:3",
+  "1920x1080": "16:9",
+  "2560x1440": "16:9",
+  "3840x2160": "16:9",
 }
 
 // SeeDream 5.0 Lite: combines quality + aspect ratio into image_size params.
@@ -206,6 +233,7 @@ interface PendingSlot {
   nb2StatusUrl?: string  // Which status route to poll — defaults to /api/admin/nb2-status
   nb2Quality?: string    // Quality value passed through to the status route (e.g. for Kling O3 ticket cost)
   nb2TicketCost?: number // Per-slot ticket cost, used to refund on failure
+  streamDataUrl?: string // Partial or final image URL from SSE streaming (gpt-image-2)
   // Config stored at creation time so failed tiles can show full details in the modal
   modelId?: string
   aspectRatio?: string
@@ -370,6 +398,7 @@ const IMAGE_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
   "nano-banana-pro-2":   "$$",
   "pro-scanner-v3":      "$$$",
   "nano-banana-pro":     "$$$",
+  "gpt-image-2":         "$$",
 }
 const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
   "lipsync-v3":         "$",
@@ -1511,6 +1540,31 @@ function LoadingSlot({ onClick }: { onClick?: () => void }) {
   )
 }
 
+function StreamingSlot({ dataUrl, onClick }: { dataUrl: string; onClick?: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="aspect-square w-full relative overflow-hidden bg-slate-900 hover:opacity-90 transition-opacity"
+    >
+      <img
+        src={dataUrl}
+        alt="Generating..."
+        className="absolute inset-0 w-full h-full object-cover"
+        style={{ animation: "blurReveal 1.2s ease-out forwards" }}
+      />
+      <style>{`
+        @keyframes blurReveal {
+          from { filter: blur(24px) brightness(0.7); opacity: 0.6; transform: scale(1.05); }
+          to   { filter: blur(0px)  brightness(1);   opacity: 1;   transform: scale(1); }
+        }
+      `}</style>
+      <div className="absolute bottom-1 right-1 w-3.5 h-3.5 rounded-full bg-black/60 flex items-center justify-center">
+        <div className="w-2 h-2 rounded-full border border-cyan-400 border-t-transparent animate-spin" />
+      </div>
+    </button>
+  )
+}
+
 function QueuedSlot({ onClick }: { onClick?: () => void }) {
   return (
     <button
@@ -2369,9 +2423,11 @@ function ImageGrid({
         {/* Pending: loading and failed slots appear at the top */}
         {pendingSlots.map((slot) =>
           slot.status === "loading"
-            ? (slot.queueJobId && !slot.nb2RequestId
-                ? <QueuedSlot key={slot.slotId} onClick={onPendingClick ? () => onPendingClick(slot) : undefined} />
-                : <LoadingSlot key={slot.slotId} onClick={onPendingClick ? () => onPendingClick(slot) : undefined} />)
+            ? (slot.streamDataUrl
+                ? <StreamingSlot key={slot.slotId} dataUrl={slot.streamDataUrl} onClick={onPendingClick ? () => onPendingClick(slot) : undefined} />
+                : slot.queueJobId && !slot.nb2RequestId
+                  ? <QueuedSlot key={slot.slotId} onClick={onPendingClick ? () => onPendingClick(slot) : undefined} />
+                  : <LoadingSlot key={slot.slotId} onClick={onPendingClick ? () => onPendingClick(slot) : undefined} />)
             : <FailedSlot key={slot.slotId} prompt={slot.prompt} error={slot.error || "Generation failed"} />
         )}
         {/* Fresh: just-completed images and failed tiles, in completion order */}
@@ -2713,12 +2769,12 @@ function AspectRatioPicker({
             : "border-white/10 bg-white/5 text-slate-300 hover:border-white/20 hover:text-white"
         }`}
       >
-        {value}
+        {PIXEL_DIM_RATIO[value] ?? value}
         <ChevronDown size={10} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-2 w-28 rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-md shadow-2xl overflow-hidden z-50">
+        <div className="absolute bottom-full left-0 mb-2 w-40 rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-md shadow-2xl overflow-hidden z-50">
           {ratios.map((ar) => (
             <button
               key={ar}
@@ -2729,7 +2785,7 @@ function AspectRatioPicker({
                   : "text-slate-400 hover:text-white hover:bg-white/5"
               }`}
             >
-              {ar}
+              {PIXEL_DIM_RATIO[ar] ? `${PIXEL_DIM_RATIO[ar]} (${ar})` : ar}
             </button>
           ))}
         </div>
@@ -2861,10 +2917,10 @@ function PromptBox({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configOverride?.version])
 
-  const ticketCost = calcTicketCost(model.id, quality)
+  const ticketCost = calcTicketCost(model.id, quality, aspectRatio)
   const totalCost = ticketCost * (model.maxImages ? imageCount : 1)
   const needsRefImage = !!model.requiresReferenceImage && activeRefImages.length === 0
-  const slotsNeeded = (model.isFal || model.id === "nano-banana-pro-2") ? imageCount : 1
+  const slotsNeeded = (model.isFal || model.id === "nano-banana-pro-2" || model.id === "gpt-image-2") ? imageCount : 1
   const queueFull = activeJobCount + slotsNeeded > maxConcurrent
   const canGenerate = !!userId && prompt.trim().length > 0 && !generating && !needsRefImage && !queueFull
 
@@ -3137,6 +3193,169 @@ function PromptBox({
         return
       }
 
+      // --- ChatGPT Images 2.0: streaming with submit+poll fallback ---
+      // Single reader loop with a Promise-based button unlock so no SSE lines are ever dropped.
+      // Button waits until the 'submitted' event (same timing as other models' queue submit).
+      // requestId stored in slot immediately → survives refresh via polling fallback.
+      if (model.id === "gpt-image-2") {
+        const gptCost = calcTicketCost("gpt-image-2", quality, aspectRatio)
+        await Promise.all(slotIds.map(async (sid) => {
+          // Pre-write slot to sessionStorage immediately so it's guaranteed present
+          // when the 'submitted' SSE event arrives, regardless of useEffect timing.
+          try {
+            const stored = JSON.parse(localStorage.getItem("pv2-pending-slots") || "[]") as any[]
+            if (!stored.find((s: any) => s.slotId === sid)) {
+              stored.unshift({ slotId: sid, status: "loading", prompt: currentPrompt, nb2StatusUrl: "/api/admin/gpt-image-2-status", nb2AspectRatio: aspectRatio, nb2Quality: quality, nb2TicketCost: gptCost, referenceImageUrls: permanentRefUrls })
+              localStorage.setItem("pv2-pending-slots", JSON.stringify(stored))
+            }
+          } catch {}
+          try {
+            const res = await fetch("/api/admin/gpt-image-2-stream", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                prompt: currentPrompt,
+                quality,
+                size: aspectRatio,
+                outputFormat,
+                referenceImages,
+                referenceImageUrls: permanentRefUrls,
+                ticketCost: gptCost,
+              }),
+            })
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}))
+              onUpdatePending(sid, { status: "failed", error: errData.error || "Submission failed" })
+              // Remove the pre-written slot from sessionStorage — no requestId, can't poll
+              try {
+                const stored = JSON.parse(localStorage.getItem("pv2-pending-slots") || "[]") as any[]
+                localStorage.setItem("pv2-pending-slots", JSON.stringify(stored.filter((s: any) => s.slotId !== sid)))
+              } catch {}
+              return
+            }
+            // tickets are deducted inside the 'submitted' handler — AFTER the slot is
+            // written to sessionStorage with nb2RequestId. This guarantees:
+            // "if tickets are deducted → slot has nb2RequestId in sessionStorage → survives refresh"
+            let ticketsCharged = false
+
+            // unlockButton() is called when we get 'submitted' (or on error/stream-end).
+            // The outer await resolves then, unlocking the generate button.
+            let unlockButton = () => {}
+            const buttonUnlocked = new Promise<void>(r => { unlockButton = r })
+
+            // Single background loop — reads every SSE event without dropping any lines.
+            void (async () => {
+              const reader = res.body!.getReader()
+              const decoder = new TextDecoder()
+              let buffer = ""
+              let gptRefUrls = permanentRefUrls
+              try {
+                while (true) {
+                  const { done, value } = await reader.read()
+                  if (done) break
+                  buffer += decoder.decode(value, { stream: true })
+                  const lines = buffer.split("\n")
+                  buffer = lines.pop() ?? ""
+                  for (const line of lines) {
+                    if (!line.startsWith("data: ")) continue
+                    try {
+                      const event = JSON.parse(line.slice(6))
+                      if (event.type === "submitted") {
+                        gptRefUrls = event.permanentReferenceUrls?.length ? event.permanentReferenceUrls : permanentRefUrls
+                        onUpdatePending(sid, {
+                          nb2RequestId:   event.requestId,
+                          nb2FalEndpoint: event.falEndpoint,
+                          nb2AspectRatio: aspectRatio,
+                          nb2Quality:     quality,
+                          nb2StatusUrl:   "/api/admin/gpt-image-2-status",
+                          nb2TicketCost:  gptCost,
+                          referenceImageUrls: gptRefUrls,
+                        })
+                        // Write slot to sessionStorage FIRST (with nb2RequestId),
+                        // THEN charge tickets — so "tickets charged" always means "slot persisted".
+                        if (event.requestId) {
+                          try {
+                            const stored = JSON.parse(localStorage.getItem("pv2-pending-slots") || "[]") as any[]
+                            const slotData = {
+                              slotId:         sid,
+                              status:         "loading",
+                              prompt:         currentPrompt,
+                              nb2RequestId:   event.requestId,
+                              nb2FalEndpoint: event.falEndpoint,
+                              nb2StatusUrl:   "/api/admin/gpt-image-2-status",
+                              nb2AspectRatio: aspectRatio,
+                              nb2Quality:     quality,
+                              nb2TicketCost:  gptCost,
+                              referenceImageUrls: gptRefUrls,
+                            }
+                            const idx = stored.findIndex((s: any) => s.slotId === sid)
+                            if (idx >= 0) {
+                              stored[idx] = { ...stored[idx], ...slotData }
+                            } else {
+                              stored.unshift(slotData)
+                            }
+                            localStorage.setItem("pv2-pending-slots", JSON.stringify(stored))
+                          } catch {}
+                          // Charge tickets only after slot is persisted
+                          ticketsCharged = true
+                          onDeductTickets?.(gptCost)
+                          onStartNb2Polling(event.requestId, event.falEndpoint, [sid], currentPrompt, "png", aspectRatio, "/api/admin/gpt-image-2-status", quality, gptCost, gptRefUrls)
+                        }
+                        unlockButton()
+                      } else if (event.type === "partial" && event.url) {
+                        onUpdatePending(sid, { streamDataUrl: event.url })
+                      } else if (event.type === "complete") {
+                        const reqId = event.requestId
+                        if (reqId) {
+                          try {
+                            const done = JSON.parse(localStorage.getItem("pv2-nb2-done") || "[]") as string[]
+                            if (!done.includes(reqId)) localStorage.setItem("pv2-nb2-done", JSON.stringify([...done.slice(-20), reqId]))
+                          } catch {}
+                        }
+                        const imgs = (event.images || []) as { url: string; dbId?: number | null }[]
+                        imgs.forEach((img, i) =>
+                          onPrependImage({
+                            id: img.dbId ?? (Date.now() + i),
+                            imageUrl: img.url,
+                            prompt: currentPrompt,
+                            model: "gpt-image-2",
+                            createdAt: new Date().toISOString(),
+                            aspectRatio,
+                            quality,
+                            referenceImageUrls: (event.permanentReferenceUrls?.length ? event.permanentReferenceUrls : gptRefUrls) || [],
+                          })
+                        )
+                        onRemovePending(sid)
+                      } else if (event.type === "error") {
+                        onUpdatePending(sid, { status: "failed", error: event.error || "Generation failed" })
+                        if (ticketsCharged) {
+                          fetch("/api/admin/use-tickets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "refund", amount: gptCost }) })
+                            .then(r => r.json()).then(d => { if (d.newBalance !== undefined) onBalanceChange(d.newBalance) }).catch(() => {})
+                        }
+                        unlockButton()
+                      }
+                    } catch {}
+                  }
+                }
+              } catch {}
+              // If stream died before 'submitted' (no tickets charged), clean up the ghost slot
+              if (!ticketsCharged) {
+                try {
+                  const stored = JSON.parse(localStorage.getItem("pv2-pending-slots") || "[]") as any[]
+                  localStorage.setItem("pv2-pending-slots", JSON.stringify(stored.filter((s: any) => s.slotId !== sid)))
+                } catch {}
+              }
+              unlockButton() // ensure button unlocks even if stream dies unexpectedly
+            })()
+
+            await buttonUnlocked
+          } catch (err: any) {
+            onUpdatePending(sid, { status: "failed", error: err.message || "Network error" })
+          }
+        }))
+        return
+      }
+
       // --- Gemini image models: async submit so the button unlocks immediately ---
       if (model.id === "pro-scanner-v3" || model.id === "flash-scanner-v2.5") {
         await Promise.all(slotIds.map(async (sid) => {
@@ -3345,7 +3564,7 @@ function PromptBox({
               </>
             )}
 
-            {/* Output format picker — NanoBanana Pro 2 only */}
+            {/* Output format picker — models with supportsOutputFormat */}
             {model.supportsOutputFormat && (
               <>
                 <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
@@ -4105,17 +4324,29 @@ function VideoCustomizationPanel({
                 </div>
               ) : model.aspectRatios.length > 4 ? (
                 <div className="grid grid-cols-4 gap-1">
-                  {model.aspectRatios.map(r => (
-                    <button key={r} onClick={() => onAspectRatioChange(r)}
-                      className={`${btnBase} ${aspectRatio === r ? btnActive : btnIdle}`}>{r}</button>
-                  ))}
+                  {model.aspectRatios.map(r => {
+                    const ratioLabel = PIXEL_DIM_RATIO[r]
+                    const label = ratioLabel ? `${ratioLabel} (${r})` : r
+                    return (
+                      <button key={r} onClick={() => onAspectRatioChange(r)}
+                        className={`${btnBase} ${aspectRatio === r ? btnActive : btnIdle}`}>
+                        {label}
+                      </button>
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="flex gap-1.5">
-                  {model.aspectRatios.map(r => (
-                    <button key={r} onClick={() => onAspectRatioChange(r)}
-                      className={`flex-1 ${btnBase} ${aspectRatio === r ? btnActive : btnIdle}`}>{r}</button>
-                  ))}
+                  {model.aspectRatios.map(r => {
+                    const ratioLabel = PIXEL_DIM_RATIO[r]
+                    const label = ratioLabel ? `${ratioLabel} (${r})` : r
+                    return (
+                      <button key={r} onClick={() => onAspectRatioChange(r)}
+                        className={`flex-1 ${btnBase} ${aspectRatio === r ? btnActive : btnIdle}`}>
+                        {label}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -5866,10 +6097,10 @@ export default function PortalV2Page() {
         slotIds.forEach(sid => handleUpdatePending(sid, { status: "failed", error: "Generation timed out" }))
         // Clear from sessionStorage so they don't come back on refresh
         try {
-          const stored = sessionStorage.getItem("pv2-pending-slots")
+          const stored = localStorage.getItem("pv2-pending-slots")
           if (stored) {
             const slots = JSON.parse(stored) as PendingSlot[]
-            sessionStorage.setItem("pv2-pending-slots", JSON.stringify(slots.filter(s => !slotIds.includes(s.slotId))))
+            localStorage.setItem("pv2-pending-slots", JSON.stringify(slots.filter(s => !slotIds.includes(s.slotId))))
           }
         } catch {}
         pollInFlight = false
@@ -5887,17 +6118,17 @@ export default function PortalV2Page() {
           delete nb2PollingIntervals.current[requestId]
           // Mark as processed so future page loads don't re-poll and duplicate DB records
           try {
-            const done = JSON.parse(sessionStorage.getItem("pv2-nb2-done") || "[]") as string[]
+            const done = JSON.parse(localStorage.getItem("pv2-nb2-done") || "[]") as string[]
             if (!done.includes(requestId)) {
-              sessionStorage.setItem("pv2-nb2-done", JSON.stringify([...done.slice(-20), requestId]))
+              localStorage.setItem("pv2-nb2-done", JSON.stringify([...done.slice(-20), requestId]))
             }
           } catch {}
           // Remove slots from sessionStorage immediately before any async/unmount risk
           try {
-            const stored = sessionStorage.getItem("pv2-pending-slots")
+            const stored = localStorage.getItem("pv2-pending-slots")
             if (stored) {
               const slots = JSON.parse(stored) as PendingSlot[]
-              sessionStorage.setItem("pv2-pending-slots", JSON.stringify(slots.filter(s => !slotIds.includes(s.slotId))))
+              localStorage.setItem("pv2-pending-slots", JSON.stringify(slots.filter(s => !slotIds.includes(s.slotId))))
             }
           } catch {}
           // Use dbId returned by the status route directly — avoids race condition
@@ -5906,6 +6137,7 @@ export default function PortalV2Page() {
           const modelId = statusUrl.includes("kling-o3") ? "kling-o3-image"
             : statusUrl.includes("kling-image") ? "kling-v3-image"
             : statusUrl.includes("wan-27-pro") ? "wan-2.7-pro"
+            : statusUrl.includes("gpt-image-2") ? "gpt-image-2"
             : "nano-banana-pro-2"
           completedImgs.forEach((img, i) =>
             handlePrependImage({
@@ -5928,10 +6160,10 @@ export default function PortalV2Page() {
             fetch("/api/admin/use-tickets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "refund", amount: ticketCost }) }).catch(() => {})
           }
           try {
-            const stored = sessionStorage.getItem("pv2-pending-slots")
+            const stored = localStorage.getItem("pv2-pending-slots")
             if (stored) {
               const slots = JSON.parse(stored) as PendingSlot[]
-              sessionStorage.setItem("pv2-pending-slots", JSON.stringify(slots.filter(s => !slotIds.includes(s.slotId))))
+              localStorage.setItem("pv2-pending-slots", JSON.stringify(slots.filter(s => !slotIds.includes(s.slotId))))
             }
           } catch {}
           slotIds.forEach(sid => handleUpdatePending(sid, { status: "failed", error: statusData.error || "Generation failed" }))
@@ -6148,9 +6380,87 @@ export default function PortalV2Page() {
   // Queue limits — owner accounts: unlimited, dev tier: 6 image / 2 video, free: 2 image / 1 video
   const isOwner = user?.email === "dirtysecretai@gmail.com" || user?.email === "promptandprotocol@gmail.com"
   const maxConcurrent = isOwner ? Infinity : hasPromptStudioDev ? 6 : 2
-  const activeJobCount = pendingSlots.filter((s) => s.status === "loading").length
   const videoMaxConcurrent = isOwner ? Infinity : hasPromptStudioDev ? 2 : 1
   const videoActiveJobCount = videoPendingSlots.length
+
+  // Server-authoritative active count — polled every 10s so the counter stays
+  // accurate across devices/tabs. Takes the max of server and local counts so:
+  // - a just-started local job locks the button before the server confirms
+  // - a generation on another device/tab also locks the button
+  const [serverActiveCount, setServerActiveCount] = useState<number | null>(null)
+  const localActiveCount = pendingSlots.filter((s) => s.status === "loading").length
+  const activeJobCount = serverActiveCount !== null ? Math.max(serverActiveCount, localActiveCount) : localActiveCount
+
+  // Use a ref so the poll closure always sees the latest pendingSlots without re-registering the interval
+  const pendingSlotsRef = useRef(pendingSlots)
+  useEffect(() => { pendingSlotsRef.current = pendingSlots }, [pendingSlots])
+
+  const MODEL_STATUS_URLS: Record<string, string> = {
+    "nano-banana-pro-2": "/api/admin/nb2-status",
+    "kling-v3-image":    "/api/admin/kling-image-status",
+    "kling-o3-image":    "/api/admin/kling-o3-status",
+    "wan-2.7-pro":       "/api/admin/wan-27-pro-status",
+    "gpt-image-2":       "/api/admin/gpt-image-2-status",
+  }
+
+  useEffect(() => {
+    if (!user) return
+    const poll = async () => {
+      try {
+        // Update active count + ticket balance in parallel
+        const [countRes, ticketRes] = await Promise.all([
+          fetch("/api/admin/my-active-count"),
+          fetch(`/api/user/tickets?userId=${user.id}`, { cache: "no-store" }),
+        ])
+        if (countRes.ok) {
+          const d = await countRes.json()
+          if (typeof d.activeCount === "number") setServerActiveCount(d.activeCount)
+        }
+        if (ticketRes.ok) {
+          const t = await ticketRes.json()
+          if (t.success && typeof t.balance === "number") {
+            setUser(u => u ? { ...u, ticketBalance: t.balance } : u)
+          }
+        }
+      } catch {}
+
+      // Pick up new cross-device tiles (jobs started on another device/tab)
+      try {
+        const jobsRes = await fetch("/api/prompting-studio/jobs?source=main-scanner")
+        if (!jobsRes.ok) return
+        const { jobs } = await jobsRes.json()
+        const inFlight: any[] = (jobs || []).filter((j: any) => j.status === "processing" || j.status === "queued")
+        const nb2DbJobs = inFlight.filter((j: any) => j.falRequestId)
+        if (nb2DbJobs.length === 0) return
+
+        const currentSlots = pendingSlotsRef.current
+        const trackedRequestIds = new Set(currentSlots.map((s) => s.nb2RequestId).filter(Boolean) as string[])
+        const doneNb2Ids = new Set(JSON.parse(localStorage.getItem("pv2-nb2-done") || "[]") as string[])
+
+        for (const j of nb2DbJobs) {
+          if (trackedRequestIds.has(j.falRequestId) || doneNb2Ids.has(j.falRequestId)) continue
+          const params = j.parameters as any
+          const newSlot: PendingSlot = {
+            slotId:         `db-${j.id}-${j.falRequestId.slice(-6)}`,
+            status:         "loading",
+            prompt:         j.prompt,
+            nb2RequestId:   j.falRequestId,
+            nb2FalEndpoint: params?.falEndpoint || params?.falInput?.endpoint,
+            nb2StatusUrl:   MODEL_STATUS_URLS[j.modelId] || "/api/admin/nb2-status",
+            nb2AspectRatio: params?.size || params?.aspectRatio || params?.nb2AspectRatio,
+            nb2Quality:     params?.quality || params?.nb2Quality,
+            nb2TicketCost:  j.ticketCost ?? 0,
+            referenceImageUrls: params?.permanentReferenceUrls || [],
+          }
+          handleAddPending(newSlot)
+          startNb2SlotPolling(j.falRequestId, newSlot.nb2FalEndpoint!, [newSlot.slotId], j.prompt, "png", newSlot.nb2AspectRatio || "auto", newSlot.nb2StatusUrl, newSlot.nb2Quality, newSlot.nb2TicketCost ?? 0, newSlot.referenceImageUrls || [])
+        }
+      } catch {}
+    }
+    poll()
+    const id = setInterval(poll, 10000)
+    return () => clearInterval(id)
+  }, [user?.id])
 
   // Computed: active ref images limited to the current model's cap
   const activeRefImages = refLibrary
@@ -6218,7 +6528,7 @@ export default function PortalV2Page() {
       storageInitialized.current = true
       // pendingSlots
       try {
-        const stored = sessionStorage.getItem("pv2-pending-slots")
+        const stored = localStorage.getItem("pv2-pending-slots")
         if (stored) setPendingSlots(JSON.parse(stored) as PendingSlot[])
       } catch {}
       // savedFails
@@ -6252,7 +6562,7 @@ export default function PortalV2Page() {
       return // Don't save on the restore run
     }
     // Persist all storage-backed state
-    try { sessionStorage.setItem("pv2-pending-slots", JSON.stringify(pendingSlots.filter(s => s.status !== "failed"))) } catch {}
+    try { localStorage.setItem("pv2-pending-slots", JSON.stringify(pendingSlots.filter(s => s.status !== "failed"))) } catch {}
     try { sessionStorage.setItem("pv2-failed-images", JSON.stringify(savedFails)) } catch {}
     try { sessionStorage.setItem("pv2-video-pending-slots", JSON.stringify(videoPendingSlots)) } catch {}
     try { sessionStorage.setItem("pv2-video-failed-items", JSON.stringify(savedVideoFails)) } catch {}
@@ -6297,8 +6607,8 @@ export default function PortalV2Page() {
   // ?clearNB2=1 — clears stuck NB2 pending slots (useful when sessionStorage got stale on another device)
   useEffect(() => {
     if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("clearNB2") === "1") {
-      sessionStorage.removeItem("pv2-pending-slots")
-      sessionStorage.removeItem("pv2-nb2-done")
+      localStorage.removeItem("pv2-pending-slots")
+      localStorage.removeItem("pv2-nb2-done")
       // Remove the query param so it doesn't keep clearing on every navigation
       const url = new URL(window.location.href)
       url.searchParams.delete("clearNB2")
@@ -6327,41 +6637,51 @@ export default function PortalV2Page() {
           // across page refreshes and across different devices.
           if (jobsRes.ok) {
             const jobsData = await jobsRes.json()
-            const inFlight: any[] = (jobsData.jobs || []).filter(
+            const allDbJobs: any[] = jobsData.jobs || []
+            const inFlight: any[] = allDbJobs.filter(
               (j: any) => j.status === "processing" || j.status === "queued"
             )
             const inFlightIds = new Set(inFlight.map((j: any) => j.id as number))
 
-            // Compute slot assignments BEFORE calling setPendingSlots so we use
-            // the same slotId in both setPendingSlots and startPolling.
-            // Prefer the original slotId (e.g. "slot-1234567890") if we already
-            // have a persisted slot for this queueId — otherwise assign "restored-N".
             const currentSlots: PendingSlot[] = (() => {
               try {
-                const stored = sessionStorage.getItem("pv2-pending-slots")
+                const stored = localStorage.getItem("pv2-pending-slots")
                 return stored ? JSON.parse(stored) as PendingSlot[] : []
               } catch { return [] }
             })()
-            const byQueueId = new Map(currentSlots.filter(s => s.queueId).map(s => [s.queueId, s]))
 
-            const slotAssignments = inFlight.map((j: any) => ({
+            // Map from model ID → status URL for NB2-style polling
+            const MODEL_STATUS_URLS: Record<string, string> = {
+              "nano-banana-pro-2": "/api/admin/nb2-status",
+              "kling-v3-image":    "/api/admin/kling-image-status",
+              "kling-o3-image":    "/api/admin/kling-o3-status",
+              "wan-2.7-pro":       "/api/admin/wan-27-pro-status",
+              "gpt-image-2":       "/api/admin/gpt-image-2-status",
+            }
+
+            const doneNb2Ids = new Set(JSON.parse(localStorage.getItem("pv2-nb2-done") || "[]") as string[])
+
+            // Split in-flight DB jobs: those with falRequestId use NB2-style polling (cross-device tiles),
+            // those without use queue-ID polling (canvas-style).
+            const nb2DbJobs = inFlight.filter((j: any) => j.falRequestId && !doneNb2Ids.has(j.falRequestId))
+            const queueDbJobs = inFlight.filter((j: any) => !j.falRequestId)
+
+            const byQueueId = new Map(currentSlots.filter(s => s.queueId).map(s => [s.queueId, s]))
+            const slotAssignments = queueDbJobs.map((j: any) => ({
               slotId: byQueueId.get(j.id)?.slotId ?? `restored-${j.id}`,
               queueId: j.id as number,
               prompt: j.prompt as string,
             }))
 
-            // Detect loading slots whose jobs are no longer in-flight (completed while page was away)
+            // Detect completed queue-backed slots (for recently-finished image fetching)
             const completedQueueSlotIds = new Set(
               currentSlots
                 .filter(s => s.status === "loading" && s.queueId != null && !inFlightIds.has(s.queueId))
                 .map(s => s.slotId)
             )
-            const completedCount = completedQueueSlotIds.size
-
-            // Fetch images that completed while away and prepend them
-            if (completedCount > 0) {
+            if (completedQueueSlotIds.size > 0) {
               try {
-                const recentRes = await fetch(`/api/my-images?page=1&limit=${completedCount}&type=image`)
+                const recentRes = await fetch(`/api/my-images?page=1&limit=${completedQueueSlotIds.size}&type=image`)
                 const recentData = await recentRes.json()
                 if (recentData.success && recentData.images?.length > 0) {
                   recentData.images.forEach((img: any) =>
@@ -6371,16 +6691,71 @@ export default function PortalV2Page() {
               } catch {}
             }
 
-            // Filter out already-completed NB2/Kling slots (requestId in pv2-nb2-done) — these
-            // must NOT be re-added to pendingSlots or they get permanently stuck as loading tiles.
-            const doneNb2Ids = new Set(JSON.parse(sessionStorage.getItem("pv2-nb2-done") || "[]") as string[])
+            // Local nb2 slots from localStorage (same device, across refreshes)
+            const allLocalNb2Slots = currentSlots.filter(s => s.nb2RequestId && !doneNb2Ids.has(s.nb2RequestId))
+            const localNb2RequestIds = new Set(allLocalNb2Slots.map(s => s.nb2RequestId!))
 
-            // Preserve NB2/Kling slots (have nb2RequestId, not already done) and still-queued image slots
-            const nb2Slots = currentSlots.filter(s => s.nb2RequestId && !doneNb2Ids.has(s.nb2RequestId))
-            // Also exclude queue-based slots that completed while away (their images were just prepended above)
+            // Detect local NB2 slots that completed server-side while the app was closed
+            // (e.g. iOS Safari killed — the job finished but the client never got the SSE 'complete' event).
+            // allDbJobs includes 'completed' jobs within 2h; inFlight only has processing/queued.
+            const completedDbByRequestId = new Map<string, any>()
+            allDbJobs
+              .filter((j: any) => j.status === 'completed' && j.falRequestId && !doneNb2Ids.has(j.falRequestId))
+              .forEach((j: any) => completedDbByRequestId.set(j.falRequestId, j))
+
+            const nb2SlotsCompletedWhileClosed = allLocalNb2Slots.filter(
+              s => completedDbByRequestId.has(s.nb2RequestId!)
+            )
+            const nb2SlotsStillLoading = allLocalNb2Slots.filter(
+              s => !completedDbByRequestId.has(s.nb2RequestId!)
+            )
+
+            // For slots that finished while the app was closed, fetch their images and prepend them
+            if (nb2SlotsCompletedWhileClosed.length > 0) {
+              try {
+                const requestIds = nb2SlotsCompletedWhileClosed.map(s => s.nb2RequestId!).join(',')
+                const completedRes = await fetch(`/api/my-images?falRequestIds=${encodeURIComponent(requestIds)}`)
+                const completedData = await completedRes.json()
+                if (completedData.success && completedData.images?.length > 0) {
+                  completedData.images.forEach((img: any) =>
+                    handlePrependImage({ id: img.id, imageUrl: img.imageUrl, prompt: img.prompt, model: img.model })
+                  )
+                }
+                // Mark those request IDs as done so they don't come back as loading tiles
+                const nowDoneIds = Array.from(new Set([
+                  ...Array.from(doneNb2Ids),
+                  ...nb2SlotsCompletedWhileClosed.map(s => s.nb2RequestId!),
+                ]))
+                localStorage.setItem("pv2-nb2-done", JSON.stringify(nowDoneIds))
+                nb2SlotsCompletedWhileClosed.forEach(s => doneNb2Ids.add(s.nb2RequestId!))
+              } catch {}
+            }
+
+            // localNb2Slots = only those still actually in-flight
+            const localNb2Slots = nb2SlotsStillLoading
+
+            // Cross-device nb2 tiles: DB jobs with falRequestId not already in local slots
+            const crossDeviceNb2Slots: PendingSlot[] = nb2DbJobs
+              .filter((j: any) => !localNb2RequestIds.has(j.falRequestId))
+              .map((j: any) => {
+                const params = j.parameters as any
+                return {
+                  slotId:         `db-${j.id}`,
+                  status:         "loading" as const,
+                  prompt:         j.prompt,
+                  nb2RequestId:   j.falRequestId,
+                  nb2FalEndpoint: params?.falEndpoint || params?.falInput?.endpoint,
+                  nb2StatusUrl:   MODEL_STATUS_URLS[j.modelId] || "/api/admin/nb2-status",
+                  nb2AspectRatio: params?.size || params?.aspectRatio || params?.nb2AspectRatio,
+                  nb2Quality:     params?.quality || params?.nb2Quality,
+                  nb2TicketCost:  j.ticketCost ?? 0,
+                  referenceImageUrls: params?.permanentReferenceUrls || [],
+                }
+              })
+
             const queuedImageSlots = currentSlots.filter(s => s.queueJobId && !s.nb2RequestId && !completedQueueSlotIds.has(s.slotId))
 
-            // Rebuild pending slots: DB in-flight slots + surviving NB2/Kling slots + queued image slots
+            // Rebuild: queue-backed + local nb2 + cross-device nb2 + queued slots
             setPendingSlots(() => [
               ...slotAssignments.map(sa => ({
                 slotId: sa.slotId,
@@ -6388,30 +6763,27 @@ export default function PortalV2Page() {
                 prompt: sa.prompt,
                 queueId: sa.queueId,
               })),
-              ...nb2Slots,
+              ...localNb2Slots,
+              ...crossDeviceNb2Slots,
               ...queuedImageSlots,
             ])
 
-            // Start DB polling — guard in startPolling blocks double-polling by queueId
             for (const sa of slotAssignments) {
               startPolling(sa.slotId, sa.queueId, sa.prompt)
             }
 
-            // Resume NB2/Kling polling — group slots by requestId (one FAL job = N images)
+            // Resume polling for ALL nb2 slots (local + cross-device), grouped by requestId
+            const allNb2Slots = [...localNb2Slots, ...crossDeviceNb2Slots]
             const nb2Groups = new Map<string, PendingSlot[]>()
-            nb2Slots.forEach(s => {
+            allNb2Slots.forEach(s => {
               const group = nb2Groups.get(s.nb2RequestId!) || []
               group.push(s)
               nb2Groups.set(s.nb2RequestId!, group)
             })
             nb2Groups.forEach((slots, requestId) => {
-              // nb2Slots was already filtered to exclude done requestIds, so every slot here needs polling
               const first = slots[0]
               startNb2SlotPolling(requestId, first.nb2FalEndpoint!, slots.map(s => s.slotId), first.prompt, first.nb2OutputFormat || 'png', first.nb2AspectRatio || 'auto', first.nb2StatusUrl, first.nb2Quality, first.nb2TicketCost ?? 0, first.referenceImageUrls || [])
             })
-
-            // Resume queue polling for still-queued image slots (the useEffect will pick these up
-            // automatically when setPendingSlots fires, via startedQueuePolls deduplication)
           }
         }
       } catch { /* silent */ }

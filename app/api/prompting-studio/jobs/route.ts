@@ -79,17 +79,18 @@ export async function GET(request: Request) {
       orderBy: { createdAt: 'asc' },
     })
 
-    // Filter jobs by source so each client only sees its own jobs:
-    // - main scanner polls with ?source=main-scanner → return only main-scanner jobs
-    // - canvas polls with no param → return only canvas-sourced jobs
-    // This prevents main-scanner completions from polluting the canvas and vice-versa.
+    // Filter jobs by source so each client only sees its own jobs.
+    // Canvas jobs are identified by slotId or source='canvas'.
+    // Main-scanner jobs include: explicitly tagged, OR jobs with falRequestId that
+    // lack canvas markers (NB2/Kling/GPT-Image-2 from submit routes cross-device).
     const jobs = allJobs.filter(j => {
       const params = j.parameters as any
+      const isCanvasJob = params?.slotId != null || params?.source === 'canvas'
       if (source === 'main-scanner') {
-        return params?.source === 'main-scanner'
+        return params?.source === 'main-scanner' || (!isCanvasJob && j.falRequestId)
       }
       // Default (canvas): jobs tagged as canvas or with a slotId
-      return params?.slotId != null || params?.source === 'canvas'
+      return isCanvasJob
     })
 
     const activeCount = jobs.filter(

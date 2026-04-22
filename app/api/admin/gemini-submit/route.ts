@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { cookies } from 'next/headers'
 import { getUserFromSession } from '@/lib/auth'
+import { checkUserConcurrency } from '@/lib/user-concurrency'
 import { uploadToR2 } from '@/lib/r2'
 import prisma from '@/lib/prisma'
 import { getTicketCost, getModelById } from '@/config/ai-models.config'
@@ -21,6 +22,14 @@ export async function POST(req: Request) {
 
     const user = await getUserFromSession(token)
     if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
+
+    const { allowed, activeCount, limit } = await checkUserConcurrency(user.id)
+    if (!allowed) {
+      return NextResponse.json(
+        { error: `Queue full (${activeCount}/${limit} active). Wait for a generation to finish.` },
+        { status: 429 }
+      )
+    }
 
     const body = await req.json()
     const {

@@ -122,6 +122,20 @@ export const AI_MODELS: AIModel[] = [
     provider: 'gemini'
   },
 
+  // CHATGPT IMAGES 2.0 - fal-ai/gpt-image-2
+  {
+    id: 'gpt-image-2',
+    name: 'fal-ai/gpt-image-2',
+    displayName: 'ChatGPT Images 2.0',
+    description: 'OpenAI GPT Image 2 via FAL — text-to-image and image editing',
+    ticketCost: 2,
+    category: 'standard',
+    rateLimit: { rpm: 0, rpd: 0 },
+    quality: 'high',
+    isAvailable: true,
+    provider: 'fal'
+  },
+
   // IMAGEN MODELS - Require Vertex AI (different setup)
   // Uncomment these when you set up Vertex AI
   /*
