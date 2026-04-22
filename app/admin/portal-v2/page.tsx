@@ -2811,6 +2811,7 @@ function PromptBox({
   onUploadRef,
   onStartPolling,
   onStartNb2Polling,
+  onCancelNb2Polling,
   onTicketsChanged,
   onDeductTickets,
   activeJobCount,
@@ -2832,6 +2833,7 @@ function PromptBox({
   onUploadRef: (items: RefImage[]) => void
   onStartPolling: (slotId: string, queueId: number, prompt: string) => void
   onStartNb2Polling: (requestId: string, falEndpoint: string, slotIds: string[], prompt: string, outputFormat: string, aspectRatio: string, statusUrl?: string, quality?: string, ticketCost?: number, referenceImageUrls?: string[]) => void
+  onCancelNb2Polling: (requestId: string) => void
   onTicketsChanged?: (newBalance: number) => void
   onDeductTickets?: (amount: number) => void
   activeJobCount: number
@@ -3307,6 +3309,8 @@ function PromptBox({
                       } else if (event.type === "complete") {
                         const reqId = event.requestId
                         if (reqId) {
+                          // Cancel nb2 polling immediately so it can't also prepend the image
+                          onCancelNb2Polling(reqId)
                           try {
                             const done = JSON.parse(localStorage.getItem("pv2-nb2-done") || "[]") as string[]
                             if (!done.includes(reqId)) localStorage.setItem("pv2-nb2-done", JSON.stringify([...done.slice(-20), reqId]))
@@ -6172,6 +6176,15 @@ export default function PortalV2Page() {
     }, 5000)
     nb2PollingIntervals.current[requestId] = interval
   }, [handleUpdatePending, handlePrependImage, handleRemovePending, setUser])
+
+  const cancelNb2SlotPolling = useCallback((requestId: string) => {
+    const interval = nb2PollingIntervals.current[requestId]
+    if (interval) {
+      clearInterval(interval)
+      delete nb2PollingIntervals.current[requestId]
+    }
+  }, [])
+
   useEffect(() => () => {
     Object.entries(videoPollingIntervals.current).forEach(([id, interval]) => {
       clearInterval(interval)
@@ -7014,6 +7027,7 @@ export default function PortalV2Page() {
             onUploadRef={handleUploadRef}
             onStartPolling={startPolling}
             onStartNb2Polling={startNb2SlotPolling}
+            onCancelNb2Polling={cancelNb2SlotPolling}
             onDeductTickets={(amount) => {
               setUser(prev => prev ? { ...prev, ticketBalance: Math.max(0, prev.ticketBalance - amount) } : prev)
               fetch("/api/admin/use-tickets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "deduct", amount }) }).catch(() => {})
