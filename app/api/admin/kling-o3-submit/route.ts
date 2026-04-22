@@ -82,12 +82,8 @@ export async function POST(req: Request) {
     const cookieStore = await cookies()
     const token = cookieStore.get('session')?.value
     const sessionUser = token ? await getUserFromSession(token) : null
-    let targetUserId: number | null = sessionUser?.id ?? null
-    if (!targetUserId) {
-      const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
-      targetUserId = adminUser?.id ?? null
-    }
-    if (!targetUserId) return NextResponse.json({ error: 'No user found' }, { status: 500 })
+    const targetUserId: number | null = sessionUser?.id ?? null
+    if (!targetUserId) return NextResponse.json({ error: 'Not authenticated — log in before using the admin scanner' }, { status: 401 })
 
     // Sync counter from ground truth, then atomically claim a slot
     const { claimed, maxConcurrent } = await syncAndClaimFalSlot()

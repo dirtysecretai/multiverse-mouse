@@ -162,10 +162,9 @@ export async function POST(req: Request) {
       return image_size === 'auto_3K' ? '3k' : '2k'
     })()
     try {
-      let targetUserId: number | null = sessionUser?.id ?? null
+      const targetUserId: number | null = sessionUser?.id ?? null
       if (!targetUserId) {
-        const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
-        targetUserId = adminUser?.id ?? null
+        console.error('seedream-5-lite-edit: no session user — skipping DB save')
       }
       if (targetUserId) {
         await Promise.all(hostedImages.map(img =>

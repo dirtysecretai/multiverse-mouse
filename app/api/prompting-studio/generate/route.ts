@@ -6,6 +6,8 @@ import { fal } from "@fal-ai/client";
 import { PrismaClient } from '@prisma/client';
 import { uploadToR2 } from '@/lib/r2';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getUserFromSession } from '@/lib/auth';
+import { cookies } from 'next/headers';
 
 const prisma = new PrismaClient();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -22,9 +24,20 @@ export async function POST(req: NextRequest) {
   let jobId: number | null = null
 
   try {
+    // Auth via session cookie — never trust userId from the request body
+    const cookieStore = await cookies()
+    const token = cookieStore.get('session')?.value
+    if (!token) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    const sessionUser = await getUserFromSession(token)
+    if (!sessionUser) {
+      return NextResponse.json({ success: false, error: 'Invalid session' }, { status: 401 });
+    }
+    userId = sessionUser.id
+
     const body = await req.json();
     const {
-      userId: _userId,
       celebrityName,
       enhancement,
       prompt,
@@ -35,11 +48,6 @@ export async function POST(req: NextRequest) {
       position,  // Canvas position — stored so the client can restore the placeholder on refresh
       slotId,    // Which scanner slot submitted this generation
     } = body;
-    userId = _userId;
-
-    if (!userId) {
-      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    }
 
     console.log('=== PROMPTING STUDIO GENERATION STARTED ===');
     console.log('User ID:', userId);

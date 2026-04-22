@@ -80,11 +80,9 @@ export async function POST(req: Request) {
       // Save to DB and capture real IDs so the client can display without re-fetching
       const savedIds: number[] = []
       try {
-        // Prefer the authenticated session user; fall back to first admin user
-        let targetUserId: number | null = sessionUser?.id ?? null
+        const targetUserId: number | null = sessionUser?.id ?? null
         if (!targetUserId) {
-          const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
-          targetUserId = adminUser?.id ?? null
+          console.error('nb2-status: no session user — skipping DB save')
         }
         if (targetUserId) {
           const created = await Promise.all(hostedImages.map(img =>

@@ -76,10 +76,9 @@ export async function POST(req: Request) {
       // Save to DB
       const savedIds: number[] = []
       try {
-        let targetUserId: number | null = sessionUser?.id ?? null
+        const targetUserId: number | null = sessionUser?.id ?? null
         if (!targetUserId) {
-          const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
-          targetUserId = adminUser?.id ?? null
+          console.error('wan-27-pro-status: no session user — skipping DB save')
         }
         if (targetUserId) {
           const created = await Promise.all(hostedImages.map(img =>

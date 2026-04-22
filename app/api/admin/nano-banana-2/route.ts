@@ -80,13 +80,10 @@ export async function POST(req: Request) {
     }
 
     // Save to DB under the first user (admin/site owner).
-    // Admin prototype has no user session so we associate with userId=1 or
-    // the first user found in the DB.
     try {
-      let targetUserId: number | null = sessionUser?.id ?? null
+      const targetUserId: number | null = sessionUser?.id ?? null
       if (!targetUserId) {
-        const adminUser = await prisma.user.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
-        targetUserId = adminUser?.id ?? null
+        console.error('nano-banana-2: no session user — skipping DB save')
       }
       if (targetUserId) {
         await Promise.all(hostedImages.map(img =>
