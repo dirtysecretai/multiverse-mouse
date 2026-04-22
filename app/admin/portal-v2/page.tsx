@@ -6695,19 +6695,24 @@ export default function PortalV2Page() {
             const allLocalNb2Slots = currentSlots.filter(s => s.nb2RequestId && !doneNb2Ids.has(s.nb2RequestId))
             const localNb2RequestIds = new Set(allLocalNb2Slots.map(s => s.nb2RequestId!))
 
-            // Detect local NB2 slots that completed server-side while the app was closed
-            // (e.g. iOS Safari killed — the job finished but the client never got the SSE 'complete' event).
-            // allDbJobs includes 'completed' jobs within 2h; inFlight only has processing/queued.
+            // Build lookup maps for completed and failed DB jobs within the 2h window
             const completedDbByRequestId = new Map<string, any>()
-            allDbJobs
-              .filter((j: any) => j.status === 'completed' && j.falRequestId && !doneNb2Ids.has(j.falRequestId))
-              .forEach((j: any) => completedDbByRequestId.set(j.falRequestId, j))
+            const failedDbRequestIds = new Set<string>()
+            allDbJobs.forEach((j: any) => {
+              if (!j.falRequestId || doneNb2Ids.has(j.falRequestId)) return
+              if (j.status === 'completed') completedDbByRequestId.set(j.falRequestId, j)
+              if (j.status === 'failed')    failedDbRequestIds.add(j.falRequestId)
+            })
 
-            const nb2SlotsCompletedWhileClosed = allLocalNb2Slots.filter(
-              s => completedDbByRequestId.has(s.nb2RequestId!)
+            // Also treat slots with no DB record at all as dead — they're either very old or
+            // from a FAL request that expired before being written to the DB.
+            const allDbRequestIds = new Set(allDbJobs.map((j: any) => j.falRequestId).filter(Boolean))
+            const nb2SlotsCompletedWhileClosed = allLocalNb2Slots.filter(s => completedDbByRequestId.has(s.nb2RequestId!))
+            const nb2SlotsDeadOrExpired = allLocalNb2Slots.filter(
+              s => failedDbRequestIds.has(s.nb2RequestId!) || !allDbRequestIds.has(s.nb2RequestId!)
             )
             const nb2SlotsStillLoading = allLocalNb2Slots.filter(
-              s => !completedDbByRequestId.has(s.nb2RequestId!)
+              s => !completedDbByRequestId.has(s.nb2RequestId!) && !nb2SlotsDeadOrExpired.some(d => d.slotId === s.slotId)
             )
 
             // For slots that finished while the app was closed, fetch their images and prepend them
@@ -6721,17 +6726,24 @@ export default function PortalV2Page() {
                     handlePrependImage({ id: img.id, imageUrl: img.imageUrl, prompt: img.prompt, model: img.model })
                   )
                 }
-                // Mark those request IDs as done so they don't come back as loading tiles
-                const nowDoneIds = Array.from(new Set([
-                  ...Array.from(doneNb2Ids),
-                  ...nb2SlotsCompletedWhileClosed.map(s => s.nb2RequestId!),
-                ]))
-                localStorage.setItem("pv2-nb2-done", JSON.stringify(nowDoneIds))
-                nb2SlotsCompletedWhileClosed.forEach(s => doneNb2Ids.add(s.nb2RequestId!))
               } catch {}
             }
 
-            // localNb2Slots = only those still actually in-flight
+            // Purge completed + dead/expired slots from localStorage and mark as done
+            const toPurge = [...nb2SlotsCompletedWhileClosed, ...nb2SlotsDeadOrExpired]
+            if (toPurge.length > 0) {
+              const purgeIds = new Set(toPurge.map(s => s.slotId))
+              const purgeRequestIds = toPurge.map(s => s.nb2RequestId!)
+              try {
+                const stored = JSON.parse(localStorage.getItem("pv2-pending-slots") || "[]") as any[]
+                localStorage.setItem("pv2-pending-slots", JSON.stringify(stored.filter((s: any) => !purgeIds.has(s.slotId))))
+                const nowDoneIds = Array.from(new Set([...Array.from(doneNb2Ids), ...purgeRequestIds]))
+                localStorage.setItem("pv2-nb2-done", JSON.stringify(nowDoneIds))
+                purgeRequestIds.forEach(id => doneNb2Ids.add(id))
+              } catch {}
+            }
+
+            // localNb2Slots = only those confirmed still in-flight in the DB
             const localNb2Slots = nb2SlotsStillLoading
 
             // Cross-device nb2 tiles: DB jobs with falRequestId not already in local slots
