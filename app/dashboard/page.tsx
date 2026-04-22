@@ -230,7 +230,7 @@ export default function DashboardPage() {
       iconBg: 'bg-violet-500/15',
       btnClass: 'bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-300',
       badge: null,
-      maintenance: isMaintenanceMode,
+      maintenance: true,
     },
     {
       id: 'video-scanner',

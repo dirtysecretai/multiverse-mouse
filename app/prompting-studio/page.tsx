@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Image as ImageIcon, Video, Sparkles, ArrowRight, LayoutDashboard, Ticket } from 'lucide-react';
+import { Image as ImageIcon, Video, Sparkles, ArrowRight, LayoutDashboard, Ticket, Wrench } from 'lucide-react';
 
 export default function StudioSelection() {
   const router = useRouter();
@@ -73,15 +73,16 @@ export default function StudioSelection() {
       icon: ImageIcon,
       color: 'violet',
       accent: 'text-violet-400',
-      border: 'border-violet-500/20 hover:border-violet-400/50',
+      border: 'border-violet-500/20',
       bg: 'bg-violet-500/5',
       iconBg: 'bg-violet-500/15',
-      btnClass: 'bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-300',
-      glow: 'group-hover:shadow-violet-500/10',
+      btnClass: 'bg-violet-500/15 border border-violet-500/30 text-violet-300',
+      glow: '',
       tags: ['NanoBanana Pro', 'SeeDream 4.5', 'Pro Scanner v3', 'Flash v2.5'],
       tagColor: 'bg-violet-500/10 text-violet-300 border-violet-500/20',
       badge: null,
       badgeColor: '',
+      locked: true,
     },
     {
       id: 'video-scanner',
@@ -146,44 +147,55 @@ export default function StudioSelection() {
         <div className="grid md:grid-cols-3 gap-4 mb-10">
           {tools.map((tool) => {
             const Icon = tool.icon;
-            return (
-              <Link key={tool.id} href={tool.href}>
-                <div className={`group relative rounded-2xl border ${tool.border} ${tool.bg} backdrop-blur-sm p-5 h-full flex flex-col transition-all duration-200 hover:shadow-xl ${tool.glow} cursor-pointer`}>
-                  {tool.badge && (
-                    <span className={`absolute top-4 right-4 text-[9px] font-black px-2 py-0.5 rounded-full ${tool.badgeColor}`}>
-                      {tool.badge}
-                    </span>
-                  )}
-
-                  {/* Icon + title */}
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className={`w-9 h-9 rounded-xl ${tool.iconBg} flex items-center justify-center shrink-0`}>
-                      <Icon size={18} className={tool.accent} />
-                    </div>
-                    <div>
-                      <p className={`text-sm font-black ${tool.accent}`}>{tool.label}</p>
-                      <p className="text-[10px] text-slate-600 font-mono">{tool.sublabel}</p>
-                    </div>
+            const card = (
+              <div className={`group relative rounded-2xl border ${tool.border} ${tool.bg} backdrop-blur-sm p-5 h-full flex flex-col transition-all duration-200 ${tool.locked ? 'opacity-60 cursor-not-allowed select-none' : `hover:shadow-xl ${tool.glow} cursor-pointer`}`}>
+                {/* Maintenance overlay */}
+                {tool.locked && (
+                  <div className="absolute inset-0 rounded-2xl flex flex-col items-center justify-center gap-2 z-10 bg-black/30 backdrop-blur-[2px]">
+                    <Wrench size={22} className="text-slate-400" />
+                    <p className="text-xs font-bold text-slate-300">Down for Maintenance</p>
+                    <p className="text-[10px] text-slate-500">Check back soon</p>
                   </div>
+                )}
 
-                  {/* Description */}
-                  <p className="text-xs text-slate-400 leading-relaxed mb-4 flex-1">{tool.description}</p>
+                {tool.badge && (
+                  <span className={`absolute top-4 right-4 text-[9px] font-black px-2 py-0.5 rounded-full ${tool.badgeColor}`}>
+                    {tool.badge}
+                  </span>
+                )}
 
-                  {/* Model tags */}
-                  <div className="flex flex-wrap gap-1 mb-4">
-                    {tool.tags.map(tag => (
-                      <span key={tag} className={`text-[9px] px-1.5 py-0.5 rounded border ${tool.tagColor} font-medium`}>{tag}</span>
-                    ))}
+                {/* Icon + title */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`w-9 h-9 rounded-xl ${tool.iconBg} flex items-center justify-center shrink-0`}>
+                    <Icon size={18} className={tool.accent} />
                   </div>
-
-                  {/* Open button */}
-                  <button className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${tool.btnClass}`}>
-                    Open {tool.label}
-                    <ArrowRight size={12} />
-                  </button>
+                  <div>
+                    <p className={`text-sm font-black ${tool.accent}`}>{tool.label}</p>
+                    <p className="text-[10px] text-slate-600 font-mono">{tool.sublabel}</p>
+                  </div>
                 </div>
-              </Link>
+
+                {/* Description */}
+                <p className="text-xs text-slate-400 leading-relaxed mb-4 flex-1">{tool.description}</p>
+
+                {/* Model tags */}
+                <div className="flex flex-wrap gap-1 mb-4">
+                  {tool.tags.map(tag => (
+                    <span key={tag} className={`text-[9px] px-1.5 py-0.5 rounded border ${tool.tagColor} font-medium`}>{tag}</span>
+                  ))}
+                </div>
+
+                {/* Open button */}
+                <button className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${tool.btnClass}`} disabled={tool.locked}>
+                  Open {tool.label}
+                  <ArrowRight size={12} />
+                </button>
+              </div>
             );
+
+            return tool.locked
+              ? <div key={tool.id}>{card}</div>
+              : <Link key={tool.id} href={tool.href}>{card}</Link>;
           })}
         </div>
 

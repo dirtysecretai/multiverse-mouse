@@ -1,5 +1,5 @@
-import MultiversePortal from "@/components/multiverse-portal"
+import { redirect } from 'next/navigation'
 
 export default function ScannerPage() {
-  return <MultiversePortal />
+  redirect('/prompting-studio')
 }
