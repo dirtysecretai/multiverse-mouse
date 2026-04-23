@@ -2079,14 +2079,9 @@ function VideoDetailModal({
     })
   }
 
+  const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent)
+
   const handleDownload = async () => {
-    // iOS Safari blocks programmatic blob-URL clicks — open in new tab instead so
-    // the user can long-press / use the native share sheet to save the video.
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-    if (isIOS) {
-      window.open(video.videoUrl, "_blank")
-      return
-    }
     setDownloading(true)
     try {
       const res = await fetch(video.videoUrl)
@@ -2259,14 +2254,26 @@ function VideoDetailModal({
                   <span className="hidden sm:inline">Use Prompt</span>
                   <span className="sm:hidden">Use</span>
                 </button>
-                <button
-                  onClick={handleDownload}
-                  disabled={downloading}
-                  className="flex-1 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/8 text-[11px] text-slate-300 hover:text-white transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
-                >
-                  <Download size={11} />
-                  {downloading ? "..." : "Download"}
-                </button>
+                {isIOS ? (
+                  <a
+                    href={video.videoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/8 text-[11px] text-slate-300 hover:text-white transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Download size={11} />
+                    Download
+                  </a>
+                ) : (
+                  <button
+                    onClick={handleDownload}
+                    disabled={downloading}
+                    className="flex-1 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/8 text-[11px] text-slate-300 hover:text-white transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Download size={11} />
+                    {downloading ? "..." : "Download"}
+                  </button>
+                )}
                 <a
                   href={video.videoUrl}
                   target="_blank"
