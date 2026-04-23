@@ -2080,6 +2080,13 @@ function VideoDetailModal({
   }
 
   const handleDownload = async () => {
+    // iOS Safari blocks programmatic blob-URL clicks — open in new tab instead so
+    // the user can long-press / use the native share sheet to save the video.
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    if (isIOS) {
+      window.open(video.videoUrl, "_blank")
+      return
+    }
     setDownloading(true)
     try {
       const res = await fetch(video.videoUrl)
