@@ -316,7 +316,7 @@ function UploadModal({ bucketId, suggestions, onClose, onUploaded }: {
 
   function addFiles(incoming: FileList | File[]) {
     const arr = Array.from(incoming).filter(f =>
-      f.type.startsWith('image/') || f.type.startsWith('video/')
+      !f.type || f.type.startsWith('image/') || f.type.startsWith('video/')
     )
     if (!arr.length) return
     setFiles(prev => {
@@ -375,36 +375,78 @@ function UploadModal({ bucketId, suggestions, onClose, onUploaded }: {
     if (!files.length || uploading) return
     setUploading(true)
     const total = files.length
-    let done = 0
-    const pw = sessionStorage.getItem('admin-password') || ''
+    const pw    = sessionStorage.getItem('admin-password') || ''
 
     try {
-      for (let start = 0; start < files.length; start += BATCH_SIZE) {
-        const end          = Math.min(start + BATCH_SIZE, files.length)
-        const batchFiles   = files.slice(start, end)
-        const batchMetas   = metas.slice(start, end)
-        const batchPreview = previews.slice(start, end)
-
-        setProgress({ done, total, msg: `Uploading ${start + 1}–${end} of ${total}…` })
-
-        const form = new FormData()
-        batchFiles.forEach(f => form.append('files', f))
-        form.append('metadataJson', JSON.stringify(batchMetas))
-        form.append('bucketId',     String(bucketId))
-        form.append('widths',       JSON.stringify(batchPreview.map(p => p?.w ?? 0)))
-        form.append('heights',      JSON.stringify(batchPreview.map(p => p?.h ?? 0)))
-
-        const res  = await fetch('/api/admin/dataset/upload', {
-          method:  'POST',
-          headers: { 'x-admin-password': pw },
-          body:    form,
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || `Batch ${start + 1}–${end} failed`)
-        done += data.count
+      // Step 1: Get presigned R2 PUT URLs for every file in one small JSON request.
+      // Files are never sent through Vercel — they go directly to R2, bypassing
+      // the 4.5MB serverless body limit that broke batch uploads of 4K images.
+      setProgress({ done: 0, total, msg: `Preparing ${total} upload${total !== 1 ? 's' : ''}…` })
+      const presignRes = await fetch('/api/admin/dataset/presign', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': pw },
+        body:    JSON.stringify({
+          files: files.map(f => ({ filename: f.name, mimeType: f.type || 'image/jpeg' })),
+        }),
+      })
+      if (!presignRes.ok) throw new Error(`Could not prepare uploads: ${await presignRes.text()}`)
+      const { results } = await presignRes.json() as {
+        results: Array<{ uploadUrl: string; publicUrl: string; normalizedMime: string }>
       }
 
-      setProgress({ done, total, msg: `✓ ${done} file${done !== 1 ? 's' : ''} uploaded` })
+      // Step 2: PUT files directly to R2 — 5 concurrent at a time
+      const CONCURRENCY = 5
+      let uploadDone = 0
+      const uploaded: Array<{ imageUrl: string; mimeType: string; filename: string; width: number; height: number; meta: UploadFileMeta } | null> =
+        new Array(files.length).fill(null)
+
+      for (let i = 0; i < files.length; i += CONCURRENCY) {
+        const end = Math.min(i + CONCURRENCY, files.length)
+        setProgress({ done: uploadDone, total, msg: `Uploading ${i + 1}–${end} of ${total}…` })
+
+        await Promise.all(
+          Array.from({ length: end - i }, (_, k) => i + k).map(async idx => {
+            const file    = files[idx]
+            const presign = results[idx]
+            if (!presign) return
+
+            const putRes = await fetch(presign.uploadUrl, {
+              method:  'PUT',
+              headers: { 'Content-Type': presign.normalizedMime },
+              body:    file,
+            })
+            if (!putRes.ok) throw new Error(`Upload failed for "${file.name}" (${putRes.status})`)
+
+            uploaded[idx] = {
+              imageUrl: presign.publicUrl,
+              mimeType: presign.normalizedMime,
+              filename: file.name,
+              width:    previews[idx]?.w ?? 0,
+              height:   previews[idx]?.h ?? 0,
+              meta:     metas[idx],
+            }
+          })
+        )
+        uploadDone += end - i
+      }
+
+      const validRecords = uploaded.filter((r): r is NonNullable<typeof r> => r !== null)
+      if (validRecords.length === 0) throw new Error('No files could be uploaded')
+
+      // Step 3: Save DB records in batches of 20 (tiny JSON, no size issues)
+      setProgress({ done: validRecords.length, total, msg: 'Saving to database…' })
+      const RECORD_BATCH = 20
+      for (let i = 0; i < validRecords.length; i += RECORD_BATCH) {
+        const saveRes = await fetch('/api/admin/dataset/record', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-password': pw },
+          body:    JSON.stringify({ bucketId, records: validRecords.slice(i, i + RECORD_BATCH) }),
+        })
+        if (!saveRes.ok) throw new Error(`Save failed: ${(await saveRes.json()).error}`)
+      }
+
+      const n = validRecords.length
+      setProgress({ done: n, total, msg: `✓ ${n} file${n !== 1 ? 's' : ''} uploaded` })
       setTimeout(() => { onUploaded(); onClose() }, 1000)
     } catch (err: any) {
       setProgress(p => ({ ...p, msg: `Error: ${err.message}` }))
@@ -1756,9 +1798,9 @@ export default function DatasetPage() {
   const isMountedRef   = useRef(false)
   const [debouncedSearch, setDebouncedSearch] = useState<string>(() => _p.search ?? "")
 
-  const [bulkLoading,      setBulkLoading]      = useState(false)
-  const [exporting,        setExporting]        = useState(false)
-  const [selectAllLoading, setSelectAllLoading] = useState(false)
+  const [bulkLoading,        setBulkLoading]        = useState(false)
+  const [exportingBucketId,  setExportingBucketId]  = useState<number | null>(null)
+  const [selectAllLoading,   setSelectAllLoading]   = useState(false)
 
   // ── Auth ────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1968,33 +2010,45 @@ export default function DatasetPage() {
     finally { setSelectAllLoading(false) }
   }
 
-  // ── Export ───────────────────────────────────────────────────────────────────
-  async function handleExport() {
-    setExporting(true)
+  // ── Export selected → client-side JSON ──────────────────────────────────────
+  function handleExport() {
+    if (selected.size === 0) return
+    const selectedImages = images.filter(img => selected.has(img.id))
+    const payload = selectedImages.map(img => ({
+      id:                img.id,
+      prompt:            img.prompt,
+      imageUrl:          img.imageUrl,
+      model:             img.model,
+      quality:           img.quality,
+      aspectRatio:       img.aspectRatio,
+      ticketCost:        img.ticketCost,
+      markedForTraining: img.markedForTraining,
+      adminTags:         img.adminTags,
+      adminCaption:      img.adminCaption,
+      createdAt:         img.createdAt,
+    }))
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = `selected-dataset-${new Date().toISOString().slice(0, 10)}.json`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // ── Export bucket → zip ───────────────────────────────────────────────────
+  async function exportBucket(b: { id: number; name: string }) {
+    setExportingBucketId(b.id)
     try {
-      const params = new URLSearchParams({ export: "true", sort })
-      models.forEach(m => params.append('model', m))
-      aspectRatios.forEach(a => params.append('aspectRatio', a))
-      qualities.forEach(q => params.append('quality', q))
-      userFilters.forEach(u => params.append('userId', u))
-      if (hasRefs)        params.set('hasRefs',   hasRefs)
-      if (hasRating)      params.set('hasRating', hasRating)
-      if (hasCaption)     params.set('hasCaption', hasCaption)
-      if (hasTag)         params.set('hasTag',     hasTag)
-      if (tagFilter)      params.set('tagFilter',  tagFilter)
-      if (mediaType)      params.set('mediaType',  mediaType)
-      if (bucketFilter)   params.set('bucketId',   bucketFilter)
-      if (markedOnly)     params.set('markedOnly', 'true')
-      if (debouncedSearch) params.set('search',    debouncedSearch)
-      const res  = await fetch(`/api/admin/dataset?${params}`, { headers: authHeaders() })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const res = await fetch(`/api/admin/buckets/${b.id}/export`, { headers: authHeaders() })
+      if (!res.ok) { alert(`Export failed: ${await res.text()}`); return }
       const blob = await res.blob()
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
-      a.href = url; a.download = `dataset-${new Date().toISOString().slice(0, 10)}.json`; a.click()
+      a.href = url
+      a.download = `${b.name.replace(/[^a-z0-9-_]/gi, '_')}-dataset.zip`
+      a.click()
       URL.revokeObjectURL(url)
-    } catch (e: any) { alert(`Export failed: ${e.message}`) }
-    finally { setExporting(false) }
+    } catch (e: any) { alert(`Export error: ${e.message}`) }
+    finally { setExportingBucketId(null) }
   }
 
   // ── Bucket helpers ────────────────────────────────────────────────────────────
@@ -2267,10 +2321,11 @@ export default function DatasetPage() {
               </button>
             )}
 
-            <button onClick={handleExport} disabled={exporting}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] hover:bg-emerald-500/15 transition-all disabled:opacity-50">
-              {exporting ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-              Export
+            <button onClick={handleExport} disabled={selected.size === 0}
+              title={selected.size === 0 ? "Select images to export" : `Export ${selected.size} selected as JSON`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] hover:bg-emerald-500/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+              <Download size={12} />
+              Export{selected.size > 0 ? ` (${selected.size})` : ""}
             </button>
 
             <button onClick={fetchData} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
@@ -2446,6 +2501,17 @@ export default function DatasetPage() {
                         <Plus size={11} />
                       </button>
                     )}
+                    {/* Export zip button — all buckets */}
+                    <button
+                      onClick={e => { e.stopPropagation(); exportBucket(b) }}
+                      disabled={exportingBucketId === b.id}
+                      className="ml-0.5 p-1 rounded-md text-emerald-700 hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all disabled:opacity-100"
+                      title={`Export "${b.name}" to zip`}
+                    >
+                      {exportingBucketId === b.id
+                        ? <Loader2 size={11} className="animate-spin text-emerald-400" />
+                        : <Download size={11} />}
+                    </button>
                   </div>
                 )}
 
@@ -2457,25 +2523,6 @@ export default function DatasetPage() {
                       className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors"
                     >
                       <Pencil size={11} /> Rename
-                    </button>
-                    <button
-                      onClick={async () => {
-                        setBucketMenuId(null)
-                        try {
-                          const res = await fetch(`/api/admin/buckets/${b.id}/export`, { headers: authHeaders() })
-                          if (!res.ok) { alert(`Export failed: ${await res.text()}`); return }
-                          const blob = await res.blob()
-                          const url = URL.createObjectURL(blob)
-                          const a = document.createElement('a')
-                          a.href = url
-                          a.download = `${b.name.replace(/[^a-z0-9-_]/gi, '_')}-dataset.zip`
-                          a.click()
-                          URL.revokeObjectURL(url)
-                        } catch (e: any) { alert(`Export error: ${e.message}`) }
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/[0.06] transition-colors"
-                    >
-                      <Download size={11} /> Export zip
                     </button>
                     <button
                       onClick={() => deleteBucket(b.id)}

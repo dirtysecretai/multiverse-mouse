@@ -28,7 +28,7 @@ export async function GET(
       images: {
         include: {
           image: {
-            select: { id: true, imageUrl: true, adminCaption: true, prompt: true, adminTags: true },
+            select: { id: true, imageUrl: true, adminCaption: true, prompt: true, adminTags: true, model: true },
           },
         },
         orderBy: { addedAt: 'asc' },
@@ -66,8 +66,10 @@ export async function GET(
 
         folder.file(`${idx}.${ext}`, buffer)
 
-        // Caption: use adminCaption if set, otherwise fall back to prompt
-        const caption = (img.adminCaption?.trim()) || img.prompt.trim()
+        // Caption: adminCaption first; fall back to prompt only for AI-generated images
+        // (uploads have prompt = filename which is not useful as a training caption)
+        const isUpload = img.model === '__upload__'
+        const caption  = img.adminCaption?.trim() || (!isUpload ? img.prompt.trim() : '')
         folder.file(`${idx}.txt`, caption)
 
         downloaded++
