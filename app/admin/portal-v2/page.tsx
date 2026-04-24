@@ -5688,23 +5688,39 @@ export default function PortalV2Page() {
   const uploadVideoFrame = useCallback(async (file: File): Promise<string | null> => {
     try {
       let uploadFile: File | Blob = file
-      // Compress images to stay under FAL's 10MB file size limit
+      let mimeType = file.type || 'application/octet-stream'
+      // Compress images before upload
       if (file.type.startsWith("image/")) {
         const dataUrl = await compressFileToDataUrl(file, 1920, 0.85)
         const res2 = await fetch(dataUrl)
         const blob = await res2.blob()
         uploadFile = new File([blob], file.name, { type: 'image/jpeg' })
+        mimeType = 'image/jpeg'
       }
-      const form = new FormData()
-      form.append('file', uploadFile, file.name)
-      const res = await fetch("/api/admin/upload-frame", { method: "POST", body: form })
-      if (!res.ok) {
-        const errText = await res.text().catch(() => 'unknown error')
-        console.error(`upload-frame failed ${res.status}:`, errText)
+
+      // Get a presigned R2 URL — client uploads directly, bypassing Vercel's 4.5MB limit
+      const presignRes = await fetch("/api/admin/upload-frame-presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, mimeType }),
+      })
+      if (!presignRes.ok) {
+        console.error('Presign failed:', await presignRes.text().catch(() => ''))
         return null
       }
-      const data = await res.json()
-      return data.url ?? null
+      const { uploadUrl, publicUrl } = await presignRes.json()
+
+      // PUT directly to R2 — no Vercel body limit
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": mimeType },
+        body: uploadFile,
+      })
+      if (!putRes.ok) {
+        console.error('R2 PUT failed:', putRes.status)
+        return null
+      }
+      return publicUrl
     } catch (err) {
       console.error('uploadVideoFrame error:', err)
       return null
