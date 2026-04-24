@@ -6608,7 +6608,7 @@ export default function PortalV2Page() {
       } catch {}
       // videoPendingSlots (drop slots > 90 min old)
       try {
-        const stored = sessionStorage.getItem("pv2-video-pending-slots")
+        const stored = localStorage.getItem("pv2-video-pending-slots")
         if (stored) {
           const slots = JSON.parse(stored) as VideoPendingSlot[]
           const cutoff = Date.now() - 90 * 60 * 1000
@@ -6634,7 +6634,7 @@ export default function PortalV2Page() {
     // Persist all storage-backed state
     try { localStorage.setItem("pv2-pending-slots", JSON.stringify(pendingSlots.filter(s => s.status !== "failed"))) } catch {}
     try { sessionStorage.setItem("pv2-failed-images", JSON.stringify(savedFails)) } catch {}
-    try { sessionStorage.setItem("pv2-video-pending-slots", JSON.stringify(videoPendingSlots)) } catch {}
+    try { localStorage.setItem("pv2-video-pending-slots", JSON.stringify(videoPendingSlots)) } catch {}
     try { sessionStorage.setItem("pv2-video-failed-items", JSON.stringify(savedVideoFails)) } catch {}
     try { localStorage.setItem(REF_STORAGE_KEY, JSON.stringify({ library: refLibrary, activeIds: activeRefIds })) } catch {}
   }, [pendingSlots, savedFails, videoPendingSlots, savedVideoFails, refLibrary, activeRefIds])
