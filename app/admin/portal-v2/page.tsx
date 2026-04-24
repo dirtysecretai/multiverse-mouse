@@ -62,7 +62,7 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
 // --- HELPERS ---
 function calcTicketCost(modelId: string, quality: Quality, aspectRatio?: AspectRatio): number {
   if (modelId === "nano-banana-pro")     return quality === "4k" ? 14 : 7
-  if (modelId === "nano-banana-pro-2")   return quality === "4k" ? 10 : 6
+  if (modelId === "nano-banana-pro-2")   return quality === "4k" ? 12 : 7
   if (modelId === "seedream-4.5")        return quality === "4k" ? 4 : 2
   if (modelId === "seedream-5-lite")     return quality === "3k" ? 4 : 2
   if (modelId === "flux-2")             return 1

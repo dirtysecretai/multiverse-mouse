@@ -85,8 +85,19 @@ function formatDateTime(d: string) {
 // For models whose ticketCost was historically saved as 0, derive it from model + quality
 function getDisplayTicketCost(img: GeneratedImage): number {
   if (img.ticketCost > 0) return img.ticketCost
-  if (img.model === 'nano-banana-pro-2') return img.quality === '4k' ? 8 : 5
-  return 0
+  const q = img.quality
+  switch (img.model) {
+    case 'nano-banana-pro-2':  return q === '4k' ? 12 : 7
+    case 'nano-banana-pro':    return q === '4k' ? 14 : 7
+    case 'pro-scanner-v3':     return q === '4k' ? 15 : 7
+    case 'seedream-4.5':       return q === '4k' ? 4 : 2
+    case 'seedream-5-lite':    return q === '4k' ? 4 : 2
+    case 'kling-v3-image':     return 2
+    case 'kling-o3-image':     return q === '4k' ? 4 : 2
+    case 'wan-2.7-pro':        return 4
+    case 'flash-scanner-v2.5': return 1
+    default:                   return 0
+  }
 }
 
 export default function AdminImagesPage() {
