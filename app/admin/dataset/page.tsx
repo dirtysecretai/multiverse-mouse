@@ -1022,7 +1022,7 @@ function BulkModal({ mode, count, suggestions, onClose, onApply }: {
 
 // ─── Auto-fill panel ──────────────────────────────────────────────────────────
 
-type AutoFillMode  = 'caption' | 'tags'
+type AutoFillMode  = 'caption' | 'tags' | 'flux'
 type AutoFillModel = 'pro' | 'flash'
 
 interface AutoFillEvent {
@@ -1170,7 +1170,7 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
     const finalTags  = mode === 'tags' ? cleanTagsClient(finalValue) : undefined
     setSavingIds(prev => new Set(prev).add(item.id))
     try {
-      const body = mode === 'caption'
+      const body = mode !== 'tags'
         ? { ids: [item.id], caption: finalValue }
         : { ids: [item.id], tags: finalTags }
       await fetch('/api/admin/dataset', {
@@ -1178,7 +1178,7 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body:    JSON.stringify(body),
       })
-      onItemSaved(item.id, mode === 'caption' ? { caption: finalValue } : { tags: finalTags })
+      onItemSaved(item.id, mode !== 'tags' ? { caption: finalValue } : { tags: finalTags })
       setFeedItems(prev => prev.filter(i => i.id !== item.id))
       if (editingId === item.id) setEditingId(null)
     } catch (e: any) {
@@ -1238,15 +1238,18 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
       {/* Config — always visible, locked during run */}
       <div className="shrink-0 px-4 pt-3 pb-2 space-y-3 border-b border-white/[0.05]">
 
-        {/* Mode + Model row */}
-        <div className="flex gap-2">
-          {(['caption', 'tags'] as const).map(m => (
-            <button key={m} onClick={() => !isLocked && setMode(m)}
-              className={`flex-1 py-1.5 rounded-lg border text-[11px] font-medium transition-all
-                ${mode === m
-                  ? m === 'caption' ? 'bg-violet-500/15 border-violet-500/30 text-violet-300' : 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300'
-                  : 'bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white'} ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
-              {m === 'caption' ? 'Caption' : 'Tags'}
+        {/* Mode row */}
+        <div className="flex gap-1.5">
+          {([
+            { id: 'caption', label: 'Caption',      active: 'bg-violet-500/15 border-violet-500/30 text-violet-300' },
+            { id: 'tags',    label: 'Tags',          active: 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300' },
+            { id: 'flux',    label: 'FLUX Caption',  active: 'bg-amber-500/15 border-amber-500/30 text-amber-300' },
+          ] as const).map(m => (
+            <button key={m.id} onClick={() => !isLocked && setMode(m.id)}
+              className={`flex-1 py-1.5 rounded-lg border text-[10px] font-medium transition-all
+                ${mode === m.id ? m.active : 'bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white'}
+                ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              {m.label}
             </button>
           ))}
         </div>
@@ -1262,7 +1265,7 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
               {m.label}
             </button>
           ))}
-          {([
+          {mode !== 'flux' && ([
             { key: false, label: 'Basic' },
             { key: true,  label: 'Advanced' },
           ] as const).map(m => (
@@ -1285,13 +1288,22 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
               </button>
             </div>
 
-            {/* Context tags */}
+            {/* Context tags / trigger word */}
             <div>
-              <div className="flex flex-wrap gap-1 min-h-[24px] rounded-lg border border-white/[0.07] bg-white/[0.02] px-2 py-1.5">
-                {contextTags.map(tag => (
-                  <span key={tag} className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300">
+              {mode === 'flux' && (
+                <p className="text-[10px] text-amber-400/70 mb-1.5">
+                  First tag = trigger word (e.g. <span className="font-mono text-amber-300">DARTHVADER</span>). Additional tags = context.
+                </p>
+              )}
+              <div className={`flex flex-wrap gap-1 min-h-[24px] rounded-lg border px-2 py-1.5 ${mode === 'flux' ? 'border-amber-500/25 bg-amber-500/[0.03]' : 'border-white/[0.07] bg-white/[0.02]'}`}>
+                {contextTags.map((tag, i) => (
+                  <span key={tag} className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border
+                    ${mode === 'flux' && i === 0
+                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                      : 'bg-violet-500/10 border-violet-500/20 text-violet-300'}`}>
+                    {mode === 'flux' && i === 0 && <span className="text-[8px] mr-0.5 opacity-60">⚡</span>}
                     {tag}
-                    <button onClick={() => setContextTags(prev => prev.filter(t => t !== tag))} className="text-violet-500 hover:text-violet-300 ml-0.5">×</button>
+                    <button onClick={() => setContextTags(prev => prev.filter(t => t !== tag))} className="text-current opacity-50 hover:opacity-100 ml-0.5">×</button>
                   </span>
                 ))}
                 <input
@@ -1306,11 +1318,15 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
                     }
                     if (e.key === 'Backspace' && !tagInput && contextTags.length) setContextTags(prev => prev.slice(0, -1))
                   }}
-                  placeholder={contextTags.length ? 'Add subject…' : 'Subject / context tags (Enter)'}
-                  className="flex-1 min-w-[80px] bg-transparent text-[11px] text-white placeholder-slate-700 outline-none"
+                  placeholder={
+                    mode === 'flux'
+                      ? contextTags.length === 0 ? '⚡ Trigger word (Enter)…' : 'Add context tag…'
+                      : contextTags.length ? 'Add subject…' : 'Subject / context tags (Enter)'
+                  }
+                  className="flex-1 min-w-[80px] bg-transparent text-[11px] text-white placeholder-slate-600 outline-none"
                 />
               </div>
-              {context || contextTags.length === 0 ? (
+              {mode !== 'flux' && (context || contextTags.length === 0) ? (
                 <textarea value={context} onChange={e => setContext(e.target.value)}
                   placeholder="Optional: full context sentence…"
                   rows={1}

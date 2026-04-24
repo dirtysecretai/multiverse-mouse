@@ -58,7 +58,7 @@ function cleanTags(raw: string): string[] {
     .filter(t => t.length > 0 && t.length <= 40)
 }
 
-// Build the instruction for BASIC mode (image + prompt only)
+// ── Basic mode ─────────────────────────────────────────────────────────────────
 function buildBasicInstruction(mode: 'caption' | 'tags', promptSnippet: string, curatorContext: string | null): string {
   const contextLine = curatorContext ? `\nCURATOR CONTEXT (must be included): ${curatorContext}` : ''
   if (mode === 'caption') {
@@ -67,7 +67,7 @@ function buildBasicInstruction(mode: 'caption' | 'tags', promptSnippet: string, 
   return `You are an AI training data curator. Analyze this AI-generated image and generate 5–15 descriptive tags for a training dataset.\n\nTags must be lowercase. Use hyphens for multi-word terms. Cover: subject, style, color palette, mood, composition, visual elements.\n\nOriginal generation prompt: "${promptSnippet}"${contextLine}\n\nRespond with ONLY a comma-separated list. Example: portrait, dark-lighting, fantasy-style, blue-tones, dramatic-pose`
 }
 
-// Build the instruction for ADVANCED mode (all 4 signals)
+// ── Advanced mode ──────────────────────────────────────────────────────────────
 function buildAdvancedInstruction(
   mode:           'caption' | 'tags',
   promptSnippet:  string,
@@ -147,19 +147,78 @@ ${qualityTags}${refTags}${contextTags2}
 Respond with ONLY a comma-separated list.`
 }
 
-// POST — stream SSE progress while auto-filling captions or tags
-// Body: { ids: number[], mode: 'caption'|'tags', model: 'pro'|'flash', overwrite: boolean, advanced: boolean }
+// ── FLUX LoRA training caption mode ───────────────────────────────────────────
+// Produces long, structured natural-language captions optimised for FLUX.1-dev
+// LoRA training. FLUX uses T5-XXL (handles up to ~512 tokens) so longer,
+// more descriptive captions are strictly better than tag-soup.
+function buildFluxInstruction(
+  promptSnippet: string,
+  refCount:      number,
+  rating:        { score: number; wasAccurate: boolean | null; tags: string[]; feedbackText: string | null } | null,
+  triggerWord:   string | null,
+): string {
+  const triggerLine = triggerWord
+    ? `TRIGGER WORD: "${triggerWord}" — this exact string MUST appear once, early in the caption. It will become the LoRA activation token.`
+    : 'No trigger word set — describe the subject naturally without a special token.'
+
+  const ratingHint = rating
+    ? `Quality rating: ${rating.score}/5${rating.feedbackText ? ` — user note: "${rating.feedbackText}"` : ''}`
+    : ''
+
+  const refOrderNote = refCount > 0
+    ? `IMAGE ORDER: Image 1 = training image (caption this). Images 2–${refCount + 1} = reference images for subject/identity context only — do NOT caption them.`
+    : 'Only one image provided — caption it.'
+
+  return `You are a professional AI model trainer writing FLUX.1-dev LoRA training captions. These captions are the sole signal the model uses to learn, so visual precision is critical.
+
+${triggerLine}
+
+${refOrderNote}
+
+═══ CAPTION STRUCTURE (follow this exact order) ═══
+
+1. SUBJECT LINE — trigger word + subject identity + single most distinctive visual element (1 sentence)
+2. COSTUME/OUTFIT — every significant clothing piece, material, color, texture visible in the image (1–2 sentences)
+3. POSE & ACTION — exact body position, limb placement, gesture, facial expression if visible (1 sentence)
+4. BACKGROUND & SETTING — environment, location, colors, depth, atmosphere (1 sentence)
+5. LIGHTING — direction, quality, color temperature, shadow behavior (1 sentence)
+6. CAMERA & FRAMING — angle (eye-level/low/high), shot type (close-up/medium/wide/full-body), depth of field (1 sentence)
+7. QUALITY CLOSE — end with comma-separated quality descriptors (high detail, sharp focus, [render style])
+
+═══ WRITING RULES ═══
+
+✓ Natural descriptive sentences — NOT comma-separated tags
+✓ Visually specific: "glossy black full-plate armor" not "dark outfit"
+✓ Name exact colors: "deep crimson", "matte obsidian", "ivory white"
+✓ Name exact materials: "leather", "polished metal", "sheer fabric", "carbon fiber"
+✓ Vary your wording — don't repeat the same descriptors across sentences
+✓ Describe ONLY what is visible in Image 1 — not what should be there conceptually
+✗ No subjective adjectives: menacing, beautiful, powerful, iconic (unless literally visible)
+✗ No story, lore, or context beyond what is visually present
+✗ No phrases: "the image shows", "we can see", "depicting", "appears to be"
+✗ No duplicate information between sentences
+
+TARGET LENGTH: 120–220 words (long enough for T5-XXL to extract rich signal, short enough to stay focused)
+
+═══ CONTEXT ═══
+- Original generation prompt: "${promptSnippet}"${ratingHint ? `\n- ${ratingHint}` : ''}
+
+Respond with ONLY the caption text. No preamble, no section headers, no quotes, no markdown.`
+}
+
+// POST — stream SSE progress while auto-filling captions, tags, or FLUX captions
+// Body: { ids: number[], mode: 'caption'|'tags'|'flux', model: 'pro'|'flash', overwrite: boolean, advanced: boolean }
 export async function POST(req: Request) {
   if (!checkAuth(req)) return new Response('Unauthorized', { status: 401 })
 
   const { ids, mode, model: modelKey, overwrite = false, advanced = false, preview = false, context, contextTags } = await req.json() as {
-    ids:         number[]
-    mode:        'caption' | 'tags'
-    model:       'pro' | 'flash'
-    overwrite:   boolean
-    advanced:    boolean
-    preview:     boolean
-    context?:    string
+    ids:          number[]
+    mode:         'caption' | 'tags' | 'flux'
+    model:        'pro' | 'flash'
+    overwrite:    boolean
+    advanced:     boolean
+    preview:      boolean
+    context?:     string
     contextTags?: string[]
   }
 
@@ -168,8 +227,11 @@ export async function POST(req: Request) {
     ...(context ? [context] : []),
   ].join(' — ') || null
 
+  // For FLUX mode, the first context tag is the trigger word
+  const triggerWord = mode === 'flux' ? (contextTags?.[0] ?? null) : null
+
   if (!Array.isArray(ids) || ids.length === 0) return new Response('ids required', { status: 400 })
-  if (mode !== 'caption' && mode !== 'tags')   return new Response('invalid mode', { status: 400 })
+  if (!['caption', 'tags', 'flux'].includes(mode))  return new Response('invalid mode', { status: 400 })
 
   const modelId = MODELS[modelKey] ?? MODELS.flash
 
@@ -196,14 +258,14 @@ export async function POST(req: Request) {
       let skipped   = 0
       let failed    = 0
 
-      send({ type: 'start', total: records.length, modelId, advanced })
+      send({ type: 'start', total: records.length, modelId, advanced, mode })
 
       for (let i = 0; i < records.length; i++) {
         const record = records[i]
 
         // Skip if not overwriting and content already exists
         if (!overwrite) {
-          if (mode === 'caption' && record.adminCaption) {
+          if ((mode === 'caption' || mode === 'flux') && record.adminCaption) {
             skipped++; send({ type: 'skip', id: record.id, current: i + 1, total: records.length, reason: 'already captioned' }); continue
           }
           if (mode === 'tags' && record.adminTags.length > 0) {
@@ -225,21 +287,53 @@ export async function POST(req: Request) {
 
           let result: string
 
-          // Fetch main image — skip gracefully if URL is unreachable/expired
+          // Fetch main image
           const mainImage = await fetchImageAsBase64(record.imageUrl, 20_000).catch(err => {
             throw new Error(`Image unreachable: ${err.message}`)
           })
 
-          if (!advanced) {
-            // ── Basic mode ──────────────────────────────────────────────────────
+          if (mode === 'flux') {
+            // ── FLUX LoRA caption mode ─────────────────────────────────────────
+            // Always fetch references for maximum context — they help identify
+            // costume/character elements more accurately.
+            const refUrls   = (record.referenceImageUrls ?? []).slice(0, 3)
+            const refImages = (await Promise.all(refUrls.map(url => fetchImageAsBase64Safe(url, 20_000)))).filter(Boolean) as { data: string; mimeType: string }[]
+
+            const instruction = buildFluxInstruction(promptSnippet, refImages.length, rating, triggerWord)
+
+            const parts: GeminiPart[] = [
+              { inlineData: mainImage },
+              ...refImages.map(img => ({ inlineData: img })),
+              { text: instruction },
+            ]
+
+            // Use high token limit — FLUX captions should be 120–220 words
+            result = await callGeminiParts(parts, modelId, 800, 90_000).catch(err => { throw new Error(`Gemini error: ${err.message}`) })
+
+            const caption = result.replace(/^["']|["']$/g, '').trim()
+            if (!preview) await prisma.generatedImage.update({ where: { id: record.id }, data: { adminCaption: caption } })
+            send({ type: 'result', id: record.id, current: i + 1, total: records.length, value: caption })
+
+          } else if (!advanced) {
+            // ── Basic mode ─────────────────────────────────────────────────────
             const instruction = buildBasicInstruction(mode, promptSnippet, curatorContext)
             result = await callGeminiParts(
               [{ inlineData: mainImage }, { text: instruction }],
               modelId,
             ).catch(err => { throw new Error(`Gemini error: ${err.message}`) })
+
+            if (mode === 'caption') {
+              const caption = result.replace(/^["']|["']$/g, '').trim()
+              if (!preview) await prisma.generatedImage.update({ where: { id: record.id }, data: { adminCaption: caption } })
+              send({ type: 'result', id: record.id, current: i + 1, total: records.length, value: caption })
+            } else {
+              const tags = cleanTags(result)
+              if (!preview) await prisma.generatedImage.update({ where: { id: record.id }, data: { adminTags: tags } })
+              send({ type: 'result', id: record.id, current: i + 1, total: records.length, value: tags.join(', '), tags })
+            }
+
           } else {
-            // ── Advanced mode ───────────────────────────────────────────────────
-            // Fetch up to 3 reference images in parallel (silently skip failures)
+            // ── Advanced mode ──────────────────────────────────────────────────
             const refUrls   = (record.referenceImageUrls ?? []).slice(0, 3)
             const refImages = (await Promise.all(refUrls.map(url => fetchImageAsBase64Safe(url, 20_000)))).filter(Boolean) as { data: string; mimeType: string }[]
 
@@ -252,16 +346,16 @@ export async function POST(req: Request) {
             ]
 
             result = await callGeminiParts(parts, modelId, 600, 90_000).catch(err => { throw new Error(`Gemini error: ${err.message}`) })
-          }
 
-          if (mode === 'caption') {
-            const caption = result.replace(/^["']|["']$/g, '').trim()
-            if (!preview) await prisma.generatedImage.update({ where: { id: record.id }, data: { adminCaption: caption } })
-            send({ type: 'result', id: record.id, current: i + 1, total: records.length, value: caption })
-          } else {
-            const tags = cleanTags(result)
-            if (!preview) await prisma.generatedImage.update({ where: { id: record.id }, data: { adminTags: tags } })
-            send({ type: 'result', id: record.id, current: i + 1, total: records.length, value: tags.join(', '), tags })
+            if (mode === 'caption') {
+              const caption = result.replace(/^["']|["']$/g, '').trim()
+              if (!preview) await prisma.generatedImage.update({ where: { id: record.id }, data: { adminCaption: caption } })
+              send({ type: 'result', id: record.id, current: i + 1, total: records.length, value: caption })
+            } else {
+              const tags = cleanTags(result)
+              if (!preview) await prisma.generatedImage.update({ where: { id: record.id }, data: { adminTags: tags } })
+              send({ type: 'result', id: record.id, current: i + 1, total: records.length, value: tags.join(', '), tags })
+            }
           }
 
           processed++
