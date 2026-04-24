@@ -5687,21 +5687,18 @@ export default function PortalV2Page() {
   // --- Video handlers ---
   const uploadVideoFrame = useCallback(async (file: File): Promise<string | null> => {
     try {
-      let dataUrl: string
-      let mimeType = file.type
+      let uploadFile: File | Blob = file
       // Compress images to stay under FAL's 10MB file size limit
       if (file.type.startsWith("image/")) {
-        dataUrl = await compressFileToDataUrl(file, 1920, 0.85)
-        mimeType = "image/jpeg"
-      } else {
-        dataUrl = await fileToBase64(file)
+        const dataUrl = await compressFileToDataUrl(file, 1920, 0.85)
+        const res2 = await fetch(dataUrl)
+        const blob = await res2.blob()
+        uploadFile = new File([blob], file.name, { type: 'image/jpeg' })
       }
-      const base64 = dataUrl.split(",")[1]
-      const res = await fetch("/api/admin/upload-frame", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ base64, mimeType, filename: file.name }),
-      })
+      const form = new FormData()
+      form.append('file', uploadFile, file.name)
+      const res = await fetch("/api/admin/upload-frame", { method: "POST", body: form })
+      if (!res.ok) return null
       const data = await res.json()
       return data.url ?? null
     } catch { return null }
@@ -5784,6 +5781,10 @@ export default function PortalV2Page() {
     setVideoLipsyncVideoDuration(duration)
     setVideoLipsyncAspectRatio(aspectRatio)
     const url = await uploadVideoFrame(file)
+    if (!url) {
+      setVideoLipsyncVideoFilename(null)
+      setVideoLipsyncVideoDuration(0)
+    }
     setVideoLipsyncVideoUrl(url)
   }, [uploadVideoFrame])
 
