@@ -1066,6 +1066,14 @@ export default function DevTierAnalytics() {
                     <div className="text-sm font-bold text-white">{formatDate(sub.endDate)}</div>
                   </div>
 
+                  {/* LemonSqueezy Subscription ID */}
+                  <div className={`p-4 rounded-lg ${sub.lsSubscriptionId ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-slate-800/50'}`}>
+                    <div className="text-xs text-slate-500 mb-1">LemonSqueezy Sub ID</div>
+                    <div className="text-xs font-mono text-emerald-400 truncate" title={sub.lsSubscriptionId || 'N/A'}>
+                      {sub.lsSubscriptionId || 'N/A'}
+                    </div>
+                  </div>
+
                   {/* PayPal Subscription ID */}
                   <div className="p-4 rounded-lg bg-slate-800/50">
                     <div className="text-xs text-slate-500 mb-1">PayPal Subscription ID</div>
