@@ -79,6 +79,7 @@ export default function DevTierAnalytics() {
 
   // Duplicate detection
   const [duplicateCount, setDuplicateCount] = useState<number | null>(null)
+  const [duplicateDetails, setDuplicateDetails] = useState<{ email: string; count: number; canAutoResolve: boolean }[]>([])
   const [resolvingDuplicates, setResolvingDuplicates] = useState(false)
   const [resolveResult, setResolveResult] = useState<{ count: number; deleted: any[] } | null>(null)
 
@@ -108,6 +109,7 @@ export default function DevTierAnalytics() {
       if (dupRes.ok) {
         const dupData = await dupRes.json()
         setDuplicateCount(dupData.duplicateUserCount ?? 0)
+        setDuplicateDetails(dupData.duplicates ?? [])
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load subscriptions')
@@ -116,13 +118,17 @@ export default function DevTierAnalytics() {
     }
   }
 
-  const resolveDuplicates = async () => {
+  const resolveDuplicates = async (force = false) => {
     setResolvingDuplicates(true)
     setResolveResult(null)
     try {
       const res = await fetch('/api/admin/subscriptions/resolve-duplicates', {
         method: 'POST',
-        headers: { 'x-admin-password': sessionStorage.getItem('admin-password') || '' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': sessionStorage.getItem('admin-password') || '',
+        },
+        body: JSON.stringify({ force }),
       })
       const data = await res.json()
       if (data.success) {
@@ -679,32 +685,57 @@ export default function DevTierAnalytics() {
         {/* Duplicate Subscriptions Banner */}
         {duplicateCount !== null && duplicateCount > 0 && (
           <div className="mb-6 p-5 rounded-xl border border-yellow-500/40 bg-yellow-500/5">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
+            <div className="flex items-start justify-between flex-wrap gap-3">
+              <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   <AlertTriangle size={16} className="text-yellow-400" />
                   <h2 className="text-sm font-bold text-yellow-400 uppercase tracking-wider">
                     {duplicateCount} User{duplicateCount > 1 ? 's' : ''} with Duplicate Subscriptions
                   </h2>
                 </div>
-                <p className="text-xs text-slate-500">
-                  Auto-resolve deletes expired/cancelled duplicates. Active duplicates are left for manual review.
+                <p className="text-xs text-slate-500 mb-2">
+                  Auto-resolve removes expired/cancelled duplicates. Force-resolve handles cases where both records still have active access — keeps the newer one.
                 </p>
+                {/* Show which users are affected and whether they can be auto-resolved */}
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {duplicateDetails.map(d => (
+                    <span key={d.email} className={`text-[11px] px-2 py-0.5 rounded-full font-mono border ${
+                      d.canAutoResolve
+                        ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
+                        : 'bg-red-500/10 border-red-500/30 text-red-400'
+                    }`}>
+                      {d.email} ({d.count} records){!d.canAutoResolve && ' · needs force'}
+                    </span>
+                  ))}
+                </div>
                 {resolveResult && (
-                  <p className="text-xs text-green-400 mt-1 font-medium">
-                    ✓ Deleted {resolveResult.count} stale record{resolveResult.count !== 1 ? 's' : ''}.
+                  <p className="text-xs text-green-400 font-medium">
+                    ✓ Resolved {resolveResult.count} record{resolveResult.count !== 1 ? 's' : ''}.
                     {resolveResult.deleted.map(d => ` ${d.email}`).join(',')}
                   </p>
                 )}
               </div>
-              <button
-                onClick={resolveDuplicates}
-                disabled={resolvingDuplicates}
-                className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-yellow-900 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
-              >
-                <RefreshCw size={14} className={resolvingDuplicates ? 'animate-spin' : ''} />
-                {resolvingDuplicates ? 'Resolving...' : 'Auto-Resolve'}
-              </button>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => resolveDuplicates(false)}
+                  disabled={resolvingDuplicates}
+                  className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-yellow-900 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
+                >
+                  <RefreshCw size={14} className={resolvingDuplicates ? 'animate-spin' : ''} />
+                  {resolvingDuplicates ? 'Resolving...' : 'Auto-Resolve'}
+                </button>
+                {duplicateDetails.some(d => !d.canAutoResolve) && (
+                  <button
+                    onClick={() => resolveDuplicates(true)}
+                    disabled={resolvingDuplicates}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-700 hover:bg-red-600 disabled:bg-red-900 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
+                    title="Keeps the newer record, retires the older one (preserves history)"
+                  >
+                    <AlertTriangle size={14} />
+                    Force Resolve
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

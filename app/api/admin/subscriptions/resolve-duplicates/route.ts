@@ -5,13 +5,17 @@ const prisma = new PrismaClient()
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123'
 
 // POST — find users with multiple subscription records and delete the stale ones.
-// "Winner" = active first, then most recent startDate. Stale = everything else for that user.
+// Pass { force: true } to also resolve cases where both records still have active access
+// (keeps the one with the newest startDate / lsSubscriptionId, deletes the older one).
 export async function POST(req: NextRequest) {
   try {
     const password = req.headers.get('x-admin-password')
     if (password !== ADMIN_PASSWORD) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const body = await req.json().catch(() => ({}))
+    const force = body.force === true
 
     const all = await prisma.subscription.findMany({
       where: { tier: 'prompt-studio-dev' },
@@ -46,13 +50,18 @@ export async function POST(req: NextRequest) {
       const stale  = subs.filter(s => s.id !== winner.id)
 
       for (const s of stale) {
-        // Only auto-delete if it's clearly expired/cancelled with no remaining access
         const periodEnd = s.lsCurrentPeriodEnd ? new Date(s.lsCurrentPeriodEnd) : null
         const endDate   = s.endDate ? new Date(s.endDate) : null
         const hasAccess = (periodEnd && periodEnd > now) || (endDate && endDate > now)
 
         if (s.status === 'active' || hasAccess) {
-          // Don't auto-delete if it still has active access — leave it for manual review
+          if (!force) continue
+          // Force mode: retire the older record instead of deleting so transaction history is preserved
+          await prisma.subscription.update({
+            where: { id: s.id },
+            data: { status: 'expired', autoRenew: false, endDate: new Date(), lsSubscriptionId: null },
+          })
+          deleted.push({ id: s.id, email: s.user.email, reason: `force-retired (both had access — kept newer record #${winner.id})` })
           continue
         }
 
@@ -70,7 +79,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET — just count duplicates without deleting anything
+// GET — count duplicates and return which users are affected
 export async function GET(req: NextRequest) {
   try {
     const password = req.headers.get('x-admin-password')
@@ -78,14 +87,41 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const counts = await prisma.subscription.groupBy({
-      by: ['userId'],
+    const all = await prisma.subscription.findMany({
       where: { tier: 'prompt-studio-dev' },
-      _count: { id: true },
-      having: { id: { _count: { gt: 1 } } },
+      select: {
+        id: true,
+        userId: true,
+        status: true,
+        startDate: true,
+        lsSubscriptionId: true,
+        endDate: true,
+        lsCurrentPeriodEnd: true,
+        user: { select: { email: true } },
+      },
     })
 
-    return NextResponse.json({ success: true, duplicateUserCount: counts.length })
+    const byUser: Record<number, typeof all> = {}
+    for (const s of all) {
+      if (!byUser[s.userId]) byUser[s.userId] = []
+      byUser[s.userId].push(s)
+    }
+
+    const now = new Date()
+    const duplicates = Object.entries(byUser)
+      .filter(([, subs]) => subs.length > 1)
+      .map(([, subs]) => {
+        const email = subs[0].user.email
+        const canAutoResolve = subs.some(s => {
+          const periodEnd = s.lsCurrentPeriodEnd ? new Date(s.lsCurrentPeriodEnd) : null
+          const endDate   = s.endDate ? new Date(s.endDate) : null
+          const hasAccess = (periodEnd && periodEnd > now) || (endDate && endDate > now)
+          return s.status !== 'active' && !hasAccess
+        })
+        return { email, count: subs.length, canAutoResolve }
+      })
+
+    return NextResponse.json({ success: true, duplicateUserCount: duplicates.length, duplicates })
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 })
   } finally {
