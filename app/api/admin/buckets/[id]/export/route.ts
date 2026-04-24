@@ -88,7 +88,7 @@ export async function GET(
   })
 
   const safeName = bucket.name.replace(/[^a-z0-9-_]/gi, '_')
-  return new NextResponse(zipBuffer, {
+  return new NextResponse(new Uint8Array(zipBuffer), {
     status: 200,
     headers: {
       'Content-Type': 'application/zip',
