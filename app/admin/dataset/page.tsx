@@ -1998,6 +1998,20 @@ export default function DatasetPage() {
   }
 
   // ── Bucket helpers ────────────────────────────────────────────────────────────
+  async function removeFromBucket(bucketId: number) {
+    const ids = Array.from(selected)
+    const res = await fetch(`/api/admin/buckets/${bucketId}/images`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ imageIds: ids }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    await loadBuckets()
+    setSelected(new Set())
+    // Remove the images from local state so the grid updates immediately
+    setImages(prev => prev.filter(img => !ids.includes(img.id)))
+  }
+
   async function addToBucket(bucketId: number) {
     const ids = Array.from(selected)
     const res = await fetch(`/api/admin/buckets/${bucketId}/images`, {
@@ -2332,6 +2346,12 @@ export default function DatasetPage() {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all">
                 <FolderOpen size={11} /> Add to Bucket
               </button>
+              {bucketFilter && (
+                <button onClick={() => removeFromBucket(parseInt(bucketFilter))} disabled={bulkLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] hover:bg-red-500/15 transition-all disabled:opacity-50">
+                  <FolderOpen size={11} /> Remove from bucket
+                </button>
+              )}
               <button onClick={() => setAutoFillOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/10 to-violet-500/10 border border-cyan-500/20 text-[11px] text-white/80 hover:text-white hover:from-cyan-500/15 hover:to-violet-500/15 transition-all">
                 <Sparkles size={11} /> Auto Fill
