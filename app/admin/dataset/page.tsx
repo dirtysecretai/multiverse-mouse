@@ -7,8 +7,11 @@ import {
   ArrowLeft, RefreshCw, SlidersHorizontal, Sparkles, Tag, MessageSquare,
   Plus, Hash, ChevronDown, MousePointer2, Copy, ExternalLink,
   User, Calendar, Cpu, Layers, Clock, Fingerprint, Film, Video,
-  FolderOpen, FolderPlus, Pencil, Trash2, MoreHorizontal
+  FolderOpen, FolderPlus, Pencil, Trash2, MoreHorizontal,
+  UploadCloud, FileImage, HardDrive, Ruler
 } from "lucide-react"
+
+const UPLOADS_BUCKET_NAME = '__uploads__'
 
 // ─── Custom dropdowns ─────────────────────────────────────────────────────────
 
@@ -267,6 +270,355 @@ function TagInput({ tags, onChange, placeholder = "Add tag…", suggestions = []
   )
 }
 
+// ─── Upload modal ─────────────────────────────────────────────────────────────
+
+interface UploadFileMeta {
+  description: string
+  tags:        string[]
+  caption:     string
+  marked:      boolean
+}
+
+const BATCH_SIZE = 10
+const UPLOAD_ACCEPT = 'image/*,video/mp4,video/webm,video/quicktime,video/avi,video/x-matroska'
+
+function fmt2(b: number) {
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
+  return `${(b / 1024 / 1024).toFixed(1)} MB`
+}
+
+function emptyMeta(): UploadFileMeta {
+  return { description: '', tags: [], caption: '', marked: false }
+}
+
+function UploadModal({ bucketId, suggestions, onClose, onUploaded }: {
+  bucketId:   number
+  suggestions: string[]
+  onClose:    () => void
+  onUploaded: () => void
+}) {
+  const [files,       setFiles]       = useState<File[]>([])
+  const [previews,    setPreviews]    = useState<({ url: string; w: number; h: number } | null)[]>([])
+  const [metas,       setMetas]       = useState<UploadFileMeta[]>([])
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
+
+  // Bulk-apply fields
+  const [bulkTags,    setBulkTags]    = useState<string[]>([])
+  const [bulkCaption, setBulkCaption] = useState('')
+  const [bulkDesc,    setBulkDesc]    = useState('')
+  const [bulkMarked,  setBulkMarked]  = useState(false)
+
+  const [uploading,   setUploading]   = useState(false)
+  const [progress,    setProgress]    = useState({ done: 0, total: 0, msg: '' })
+  const [dragging,    setDragging]    = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  function addFiles(incoming: FileList | File[]) {
+    const arr = Array.from(incoming).filter(f =>
+      f.type.startsWith('image/') || f.type.startsWith('video/')
+    )
+    if (!arr.length) return
+    setFiles(prev => {
+      const offset = prev.length
+      arr.forEach((f, i) => {
+        if (f.type.startsWith('image/')) {
+          const url = URL.createObjectURL(f)
+          const img = new window.Image()
+          img.onload = () => {
+            setPreviews(p => {
+              const copy = [...p]
+              copy[offset + i] = { url, w: img.naturalWidth, h: img.naturalHeight }
+              return copy
+            })
+          }
+          img.src = url
+        }
+      })
+      return [...prev, ...arr]
+    })
+    setPreviews(p => [...p, ...arr.map(() => null)])
+    setMetas(m => [...m, ...arr.map(emptyMeta)])
+  }
+
+  function removeFile(i: number) {
+    setFiles(f => f.filter((_, j) => j !== i))
+    setPreviews(p => p.filter((_, j) => j !== i))
+    setMetas(m => m.filter((_, j) => j !== i))
+    if (expandedIdx === i) setExpandedIdx(null)
+    else if (expandedIdx !== null && expandedIdx > i) setExpandedIdx(expandedIdx - 1)
+  }
+
+  function updateMeta(i: number, patch: Partial<UploadFileMeta>) {
+    setMetas(m => m.map((meta, j) => j === i ? { ...meta, ...patch } : meta))
+  }
+
+  function applyBulkToAll() {
+    setMetas(m => m.map(meta => ({
+      description: bulkDesc    || meta.description,
+      tags:        bulkTags.length ? [...new Set([...meta.tags, ...bulkTags])] : meta.tags,
+      caption:     bulkCaption || meta.caption,
+      marked:      bulkMarked  || meta.marked,
+    })))
+  }
+
+  function applyBulkToUnset() {
+    setMetas(m => m.map(meta => ({
+      description: meta.description || bulkDesc,
+      tags:        meta.tags.length  ? meta.tags : [...bulkTags],
+      caption:     meta.caption      || bulkCaption,
+      marked:      meta.marked       || bulkMarked,
+    })))
+  }
+
+  async function handleUpload() {
+    if (!files.length || uploading) return
+    setUploading(true)
+    const total = files.length
+    let done = 0
+    const pw = sessionStorage.getItem('admin-password') || ''
+
+    try {
+      for (let start = 0; start < files.length; start += BATCH_SIZE) {
+        const end          = Math.min(start + BATCH_SIZE, files.length)
+        const batchFiles   = files.slice(start, end)
+        const batchMetas   = metas.slice(start, end)
+        const batchPreview = previews.slice(start, end)
+
+        setProgress({ done, total, msg: `Uploading ${start + 1}–${end} of ${total}…` })
+
+        const form = new FormData()
+        batchFiles.forEach(f => form.append('files', f))
+        form.append('metadataJson', JSON.stringify(batchMetas))
+        form.append('bucketId',     String(bucketId))
+        form.append('widths',       JSON.stringify(batchPreview.map(p => p?.w ?? 0)))
+        form.append('heights',      JSON.stringify(batchPreview.map(p => p?.h ?? 0)))
+
+        const res  = await fetch('/api/admin/dataset/upload', {
+          method:  'POST',
+          headers: { 'x-admin-password': pw },
+          body:    form,
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || `Batch ${start + 1}–${end} failed`)
+        done += data.count
+      }
+
+      setProgress({ done, total, msg: `✓ ${done} file${done !== 1 ? 's' : ''} uploaded` })
+      setTimeout(() => { onUploaded(); onClose() }, 1000)
+    } catch (err: any) {
+      setProgress(p => ({ ...p, msg: `Error: ${err.message}` }))
+      setUploading(false)
+    }
+  }
+
+  const hasBulk = bulkDesc || bulkTags.length > 0 || bulkCaption || bulkMarked
+  const metaSetCount = metas.filter(m => m.description || m.tags.length || m.caption || m.marked).length
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-3xl max-h-[94vh] rounded-2xl bg-[#0c0c18] border border-white/[0.1] shadow-2xl flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] shrink-0">
+          <div className="flex items-center gap-2">
+            <UploadCloud size={14} className="text-violet-400" />
+            <span className="text-xs font-semibold text-white">Upload Images &amp; Videos</span>
+            {files.length > 0 && <span className="text-[10px] text-slate-500">{files.length} file{files.length !== 1 ? 's' : ''}</span>}
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-600 hover:text-slate-300 transition-colors">
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 flex flex-col">
+
+          {/* Drop zone */}
+          <div className="p-4 shrink-0">
+            <div
+              onDragOver={e => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}
+              onClick={() => inputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl py-6 text-center cursor-pointer transition-all
+                ${dragging ? 'border-violet-500/60 bg-violet-500/10' : 'border-white/[0.08] hover:border-white/20 hover:bg-white/[0.02]'}`}
+            >
+              <UploadCloud size={24} className="mx-auto text-slate-600 mb-1.5" />
+              <p className="text-xs text-slate-400 font-medium">{files.length > 0 ? 'Drop more files or click to add' : 'Drop files here or click to browse'}</p>
+              <p className="text-[10px] text-slate-600 mt-0.5">Images (JPEG, PNG, WebP, AVIF) · Videos (MP4, WebM, MOV)</p>
+              <input ref={inputRef} type="file" multiple accept={UPLOAD_ACCEPT} className="hidden"
+                onChange={e => e.target.files && addFiles(e.target.files)} />
+            </div>
+          </div>
+
+          {files.length > 0 && (
+            <div className="flex flex-col flex-1 min-h-0">
+
+              {/* ── Bulk apply panel ── */}
+              <div className="mx-4 mb-3 rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden shrink-0">
+                <div className="px-4 py-2.5 border-b border-white/[0.05] flex items-center justify-between">
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Bulk Apply</p>
+                  <div className="flex items-center gap-2">
+                    <button onClick={applyBulkToUnset} disabled={!hasBulk}
+                      className="text-[10px] px-2.5 py-1 rounded-lg bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-white disabled:opacity-30 transition-all">
+                      Apply to unset
+                    </button>
+                    <button onClick={applyBulkToAll} disabled={!hasBulk}
+                      className="text-[10px] px-2.5 py-1 rounded-lg bg-violet-500/15 border border-violet-500/25 text-violet-400 hover:bg-violet-500/20 disabled:opacity-30 transition-all">
+                      Apply to all
+                    </button>
+                  </div>
+                </div>
+                <div className="p-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[9px] text-slate-600 mb-1">Description</p>
+                    <input value={bulkDesc} onChange={e => setBulkDesc(e.target.value)}
+                      placeholder="Applied to all files…"
+                      className="w-full rounded-lg bg-white/[0.04] border border-white/[0.07] px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-700 focus:outline-none focus:border-violet-500/30" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] text-slate-600 mb-1">Caption</p>
+                    <input value={bulkCaption} onChange={e => setBulkCaption(e.target.value)}
+                      placeholder="Training caption…"
+                      className="w-full rounded-lg bg-white/[0.04] border border-white/[0.07] px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-700 focus:outline-none focus:border-violet-500/30" />
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-[9px] text-slate-600 mb-1">Tags</p>
+                    <TagInput tags={bulkTags} onChange={setBulkTags} suggestions={suggestions} />
+                  </div>
+                  <div className="col-span-2">
+                    <button onClick={() => setBulkMarked(v => !v)}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[11px] transition-all
+                        ${bulkMarked ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400' : 'bg-white/[0.03] border-white/[0.06] text-slate-600 hover:text-white'}`}>
+                      <BookMarked size={10} /> Mark all for training
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── File list ── */}
+              <div className="px-4 pb-1 flex items-center justify-between shrink-0">
+                <p className="text-[10px] text-slate-600 uppercase tracking-wider font-semibold">
+                  {files.length} file{files.length !== 1 ? 's' : ''}
+                  {metaSetCount > 0 && <span className="ml-2 normal-case font-normal text-violet-500">{metaSetCount} with individual metadata</span>}
+                </p>
+                <button onClick={() => { setFiles([]); setPreviews([]); setMetas([]); setExpandedIdx(null) }}
+                  className="text-[10px] text-slate-700 hover:text-red-400 transition-colors">Remove all</button>
+              </div>
+
+              <div className="overflow-y-auto flex-1 px-4 pb-2 space-y-1">
+                {files.map((f, i) => {
+                  const isVideo   = f.type.startsWith('video/')
+                  const preview   = previews[i]
+                  const meta      = metas[i]
+                  const hasIndiv  = !!(meta.description || meta.tags.length || meta.caption || meta.marked)
+                  const isExpanded = expandedIdx === i
+
+                  return (
+                    <div key={i} className={`rounded-xl border transition-all ${isExpanded ? 'bg-white/[0.04] border-violet-500/20' : 'bg-white/[0.02] border-white/[0.05] hover:border-white/[0.09]'}`}>
+                      {/* Row */}
+                      <div className="flex items-center gap-2.5 p-2.5">
+                        {/* Thumbnail */}
+                        <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-white/[0.05] flex items-center justify-center">
+                          {isVideo ? (
+                            <Film size={16} className="text-slate-500" />
+                          ) : preview ? (
+                            <img src={preview.url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <FileImage size={16} className="text-slate-600" />
+                          )}
+                        </div>
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] text-white truncate font-medium">{f.name}</p>
+                          <p className="text-[9px] text-slate-600">
+                            {fmt2(f.size)}
+                            {preview ? ` · ${preview.w}×${preview.h}` : ''}
+                            {isVideo && ' · video'}
+                          </p>
+                          {hasIndiv && !isExpanded && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {meta.tags.map(t => <span key={t} className="text-[9px] px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">{t}</span>)}
+                              {meta.caption && <span className="text-[9px] text-slate-600 italic truncate max-w-[140px]">"{meta.caption}"</span>}
+                              {meta.marked && <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-500">training</span>}
+                            </div>
+                          )}
+                        </div>
+                        {/* Actions */}
+                        <button
+                          onClick={() => setExpandedIdx(isExpanded ? null : i)}
+                          className={`text-[10px] px-2 py-1 rounded-lg border transition-all shrink-0
+                            ${hasIndiv ? 'bg-violet-500/10 border-violet-500/20 text-violet-400' : 'bg-white/[0.04] border-white/[0.07] text-slate-500 hover:text-white'}`}>
+                          {isExpanded ? 'Done' : 'Edit'}
+                        </button>
+                        <button onClick={() => removeFile(i)} className="text-slate-700 hover:text-red-400 transition-colors shrink-0 p-1">
+                          <X size={12} />
+                        </button>
+                      </div>
+
+                      {/* Expanded per-file editor */}
+                      {isExpanded && (
+                        <div className="px-3 pb-3 pt-1 space-y-2.5 border-t border-white/[0.05]">
+                          <div className="grid grid-cols-2 gap-2.5">
+                            <div>
+                              <p className="text-[9px] text-slate-600 mb-1">Description</p>
+                              <input value={meta.description} onChange={e => updateMeta(i, { description: e.target.value })}
+                                placeholder="Describe this file…"
+                                className="w-full rounded-lg bg-white/[0.05] border border-white/[0.08] px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-700 focus:outline-none focus:border-violet-500/40" />
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-slate-600 mb-1">Caption</p>
+                              <input value={meta.caption} onChange={e => updateMeta(i, { caption: e.target.value })}
+                                placeholder="Training caption…"
+                                className="w-full rounded-lg bg-white/[0.05] border border-white/[0.08] px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-700 focus:outline-none focus:border-violet-500/40" />
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-[9px] text-slate-600 mb-1">Tags</p>
+                            <TagInput tags={meta.tags} onChange={t => updateMeta(i, { tags: t })} suggestions={suggestions} />
+                          </div>
+                          <button onClick={() => updateMeta(i, { marked: !meta.marked })}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] transition-all
+                              ${meta.marked ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400' : 'bg-white/[0.03] border-white/[0.06] text-slate-600 hover:text-white'}`}>
+                            <BookMarked size={10} /> Mark for training
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-white/[0.06] flex items-center gap-3 shrink-0">
+          {progress.msg ? (
+            <div className="flex-1 flex items-center gap-3">
+              <p className={`text-xs ${progress.msg.startsWith('Error') ? 'text-red-400' : progress.msg.startsWith('✓') ? 'text-emerald-400' : 'text-slate-400'}`}>
+                {progress.msg}
+              </p>
+              {uploading && progress.total > 0 && (
+                <div className="flex-1 h-1 rounded-full bg-white/[0.06] overflow-hidden max-w-[120px]">
+                  <div className="h-full bg-violet-500 transition-all" style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+                </div>
+              )}
+            </div>
+          ) : <span className="flex-1" />}
+          <button onClick={onClose} className="px-4 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-500 hover:text-white text-xs transition-all">Cancel</button>
+          <button onClick={handleUpload} disabled={uploading || files.length === 0}
+            className="flex items-center gap-1.5 px-5 py-1.5 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-medium hover:bg-violet-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+            {uploading && <Loader2 size={11} className="animate-spin" />}
+            {uploading ? `Uploading ${progress.done}/${progress.total}…` : `Upload ${files.length} file${files.length !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Detail modal ─────────────────────────────────────────────────────────────
 
 function DetailModal({ img, suggestions, onClose, onSave }: {
@@ -306,6 +658,7 @@ function DetailModal({ img, suggestions, onClose, onSave }: {
   }
 
   const vm = img.videoMetadata as any
+  const isUpload = img.model === '__upload__'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={onClose}>
@@ -316,7 +669,8 @@ function DetailModal({ img, suggestions, onClose, onSave }: {
         {/* Modal header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] shrink-0">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-white">Generation #{img.id}</span>
+            <span className="text-xs font-semibold text-white">{isUpload ? 'Upload' : 'Generation'} #{img.id}</span>
+            {isUpload && <span className="text-[10px] px-1.5 py-0.5 rounded-full leading-none bg-violet-500/15 text-violet-400">upload</span>}
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full leading-none ${img.isDeleted ? "bg-red-500/15 text-red-400" : "bg-emerald-500/15 text-emerald-400"}`}>
               {img.isDeleted ? "deleted" : "active"}
             </span>
@@ -397,26 +751,42 @@ function DetailModal({ img, suggestions, onClose, onSave }: {
               </p>
             </div>
 
-            {/* ── Generation info ── */}
-            <div>
-              <p className="text-[10px] text-slate-600 uppercase tracking-wider font-semibold mb-2">Generation info</p>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                <InfoRow icon={<Cpu size={11} />}        label="Model"       value={img.model} copyKey="model" copied={copied} onCopy={copyText} mono />
-                <InfoRow icon={<Layers size={11} />}     label="Aspect"      value={img.aspectRatio ?? "—"} />
-                <InfoRow icon={<Sparkles size={11} />}   label="Quality"     value={img.quality ?? "—"} />
-                <InfoRow icon={<Tag size={11} />}        label="Ticket cost" value={`${img.ticketCost} ticket${img.ticketCost !== 1 ? "s" : ""}`} />
-                <InfoRow icon={<Calendar size={11} />}   label="Created"     value={fmt(img.createdAt)} />
-                <InfoRow icon={<Clock size={11} />}      label="Expires"     value={fmt(img.expiresAt)} />
-                <InfoRow icon={<User size={11} />}       label="User"        value={img.user.name ? `${img.user.name} (${img.user.email})` : img.user.email} copyKey="email" copied={copied} onCopy={copyText} />
-                <InfoRow icon={<Hash size={11} />}       label="User ID"     value={`#${img.user.id}`} />
-                {img.falRequestId && (
-                  <InfoRow icon={<Fingerprint size={11} />} label="FAL ID" value={img.falRequestId} copyKey="falId" copied={copied} onCopy={copyText} mono truncate />
-                )}
+            {/* ── Generation info / Upload info ── */}
+            {isUpload ? (
+              <div>
+                <p className="text-[10px] text-slate-600 uppercase tracking-wider font-semibold mb-2">Upload info</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                  {vm?.originalFilename && <InfoRow icon={<FileImage size={11} />} label="Filename"   value={vm.originalFilename} copyKey="filename" copied={copied} onCopy={copyText} mono truncate />}
+                  {vm?.fileSize         && <InfoRow icon={<HardDrive size={11} />} label="File size"  value={vm.fileSize < 1024*1024 ? `${(vm.fileSize/1024).toFixed(1)} KB` : `${(vm.fileSize/1024/1024).toFixed(2)} MB`} />}
+                  {vm?.mimeType         && <InfoRow icon={<FileImage size={11} />} label="Type"       value={vm.mimeType} mono />}
+                  {vm?.width && vm?.height && <InfoRow icon={<Ruler size={11} />}  label="Dimensions" value={`${vm.width} × ${vm.height} px`} />}
+                  {img.aspectRatio      && <InfoRow icon={<Layers size={11} />}    label="Aspect"     value={img.aspectRatio} />}
+                  <InfoRow icon={<Calendar size={11} />} label="Uploaded"  value={vm?.uploadedAt ? fmt(vm.uploadedAt) : fmt(img.createdAt)} />
+                  <InfoRow icon={<Calendar size={11} />} label="DB created" value={fmt(img.createdAt)} />
+                  <InfoRow icon={<User size={11} />}     label="Image URL" value={img.imageUrl} copyKey="url" copied={copied} onCopy={copyText} mono truncate />
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <p className="text-[10px] text-slate-600 uppercase tracking-wider font-semibold mb-2">Generation info</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                  <InfoRow icon={<Cpu size={11} />}        label="Model"       value={img.model} copyKey="model" copied={copied} onCopy={copyText} mono />
+                  <InfoRow icon={<Layers size={11} />}     label="Aspect"      value={img.aspectRatio ?? "—"} />
+                  <InfoRow icon={<Sparkles size={11} />}   label="Quality"     value={img.quality ?? "—"} />
+                  <InfoRow icon={<Tag size={11} />}        label="Ticket cost" value={`${img.ticketCost} ticket${img.ticketCost !== 1 ? "s" : ""}`} />
+                  <InfoRow icon={<Calendar size={11} />}   label="Created"     value={fmt(img.createdAt)} />
+                  <InfoRow icon={<Clock size={11} />}      label="Expires"     value={fmt(img.expiresAt)} />
+                  <InfoRow icon={<User size={11} />}       label="User"        value={img.user.name ? `${img.user.name} (${img.user.email})` : img.user.email} copyKey="email" copied={copied} onCopy={copyText} />
+                  <InfoRow icon={<Hash size={11} />}       label="User ID"     value={`#${img.user.id}`} />
+                  {img.falRequestId && (
+                    <InfoRow icon={<Fingerprint size={11} />} label="FAL ID" value={img.falRequestId} copyKey="falId" copied={copied} onCopy={copyText} mono truncate />
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* ── Video metadata ── */}
-            {vm && (
+            {vm && !isUpload && (
               <div>
                 <p className="text-[10px] text-slate-600 uppercase tracking-wider font-semibold mb-2">Video metadata</p>
 
@@ -478,7 +848,7 @@ function DetailModal({ img, suggestions, onClose, onSave }: {
             )}
 
             {/* ── User rating ── */}
-            {img.imageRating ? (
+            {!isUpload && img.imageRating ? (
               <div>
                 <p className="text-[10px] text-slate-600 uppercase tracking-wider font-semibold mb-2">User rating</p>
                 <div className="bg-white/[0.03] rounded-lg border border-white/[0.05] p-3 space-y-2">
@@ -508,12 +878,12 @@ function DetailModal({ img, suggestions, onClose, onSave }: {
                   <p className="text-[9px] text-slate-700">Rated {fmt(img.imageRating.createdAt)}</p>
                 </div>
               </div>
-            ) : (
+            ) : (!isUpload ? (
               <div>
                 <p className="text-[10px] text-slate-600 uppercase tracking-wider font-semibold mb-1.5">User rating</p>
                 <p className="text-xs text-slate-700 italic">Not rated yet</p>
               </div>
-            )}
+            ) : null)}
 
             {/* ── Admin metadata (editable) ── */}
             <div>
@@ -1279,9 +1649,19 @@ const ImageCard = memo(function ImageCard({ img, selected, selectMode, onSelect,
         )}
 
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.06] text-slate-500 leading-none">{img.model.replace('fal-ai/', '').slice(0, 16)}</span>
-          {img.aspectRatio && <span className="text-[9px] text-slate-600">{img.aspectRatio}</span>}
-          <span className="text-[9px] text-slate-700 ml-auto">{img.ticketCost}t</span>
+          {img.model === '__upload__' ? (
+            <>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 leading-none">upload</span>
+              {img.aspectRatio && <span className="text-[9px] text-slate-600">{img.aspectRatio}</span>}
+              <span className="text-[9px] text-slate-700 ml-auto truncate max-w-[80px]">{((img.videoMetadata as any)?.originalFilename ?? '').slice(0, 20) || '—'}</span>
+            </>
+          ) : (
+            <>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.06] text-slate-500 leading-none">{img.model.replace('fal-ai/', '').slice(0, 16)}</span>
+              {img.aspectRatio && <span className="text-[9px] text-slate-600">{img.aspectRatio}</span>}
+              <span className="text-[9px] text-slate-700 ml-auto">{img.ticketCost}t</span>
+            </>
+          )}
         </div>
         <p className="text-[9px] text-slate-700 truncate">{img.user.email}</p>
       </div>
@@ -1322,10 +1702,12 @@ export default function DatasetPage() {
   const [addToBucketOpen, setAddToBucketOpen] = useState(false)
 
   // Buckets
-  const [buckets,       setBuckets]       = useState<Bucket[]>([])
-  const [bucketFilter,  setBucketFilter]  = useState<string>(() => _p.bucketFilter ?? "")
-  const [bucketMenuId,  setBucketMenuId]  = useState<number | null>(null)
-  const [renamingId,    setRenamingId]    = useState<number | null>(null)
+  const [buckets,          setBuckets]          = useState<Bucket[]>([])
+  const [bucketFilter,     setBucketFilter]     = useState<string>(() => _p.bucketFilter ?? "")
+  const [bucketMenuId,     setBucketMenuId]     = useState<number | null>(null)
+  const [renamingId,       setRenamingId]       = useState<number | null>(null)
+  const [uploadsBucketId,  setUploadsBucketId]  = useState<number | null>(null)
+  const [uploadModalOpen,  setUploadModalOpen]  = useState(false)
   const [renameValue,   setRenameValue]   = useState("")
 
   // Filters
@@ -1374,7 +1756,30 @@ export default function DatasetPage() {
   const loadBuckets = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/buckets', { headers: authHeaders() })
-      if (res.ok) setBuckets(await res.json())
+      if (!res.ok) return
+      let list: Bucket[] = await res.json()
+
+      // Ensure the permanent Uploads bucket exists
+      let uploadsBucket = list.find(b => b.name === UPLOADS_BUCKET_NAME)
+      if (!uploadsBucket) {
+        const cr = await fetch('/api/admin/buckets', {
+          method: 'POST',
+          headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: UPLOADS_BUCKET_NAME, description: 'Admin-uploaded training images', color: '#7c3aed' }),
+        })
+        if (cr.ok) {
+          const created = await cr.json()
+          uploadsBucket = { ...created, count: 0 }
+          list = [uploadsBucket!, ...list]
+        }
+      }
+
+      if (uploadsBucket) setUploadsBucketId(uploadsBucket.id)
+      // Always show uploads bucket first
+      setBuckets([
+        ...(uploadsBucket ? [uploadsBucket] : []),
+        ...list.filter(b => b.name !== UPLOADS_BUCKET_NAME),
+      ])
     } catch {}
   }, [])
 
@@ -1710,6 +2115,14 @@ export default function DatasetPage() {
       <div className={`flex flex-col min-w-0 flex-1 ${autoFillOpen ? 'h-screen overflow-y-auto' : 'min-h-screen'}`}>
 
       {/* Modals */}
+      {uploadModalOpen && uploadsBucketId && (
+        <UploadModal
+          bucketId={uploadsBucketId}
+          suggestions={tagSuggestions}
+          onClose={() => setUploadModalOpen(false)}
+          onUploaded={() => { loadBuckets(); fetchData() }}
+        />
+      )}
       {detailImg && (
         <DetailModal
           img={detailImg}
@@ -1808,6 +2221,13 @@ export default function DatasetPage() {
                   : 'bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white'}`}>
               <Sparkles size={12} /> Auto Fill
             </button>
+
+            {uploadsBucketId && (
+              <button onClick={() => { setUploadModalOpen(true); setBucketFilter(String(uploadsBucketId)) }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all">
+                <UploadCloud size={12} /> Upload
+              </button>
+            )}
 
             <button onClick={handleExport} disabled={exporting}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] hover:bg-emerald-500/15 transition-all disabled:opacity-50">
@@ -1930,7 +2350,9 @@ export default function DatasetPage() {
               <Database size={11} /> All buckets
             </button>
 
-            {buckets.map(b => (
+            {buckets.map(b => {
+              const isUploadsBucket = b.name === UPLOADS_BUCKET_NAME
+              return (
               <div key={b.id} className="relative shrink-0">
                 {renamingId === b.id ? (
                   <div className="flex items-center gap-1">
@@ -1950,24 +2372,41 @@ export default function DatasetPage() {
                       onClick={() => setBucketFilter(v => v === String(b.id) ? "" : String(b.id))}
                       className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-lg border text-xs whitespace-nowrap transition-all
                         ${bucketFilter === String(b.id)
-                          ? "bg-violet-500/15 border-violet-500/30 text-violet-300"
-                          : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white hover:border-white/15"}`}
+                          ? isUploadsBucket
+                            ? "bg-violet-600/20 border-violet-500/40 text-violet-300"
+                            : "bg-violet-500/15 border-violet-500/30 text-violet-300"
+                          : isUploadsBucket
+                            ? "bg-violet-500/8 border-violet-500/20 text-violet-400 hover:text-violet-300 hover:border-violet-500/40"
+                            : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white hover:border-white/15"}`}
                     >
-                      <FolderOpen size={11} />
-                      {b.name}
+                      {isUploadsBucket ? <UploadCloud size={11} /> : <FolderOpen size={11} />}
+                      {isUploadsBucket ? 'Uploads' : b.name}
                       <span className="ml-1 text-[9px] opacity-60">{b.count}</span>
                     </button>
-                    <button
-                      onClick={e => { e.stopPropagation(); setBucketMenuId(v => v === b.id ? null : b.id) }}
-                      className="ml-0.5 p-1 rounded-md text-slate-700 hover:text-slate-400 opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <MoreHorizontal size={11} />
-                    </button>
+                    {/* Only show context menu for non-uploads buckets */}
+                    {!isUploadsBucket && (
+                      <button
+                        onClick={e => { e.stopPropagation(); setBucketMenuId(v => v === b.id ? null : b.id) }}
+                        className="ml-0.5 p-1 rounded-md text-slate-700 hover:text-slate-400 opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <MoreHorizontal size={11} />
+                      </button>
+                    )}
+                    {/* Upload button inline for uploads bucket */}
+                    {isUploadsBucket && (
+                      <button
+                        onClick={e => { e.stopPropagation(); setUploadModalOpen(true); setBucketFilter(String(b.id)) }}
+                        className="ml-0.5 p-1 rounded-md text-violet-700 hover:text-violet-400 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Upload images"
+                      >
+                        <Plus size={11} />
+                      </button>
+                    )}
                   </div>
                 )}
 
-                {/* Bucket context menu */}
-                {bucketMenuId === b.id && (
+                {/* Bucket context menu — regular buckets only */}
+                {!isUploadsBucket && bucketMenuId === b.id && (
                   <div className="absolute top-full left-0 mt-1 z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[130px]">
                     <button
                       onClick={() => { setRenamingId(b.id); setRenameValue(b.name); setBucketMenuId(null) }}
@@ -1984,7 +2423,8 @@ export default function DatasetPage() {
                   </div>
                 )}
               </div>
-            ))}
+            )})}
+
 
             <button
               onClick={createBucket}

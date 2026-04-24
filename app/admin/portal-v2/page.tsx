@@ -2028,14 +2028,28 @@ function ImageDetailModal({
                     <ImagePlus size={11} />
                     {addedRef ? "Added!" : "Ref"}
                   </button>
-                  <a
-                    href={image.imageUrl}
-                    download
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/images/${image.id}?download=1`)
+                        if (!res.ok) throw new Error()
+                        const blob = await res.blob()
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement("a")
+                        a.href = url
+                        const ext = blob.type.includes("webp") ? "webp" : blob.type.includes("jpeg") ? "jpg" : blob.type.includes("png") ? "png" : "img"
+                        a.download = `${image.prompt.substring(0, 40).replace(/[^a-z0-9]/gi, "_")}.${ext}`
+                        document.body.appendChild(a)
+                        a.click()
+                        document.body.removeChild(a)
+                        URL.revokeObjectURL(url)
+                      } catch {}
+                    }}
                     className="flex-1 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/8 text-[11px] text-slate-300 hover:text-white transition-all flex items-center justify-center gap-1.5"
                   >
                     <Download size={11} />
                     Download
-                  </a>
+                  </button>
                 </>
               )}
             </div>
@@ -2084,7 +2098,9 @@ function VideoDetailModal({
   const handleDownload = async () => {
     setDownloading(true)
     try {
-      const res = await fetch(video.videoUrl)
+      const fetchUrl = video.id ? `/api/images/${video.id}?download=1` : video.videoUrl
+      const res = await fetch(fetchUrl)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
@@ -2092,10 +2108,13 @@ function VideoDetailModal({
       a.download = `${video.prompt.substring(0, 40).replace(/[^a-z0-9]/gi, "_")}.mp4`
       document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(url)
       document.body.removeChild(a)
-    } catch {}
-    finally { setDownloading(false) }
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error("Download failed:", e)
+    } finally {
+      setDownloading(false)
+    }
   }
 
   return (

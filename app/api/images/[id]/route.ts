@@ -41,6 +41,9 @@ export async function GET(
     const contentType = blobRes.headers.get('content-type') || 'image/png'
     const ext = contentType.includes('jpeg') ? 'jpg'
               : contentType.includes('webp') ? 'webp'
+              : contentType.includes('mp4')  ? 'mp4'
+              : contentType.includes('webm') ? 'webm'
+              : contentType.includes('video') ? 'mp4'
               : 'png'
 
     if (isThumb) {

@@ -40,8 +40,8 @@ export const AI_MODELS: AIModel[] = [
     id: 'nano-banana-pro',
     name: 'fal-ai/nano-banana-pro',
     displayName: 'NanoBanana Pro',
-    description: 'Premium quality - 6 tickets (2K) or 12 tickets (4K)',
-    ticketCost: 6,
+    description: 'Premium quality - 7 tickets (2K) or 14 tickets (4K)',
+    ticketCost: 7,
     category: 'premium',
     rateLimit: {
       rpm: 0, // No rate limit on FAL.ai
@@ -58,7 +58,7 @@ export const AI_MODELS: AIModel[] = [
     name: 'fal-ai/bytedance/seedream/v4.5/text-to-image',
     displayName: 'SeeDream 4.5',
     description: 'Premium quality with excellent text rendering',
-    ticketCost: 2,
+    ticketCost: 2,  // 2 tickets (2K), 4 tickets (4K)
     category: 'standard',
     rateLimit: {
       rpm: 0, // No rate limit on FAL.ai
@@ -93,8 +93,8 @@ export const AI_MODELS: AIModel[] = [
     id: 'gemini-3-pro-image',
     name: 'gemini-3-pro-image-preview',  // Correct model from Google AI Studio
     displayName: 'Pro Scanner v3',
-    description: 'Direct Gemini API - No filtering! 5 tickets (2K) or 10 tickets (4K)',
-    ticketCost: 5,
+    description: 'Direct Gemini API - No filtering! 7 tickets (2K) or 15 tickets (4K)',
+    ticketCost: 7,
     category: 'premium',
     rateLimit: {
       rpm: 10,
@@ -236,22 +236,21 @@ export function getTicketCost(modelId: string, quality?: '2k' | '4k'): number {
   const model = getModelById(modelId)
   if (!model) return 1
 
-  // NanoBanana Pro: 6 tickets for 2K, 12 tickets for 4K
-  if (modelId === 'nano-banana-pro' && quality === '4k') {
-    return 12
+  // NanoBanana Pro: 7 tickets for 2K, 14 tickets for 4K
+  if (modelId === 'nano-banana-pro') {
+    return quality === '4k' ? 14 : 7
   }
 
-  // Pro Scanner v3: 5 tickets for 2K, 10 tickets for 4K
-  if (modelId === 'gemini-3-pro-image' && quality === '4k') {
-    return 10
+  // Pro Scanner v3: 7 tickets for 2K, 15 tickets for 4K
+  if (modelId === 'gemini-3-pro-image') {
+    return quality === '4k' ? 15 : 7
   }
 
-  // SeeDream 4.5: 1 ticket for 2K, 2 tickets for 4K
+  // SeeDream 4.5: 2 tickets for 2K, 4 tickets for 4K
   if (modelId === 'seedream-4.5') {
-    return quality === '4k' ? 2 : 1
+    return quality === '4k' ? 4 : 2
   }
 
-  // All other models use base ticket cost
   return model.ticketCost
 }
 

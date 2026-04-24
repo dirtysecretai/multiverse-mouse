@@ -89,15 +89,15 @@ export async function POST(req: NextRequest) {
     // Calculate ticket cost based on model and quality
     ticketCost = 1; // Default
     if (model === 'nano-banana-pro') {
-      ticketCost = quality === '4k' ? 10 : 5;
+      ticketCost = quality === '4k' ? 14 : 7;
     } else if (model === 'pro-scanner-v3') {
-      ticketCost = quality === '4k' ? 10 : 5;
+      ticketCost = quality === '4k' ? 15 : 7;
     } else if (model === 'seedream-4.5') {
-      ticketCost = quality === '4k' ? 2 : 1;
+      ticketCost = quality === '4k' ? 4 : 2;
     } else if (model === 'nano-banana-cluster' || model === 'nano-banana') {
-      ticketCost = 2; // 2 tickets for 2 images
+      ticketCost = 2;
     } else if (model === 'flash-scanner-v2.5') {
-      ticketCost = 1; // Always 1 ticket
+      ticketCost = 1;
     }
 
     console.log('💰 Ticket cost:', ticketCost);

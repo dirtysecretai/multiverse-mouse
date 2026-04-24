@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     }
 
     // Calculate ticket cost
-    const ticketCost = quality === '3k' ? 2 : 1
+    const ticketCost = quality === '3k' ? 4 : 2
 
     // Check and reserve tickets
     const ticket = await prisma.ticket.findUnique({ where: { userId: user.id } })
