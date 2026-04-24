@@ -36,6 +36,7 @@ interface Subscription {
   paypalOrderId: string | null
   paypalCaptureId: string | null
   lsSubscriptionId: string | null
+  lsCurrentPeriodEnd: string | null
   metadata: any
   createdAt: string
   updatedAt: string
@@ -55,7 +56,7 @@ export default function DevTierAnalytics() {
   const [error, setError] = useState<string | null>(null)
   const [processingId, setProcessingId] = useState<number | null>(null)
   const [syncing, setSyncing] = useState(false)
-  const [syncResult, setSyncResult] = useState<{ synced: number; skipped: number; failed: number; results: any[] } | null>(null)
+  const [syncResult, setSyncResult] = useState<{ synced: number; skipped: number; failed: number; discovered: number; results: any[] } | null>(null)
 
   // Grant access state (top form — by email)
   const [grantEmail, setGrantEmail] = useState('')
@@ -296,7 +297,7 @@ export default function DevTierAnalytics() {
       })
       const data = await res.json()
       if (data.success) {
-        setSyncResult({ synced: data.synced, skipped: data.skipped ?? 0, failed: data.failed, results: data.results })
+        setSyncResult({ synced: data.synced, skipped: data.skipped ?? 0, failed: data.failed, discovered: data.discovered ?? 0, results: data.results })
       } else {
         alert(data.error || 'Sync failed')
       }
@@ -453,16 +454,48 @@ export default function DevTierAnalytics() {
     return `$${amount.toFixed(2)}`
   }
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'active':
-        return <span className="px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-xs font-bold border border-green-500/50">ACTIVE</span>
-      case 'cancelled':
-        return <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-400 text-xs font-bold border border-red-500/50">CANCELLED</span>
+  const GRANDFATHER_CUTOFF = new Date('2026-04-23T00:00:00Z')
+
+  const getDiscountInfo = (sub: Subscription) => {
+    if (sub.status !== 'active') return null
+    const createdBefore = new Date(sub.createdAt) < GRANDFATHER_CUTOFF
+    const periodEnd = sub.lsCurrentPeriodEnd ? new Date(sub.lsCurrentPeriodEnd) : null
+    const stillInPeriod = !periodEnd || periodEnd > new Date()
+    const isGrandfathered = createdBefore && stillInPeriod
+    return { isGrandfathered, periodEnd }
+  }
+
+  const getSubState = (sub: Subscription): 'active-renewing' | 'active-cancelled' | 'cancelled-expired' | 'expired' | 'other' => {
+    const now = new Date()
+    if (sub.status === 'active' && !sub.cancelledAt) return 'active-renewing'
+    if (sub.status === 'active' && sub.cancelledAt) return 'active-cancelled'
+    if (sub.status === 'cancelled') {
+      const periodEnd = sub.lsCurrentPeriodEnd ? new Date(sub.lsCurrentPeriodEnd) : null
+      const endDate   = sub.endDate ? new Date(sub.endDate) : null
+      const hasTimeLeft = (periodEnd && periodEnd > now) || (endDate && endDate > now)
+      return hasTimeLeft ? 'active-cancelled' : 'cancelled-expired'
+    }
+    if (sub.status === 'expired') return 'expired'
+    return 'other'
+  }
+
+  const getStatusBadge = (sub: Subscription) => {
+    const state = getSubState(sub)
+    switch (state) {
+      case 'active-renewing':
+        return <span className="px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-xs font-bold border border-green-500/50">ACTIVE · RENEWING</span>
+      case 'active-cancelled':
+        return (
+          <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/50">
+            ACTIVE · CANCELLED
+          </span>
+        )
+      case 'cancelled-expired':
+        return <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-400 text-xs font-bold border border-red-500/50">CANCELLED · EXPIRED</span>
       case 'expired':
         return <span className="px-3 py-1 rounded-full bg-orange-500/20 text-orange-400 text-xs font-bold border border-orange-500/50">EXPIRED</span>
       default:
-        return <span className="px-3 py-1 rounded-full bg-slate-500/20 text-slate-400 text-xs font-bold border border-slate-500/50">{status.toUpperCase()}</span>
+        return <span className="px-3 py-1 rounded-full bg-slate-500/20 text-slate-400 text-xs font-bold border border-slate-500/50">{sub.status.toUpperCase()}</span>
     }
   }
 
@@ -630,10 +663,11 @@ export default function DevTierAnalytics() {
           {syncResult && (
             <div className="mt-4 pt-4 border-t border-orange-500/20">
               <div className="flex items-center gap-4 mb-3 flex-wrap">
+                {syncResult.discovered > 0 && <span className="text-sm text-cyan-400 font-bold">★ {syncResult.discovered} recovered (missed webhooks)</span>}
                 <span className="text-sm text-green-400 font-bold">✓ {syncResult.synced} synced</span>
                 {syncResult.skipped > 0 && <span className="text-sm text-yellow-400 font-bold">⊘ {syncResult.skipped} skipped (manual override)</span>}
                 {syncResult.failed > 0 && <span className="text-sm text-red-400 font-bold">✗ {syncResult.failed} failed</span>}
-                {syncResult.synced === 0 && syncResult.failed === 0 && syncResult.skipped === 0 && (
+                {syncResult.discovered === 0 && syncResult.synced === 0 && syncResult.failed === 0 && syncResult.skipped === 0 && (
                   <span className="text-sm text-slate-400">Nothing to sync.</span>
                 )}
               </div>
@@ -641,8 +675,8 @@ export default function DevTierAnalytics() {
                 <div className="space-y-1 max-h-40 overflow-y-auto">
                   {syncResult.results.map((r, i) => (
                     <div key={i} className="flex items-center gap-3 text-xs font-mono flex-wrap">
-                      <span className={r.status === 'synced' ? 'text-green-400' : r.status === 'skipped' ? 'text-yellow-400' : 'text-red-400'}>
-                        {r.status === 'synced' ? '✓' : r.status === 'skipped' ? '⊘' : '✗'}
+                      <span className={r.status === 'discovered' ? 'text-cyan-400' : r.status === 'synced' ? 'text-green-400' : r.status === 'skipped' ? 'text-yellow-400' : 'text-red-400'}>
+                        {r.status === 'discovered' ? '★' : r.status === 'synced' ? '✓' : r.status === 'skipped' ? '⊘' : '✗'}
                       </span>
                       <span className="text-slate-400">{r.email}</span>
                       <span className="text-slate-600">{r.action}</span>
@@ -708,9 +742,15 @@ export default function DevTierAnalytics() {
                 .filter(sub => !searchQuery || sub.user.email.toLowerCase().includes(searchQuery.toLowerCase()))
                 .map((sub) => {
                   const isDuplicate = userSubCounts[sub.userId] > 1
+                  const subState = getSubState(sub)
+                  const cardBorder =
+                    subState === 'active-renewing'  ? 'border-green-700/60 hover:border-green-600/60' :
+                    subState === 'active-cancelled' ? 'border-amber-700/60 hover:border-amber-600/60' :
+                    subState === 'cancelled-expired'? 'border-red-900/60 hover:border-red-800/60' :
+                    'border-slate-700 hover:border-slate-600'
                   return <div
                 key={sub.id}
-                className="p-6 rounded-xl border-2 border-slate-700 bg-slate-900/60 backdrop-blur-sm hover:border-slate-600 transition-all"
+                className={`p-6 rounded-xl border-2 bg-slate-900/60 backdrop-blur-sm transition-all ${cardBorder}`}
               >
                 {/* User Info Header */}
                 <div className="flex items-start justify-between mb-4 pb-4 border-b border-slate-700">
@@ -720,12 +760,32 @@ export default function DevTierAnalytics() {
                       <h3 className="text-lg font-bold text-white">
                         {sub.user.name || 'Unknown User'}
                       </h3>
-                      {getStatusBadge(sub.status)}
+                      {getStatusBadge(sub)}
                       {isDuplicate && (
                         <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-bold border border-yellow-500/40">
                           <AlertTriangle size={11} /> DUPLICATE SUB
                         </span>
                       )}
+                      {(() => {
+                        const disc = getDiscountInfo(sub)
+                        if (!disc) return null
+                        if (disc.isGrandfathered) {
+                          return (
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/40">
+                              🔒 30% OFF
+                              {disc.periodEnd
+                                ? <span className="font-normal text-amber-500">· drops to 20% {disc.periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                : <span className="font-normal text-amber-500">· indefinite (no period end)</span>
+                              }
+                            </span>
+                          )
+                        }
+                        return (
+                          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-300 text-xs font-bold border border-purple-500/40">
+                            20% OFF
+                          </span>
+                        )
+                      })()}
                     </div>
                     <div className="flex items-center gap-2 text-sm text-slate-400 mb-1">
                       <Mail size={14} />
@@ -814,21 +874,23 @@ export default function DevTierAnalytics() {
                         </button>
                       )}
 
-                      {/* Active-only actions */}
-                      {sub.status === 'active' && (
+                      {/* Has access (renewing or cancelled-but-within-period) */}
+                      {(subState === 'active-renewing' || subState === 'active-cancelled') && (
                         <>
-                          <button
-                            onClick={() => toggleAutoRenew(sub.id, sub.autoRenew)}
-                            disabled={processingId === sub.id}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-sm transition-all ${
-                              sub.autoRenew
-                                ? 'bg-green-600 hover:bg-green-500 text-white'
-                                : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-                            } disabled:opacity-50 disabled:cursor-not-allowed`}
-                          >
-                            {sub.autoRenew ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
-                            {processingId === sub.id ? 'Processing...' : sub.autoRenew ? 'Auto-Renew ON' : 'Auto-Renew OFF'}
-                          </button>
+                          {subState === 'active-renewing' && (
+                            <button
+                              onClick={() => toggleAutoRenew(sub.id, sub.autoRenew)}
+                              disabled={processingId === sub.id}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-sm transition-all ${
+                                sub.autoRenew
+                                  ? 'bg-green-600 hover:bg-green-500 text-white'
+                                  : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                              } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            >
+                              {sub.autoRenew ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
+                              {processingId === sub.id ? 'Processing...' : sub.autoRenew ? 'Auto-Renew ON' : 'Auto-Renew OFF'}
+                            </button>
+                          )}
 
                           <button
                             onClick={() => revokeAccess(sub.id, sub.user.email)}
@@ -841,8 +903,8 @@ export default function DevTierAnalytics() {
                         </>
                       )}
 
-                      {/* Non-active: Grant Access + Delete Record */}
-                      {sub.status !== 'active' && (
+                      {/* No access: Grant Access + Delete Record */}
+                      {(subState === 'cancelled-expired' || subState === 'expired' || subState === 'other') && (
                         <>
                           <button
                             onClick={() => cardGrantId === sub.id ? setCardGrantId(null) : openCardGrant(sub.id)}

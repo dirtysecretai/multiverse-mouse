@@ -25,16 +25,22 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Check for active prompt-studio-dev subscription
+    // Check for active prompt-studio-dev subscription — includes cancelled subs still within billing period
+    const now = new Date()
     const subscription = await prisma.subscription.findFirst({
       where: {
         userId: user.id,
         tier: 'prompt-studio-dev',
-        status: 'active',
         OR: [
-          { endDate: null }, // Lifetime/indefinite
-          { endDate: { gt: new Date() } } // Not expired
-        ]
+          { status: 'active' },
+          {
+            status: 'cancelled',
+            OR: [
+              { endDate: { gt: now } },
+              { lsCurrentPeriodEnd: { gt: now } },
+            ],
+          },
+        ],
       }
     });
 

@@ -111,9 +111,23 @@ export async function POST(request: Request) {
       const pkg = TICKET_PACKAGES[tickets]
       if (!pkg) return NextResponse.json({ error: 'Invalid ticket package' }, { status: 400 })
 
-      // Check dev tier status (active subscription)
+      // Check dev tier status — includes cancelled subs still within their billing period
+      const now = new Date()
       const activeSub = await prisma.subscription.findFirst({
-        where: { userId: user.id, tier: 'prompt-studio-dev', status: 'active' },
+        where: {
+          userId: user.id,
+          tier: 'prompt-studio-dev',
+          OR: [
+            { status: 'active' },
+            {
+              status: 'cancelled',
+              OR: [
+                { endDate: { gt: now } },
+                { lsCurrentPeriodEnd: { gt: now } },
+              ],
+            },
+          ],
+        },
         orderBy: { createdAt: 'desc' },
       })
       const isDevTier = !!activeSub

@@ -9,13 +9,35 @@ type SyncResult = {
   lsId: string;
   email: string;
   action: string;
-  status: 'synced' | 'skipped' | 'failed';
+  status: 'synced' | 'skipped' | 'failed' | 'discovered';
   error?: string;
 };
+
+const SUBSCRIPTION_VARIANT_MAP: Record<number, { tickets: number; billingCycle: string; price: number }> = {
+  1377310: { tickets: 250,  billingCycle: 'biweekly', price: 20  },
+  1377319: { tickets: 500,  billingCycle: 'monthly',  price: 40  },
+  1377321: { tickets: 6000, billingCycle: 'yearly',   price: 480 },
+}
+
+async function fetchAllLsSubscriptions(apiKey: string, storeId: string): Promise<any[]> {
+  const all: any[] = []
+  let url = `https://api.lemonsqueezy.com/v1/subscriptions?filter[store_id]=${storeId}&page[size]=100`
+  while (url) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/vnd.api+json' },
+    })
+    if (!res.ok) break
+    const json = await res.json()
+    all.push(...(json.data ?? []))
+    url = json.links?.next ?? null
+  }
+  return all
+}
 
 // POST — bidirectional sync with LemonSqueezy for all subscriptions that have an lsSubscriptionId.
 //
 // What it does:
+//   • LS sub exists, no DB record → discover & create (missed webhook recovery)
 //   • Our DB active  + LS cancelled  → pull cancellation into DB
 //     (unless metadata.manualOverrideAt is newer than LS updated_at — admin overrides are respected)
 //   • Our DB active  + LS active     → update lsCurrentPeriodEnd / nextBillingDate from LS
@@ -29,10 +51,97 @@ export async function POST(req: NextRequest) {
     }
 
     const lsApiKey = process.env.LEMONSQUEEZY_API_KEY;
+    const storeId  = process.env.LEMONSQUEEZY_STORE_ID;
     if (!lsApiKey) {
       return NextResponse.json({ error: 'LEMONSQUEEZY_API_KEY not configured' }, { status: 500 });
     }
 
+    const results: SyncResult[] = [];
+
+    // ── Phase 1: Discover LS subscriptions missing from our DB ────────────────
+    // Catches cases where subscription_created webhook was never delivered.
+    if (storeId) {
+      const lsAllSubs = await fetchAllLsSubscriptions(lsApiKey, storeId)
+      const knownLsIds = new Set(
+        (await prisma.subscription.findMany({
+          where: { lsSubscriptionId: { not: null } },
+          select: { lsSubscriptionId: true },
+        })).map(s => s.lsSubscriptionId!)
+      )
+
+      for (const lsSub of lsAllSubs) {
+        const lsId = String(lsSub.id)
+        if (knownLsIds.has(lsId)) continue
+
+        const attrs      = lsSub.attributes
+        const variantId  = attrs.variant_id as number
+        const planInfo   = SUBSCRIPTION_VARIANT_MAP[variantId]
+        if (!planInfo) continue // not one of our subscription variants
+
+        const customData = attrs.custom_data ?? {}
+        const userId     = parseInt(customData.user_id)
+        if (!userId || isNaN(userId)) continue
+
+        const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true } })
+        if (!user) continue
+
+        const lsStatus  = attrs.status as string
+        const renewsAt  = attrs.renews_at ? new Date(attrs.renews_at) : null
+        const endsAt    = attrs.ends_at   ? new Date(attrs.ends_at)   : null
+        const isActive  = !['cancelled', 'expired'].includes(lsStatus)
+
+        try {
+          const newSub = await prisma.subscription.create({
+            data: {
+              userId,
+              tier:               'prompt-studio-dev',
+              status:             isActive ? 'active' : lsStatus,
+              startDate:          new Date(attrs.created_at),
+              endDate:            endsAt ?? renewsAt,
+              nextBillingDate:    renewsAt,
+              billingAmount:      planInfo.price,
+              billingCycle:       planInfo.billingCycle,
+              autoRenew:          isActive,
+              lsSubscriptionId:   lsId,
+              lsVariantId:        variantId,
+              lsCurrentPeriodEnd: renewsAt,
+              cancelledAt:        !isActive ? new Date() : null,
+              metadata: { ticketsPerCycle: planInfo.tickets, planId: planInfo.billingCycle, recoveredBySync: true },
+            },
+          })
+
+          // Only deliver tickets if the subscription is still active
+          if (isActive) {
+            const ticketRecord = await prisma.ticket.findUnique({ where: { userId } })
+            const prev = ticketRecord?.balance ?? 0
+            await prisma.$transaction([
+              prisma.ticket.upsert({
+                where: { userId },
+                update: { balance: { increment: planInfo.tickets }, totalBought: { increment: planInfo.tickets } },
+                create: { userId, balance: planInfo.tickets, totalBought: planInfo.tickets },
+              }),
+              prisma.subscriptionTransaction.create({
+                data: {
+                  subscriptionId: newSub.id,
+                  userId,
+                  type: 'ticket_distribution',
+                  ticketsAdded: planInfo.tickets,
+                  previousBalance: prev,
+                  newBalance: prev + planInfo.tickets,
+                  description: `Dev Tier ${planInfo.billingCycle} — recovered by admin sync`,
+                },
+              }),
+            ])
+          }
+
+          results.push({ subscriptionId: newSub.id, lsId, email: user.email, action: `discovered_and_created${isActive ? '+tickets' : '_cancelled'}`, status: 'discovered' })
+        } catch (err: any) {
+          results.push({ subscriptionId: 0, lsId, email: user.email, action: 'discover_failed', status: 'failed', error: err?.message })
+        }
+      }
+    }
+
+    // ── Phase 2: Reconcile existing DB records ─────────────────────────────────
     const allLsSubs = await prisma.subscription.findMany({
       where: { lsSubscriptionId: { not: null } },
       select: {
@@ -44,12 +153,6 @@ export async function POST(req: NextRequest) {
         user: { select: { email: true } },
       },
     });
-
-    if (allLsSubs.length === 0) {
-      return NextResponse.json({ success: true, synced: 0, skipped: 0, failed: 0, results: [] });
-    }
-
-    const results: SyncResult[] = [];
 
     for (const sub of allLsSubs) {
       try {
@@ -145,11 +248,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const synced  = results.filter(r => r.status === 'synced').length;
-    const skipped = results.filter(r => r.status === 'skipped').length;
-    const failed  = results.filter(r => r.status === 'failed').length;
+    const synced     = results.filter(r => r.status === 'synced').length;
+    const skipped    = results.filter(r => r.status === 'skipped').length;
+    const failed     = results.filter(r => r.status === 'failed').length;
+    const discovered = results.filter(r => r.status === 'discovered').length;
 
-    return NextResponse.json({ success: true, synced, skipped, failed, results });
+    return NextResponse.json({ success: true, synced, skipped, failed, discovered, results });
   } catch (error: any) {
     console.error('sync-ls error:', error);
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
