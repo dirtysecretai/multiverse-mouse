@@ -160,6 +160,33 @@ export async function POST(request: Request) {
       const plan = SUBSCRIPTION_PLANS[planId]
       if (!plan) return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
 
+      // Block duplicate subscriptions — check for any active or cancelled-within-period sub
+      const existingNow = new Date()
+      const existingSub = await prisma.subscription.findFirst({
+        where: {
+          userId: user.id,
+          tier: 'prompt-studio-dev',
+          OR: [
+            { status: 'active' },
+            {
+              status: 'cancelled',
+              OR: [
+                { endDate: { gt: existingNow } },
+                { lsCurrentPeriodEnd: { gt: existingNow } },
+              ],
+            },
+          ],
+        },
+      })
+      if (existingSub) {
+        return NextResponse.json(
+          { error: existingSub.status === 'cancelled'
+              ? 'You already have an active Dev Tier subscription (cancelled but still within your billing period). Your benefits remain active until the period ends.'
+              : 'You already have an active Dev Tier subscription.' },
+          { status: 409 }
+        )
+      }
+
       const checkoutUrl = await createLSCheckout(
         plan.variantId,
         (user as any).email,

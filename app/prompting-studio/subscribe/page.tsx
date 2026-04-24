@@ -60,10 +60,12 @@ export default function SubscribePage() {
   const [acceptedTOS, setAcceptedTOS] = useState(false);
   const [hasSubscription, setHasSubscription] = useState(false);
   const [subscriptionDetails, setSubscriptionDetails] = useState<{
+    status?: string | null;
     billingCycle?: string | null;
     nextBillingDate?: string | null;
     endDate?: string | null;
     startDate?: string | null;
+    lsCurrentPeriodEnd?: string | null;
   } | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [purchasing, setPurchasing] = useState(false);
@@ -129,14 +131,16 @@ export default function SubscribePage() {
 
   if (!user) return null;
 
-  // Already subscribed — full benefits view
+  // Already subscribed (or cancelled-within-period) — show status view instead of checkout
   if (hasSubscription) {
     const cycleLabel: Record<string, string> = {
       biweekly: 'Biweekly',
       monthly: 'Monthly',
       yearly: 'Yearly',
     };
-    const renewDate = subscriptionDetails?.nextBillingDate || subscriptionDetails?.endDate;
+    const isCancelled = subscriptionDetails?.status === 'cancelled';
+    const accessUntil = subscriptionDetails?.lsCurrentPeriodEnd || subscriptionDetails?.endDate;
+    const renewDate = isCancelled ? accessUntil : (subscriptionDetails?.nextBillingDate || subscriptionDetails?.endDate);
     const formattedRenew = renewDate
       ? new Date(renewDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
       : null;
@@ -165,14 +169,27 @@ export default function SubscribePage() {
                 <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">
                   DEVELOPMENT TIER
                 </h1>
-                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-green-500/15 border border-green-500/30 text-green-400">
-                  Active
-                </span>
+                {isCancelled ? (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400">
+                    Cancelled
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-green-500/15 border border-green-500/30 text-green-400">
+                    Active
+                  </span>
+                )}
               </div>
               <p className="text-slate-400 text-sm">
                 {cycle ? `${cycleLabel[cycle] ?? cycle} plan` : 'Subscription plan'}
-                {formattedRenew && <span className="text-slate-500"> · Renews {formattedRenew}</span>}
+                {formattedRenew && (
+                  <span className="text-slate-500">
+                    {isCancelled ? ` · Access until ${formattedRenew}` : ` · Renews ${formattedRenew}`}
+                  </span>
+                )}
               </p>
+              {isCancelled && (
+                <p className="text-xs text-amber-500/80 mt-1">Your benefits remain active until the end of your billing period.</p>
+              )}
             </div>
           </div>
 
@@ -246,11 +263,20 @@ export default function SubscribePage() {
                 Dashboard
               </button>
             </Link>
-            <Link href="/subscriptions">
-              <button className="px-5 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/8 text-slate-300 hover:text-white text-sm font-semibold transition-all">
-                Manage Subscription
+            {isCancelled ? (
+              <button
+                onClick={() => setHasSubscription(false)}
+                className="px-5 py-2.5 rounded-xl border border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 hover:text-white text-sm font-semibold transition-all"
+              >
+                Re-subscribe
               </button>
-            </Link>
+            ) : (
+              <Link href="/subscriptions">
+                <button className="px-5 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/8 text-slate-300 hover:text-white text-sm font-semibold transition-all">
+                  Manage Subscription
+                </button>
+              </Link>
+            )}
           </div>
         </div>
       </div>
