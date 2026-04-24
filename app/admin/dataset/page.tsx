@@ -1605,7 +1605,15 @@ const ImageCard = memo(function ImageCard({ img, selected, selectMode, onSelect,
             <ImageIcon size={20} className="text-slate-700" />
           </div>
         ) : (
-          <img src={img.imageUrl} alt="" className="w-full h-full object-cover" onError={() => setImgError(true)} loading={priority ? 'eager' : 'lazy'} decoding="async" fetchPriority={priority ? 'high' : 'low'} />
+          <img
+            src={`/api/admin/dataset/thumb/${img.id}`}
+            alt=""
+            className="w-full h-full object-cover"
+            onError={() => setImgError(true)}
+            loading={priority ? 'eager' : 'lazy'}
+            decoding="async"
+            fetchPriority={priority ? 'high' : 'low'}
+          />
         )}
 
         {/* Checkbox — always visible in select mode, hover-only otherwise */}
@@ -2423,13 +2431,21 @@ export default function DatasetPage() {
 
                 {/* Bucket context menu — regular buckets only */}
                 {!isUploadsBucket && bucketMenuId === b.id && (
-                  <div className="absolute top-full left-0 mt-1 z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[130px]">
+                  <div className="absolute top-full left-0 mt-1 z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[140px]">
                     <button
                       onClick={() => { setRenamingId(b.id); setRenameValue(b.name); setBucketMenuId(null) }}
                       className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors"
                     >
                       <Pencil size={11} /> Rename
                     </button>
+                    <a
+                      href={`/api/admin/buckets/${b.id}/export`}
+                      download
+                      onClick={() => setBucketMenuId(null)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/[0.06] transition-colors"
+                    >
+                      <Download size={11} /> Export zip
+                    </a>
                     <button
                       onClick={() => deleteBucket(b.id)}
                       className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/[0.06] transition-colors"
@@ -2507,7 +2523,7 @@ export default function DatasetPage() {
             </div>
 
             {pagination && pagination.totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-center gap-2">
+              <div className="mt-6 flex items-center justify-center gap-2 flex-wrap">
                 <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1 || loading}
                   className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-400 hover:text-white disabled:opacity-30 transition-all">
                   <ChevronLeft size={15} />
@@ -2532,6 +2548,25 @@ export default function DatasetPage() {
                   className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-400 hover:text-white disabled:opacity-30 transition-all">
                   <ChevronRight size={15} />
                 </button>
+                <form
+                  onSubmit={e => {
+                    e.preventDefault()
+                    const val = parseInt((e.currentTarget.elements.namedItem('gotopage') as HTMLInputElement).value)
+                    if (!isNaN(val)) setPage(Math.max(1, Math.min(pagination.totalPages, val)));
+                    (e.currentTarget.elements.namedItem('gotopage') as HTMLInputElement).value = ''
+                  }}
+                  className="flex items-center gap-1.5 ml-1"
+                >
+                  <span className="text-[10px] text-slate-600">Go to</span>
+                  <input
+                    name="gotopage"
+                    type="number"
+                    min={1}
+                    max={pagination.totalPages}
+                    placeholder={String(page)}
+                    className="w-14 h-8 rounded-lg bg-white/[0.04] border border-white/[0.07] text-xs text-white text-center outline-none focus:border-cyan-500/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </form>
               </div>
             )}
           </>
