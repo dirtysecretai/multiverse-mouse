@@ -41,30 +41,31 @@ AI Design Studio (prompt-protocol.vercel.app) is an AI creative platform that le
 ## IMAGE MODELS (in Portal V2)
 
 ### NanoBanana Pro 2 ⭐ (Recommended flagship)
-- **Cost**: **5 tickets (2K quality)** or **8 tickets (4K quality)**
+- **Cost**: **7 tickets (2K quality)** or **12 tickets (4K quality)**
 - **Supports**: Text-to-image, image-to-image (reference images)
 - **Strengths**: Very high quality, great for portraits, realistic scenes, artistic work
-- **Reference images**: Up to 4 reference images for style/character consistency
-- **Aspect ratios**: 1:1, 4:3, 16:9, 3:4, 9:16
+- **Reference images**: Up to 14 reference images for style/character consistency
+- **Aspect ratios**: auto, 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 4:5, 5:4, 21:9
 
 ### NanoBanana Pro (Original)
-- **Cost**: **6 tickets (2K quality)** or **12 tickets (4K quality)**
+- **Cost**: **7 tickets (2K quality)** or **14 tickets (4K quality)**
 - **Supports**: Text-to-image, image-to-image (reference images)
 - **Strengths**: High quality, great for portraits and artistic work
+- **Reference images**: Up to 8 reference images
 
 ### Kling V3 Image
 - **Cost**: **2 tickets** (1K or 2K quality)
 - **Supports**: Text-to-image, image-to-image
 - **Strengths**: Excellent photorealism, strong image coherence
 - **Reference images**: 1 reference image
-- **Aspect ratios**: Multiple options including auto
+- **Aspect ratios**: 16:9, 9:16, 1:1, 4:3, 3:4, 3:2, 2:3, 21:9
 
 ### Kling O3 (Omni)
 - **Cost**: **2 tickets** (1K or 2K) or **4 tickets** (4K)
 - **Supports**: Text-to-image, image-to-image with multiple references
 - **Strengths**: Versatile, handles complex compositions
 - **Reference images**: Up to 10 reference images
-- **Aspect ratios**: Multiple options including auto
+- **Aspect ratios**: auto, 16:9, 9:16, 1:1, 4:3, 3:4, 3:2, 2:3, 21:9
 - **Resolution options**: 1K, 2K, 4K
 
 ### Wan 2.7 Pro
@@ -75,24 +76,28 @@ AI Design Studio (prompt-protocol.vercel.app) is an AI creative platform that le
 - **Aspect ratios**: 1:1, 4:3, 16:9, 3:4, 9:16
 
 ### Pro Scanner V3 (Gemini 3 Pro Image)
-- **Cost**: 5 tickets (2K) or 10 tickets (4K)
+- **Cost**: **7 tickets (2K)** or **15 tickets (4K)**
 - **Supports**: Text-to-image, image-to-image
 - **Strengths**: Direct Gemini API, no content filtering, great for creative/unrestricted work
 - **Reference images**: Multiple
 
 ### SeeDream 4.5
-- **Cost**: **1 ticket** (standard) or **2 tickets** (4K)
+- **Cost**: **2 tickets** (2K) or **4 tickets** (4K)
 - **Strengths**: Excellent text rendering in images, ByteDance model
-- **Aspect ratios**: Multiple
+- **Aspect ratios**: 1:1, 2:3, 3:2, 4:5, 3:4, 4:3, 9:16, 16:9
 
 ### SeeDream 5.0 Lite
-- **Cost**: **1 ticket** (standard) or **2 tickets** (3K+)
+- **Cost**: **2 tickets** (2K) or **4 tickets** (3K)
 - **Strengths**: Newer SeeDream model, fast, good quality
-- **Aspect ratios**: Multiple
+- **Aspect ratios**: 1:1, 16:9, 9:16, 4:3, 3:4, 4:5
 
 ### FLUX 2
 - **Cost**: **1 ticket**
 - **Strengths**: Cheapest option, crisp text, native editing capability
+
+### GPT Image 2 (ChatGPT Images)
+- **Cost**: **2 tickets**
+- **Strengths**: OpenAI's image model via FAL, text-to-image and image editing
 
 ### NanoBanana Cluster (Legacy)
 - **Cost**: 2 tickets for 2 images
@@ -166,10 +171,10 @@ AI Design Studio (prompt-protocol.vercel.app) is an AI creative platform that le
 Use **FLUX 2** (1 ticket) or **NanoBanana Cluster** (2 tickets for 2 images) for fast, cheap ideation.
 
 ### High-quality portrait or character art:
-Use **NanoBanana Pro 2** (5 tickets at 2K). Add 1–4 reference images for consistency.
+Use **NanoBanana Pro 2** (7 tickets at 2K). Add reference images for consistency.
 
 ### Photorealistic scene:
-Use **Kling V3 Image** (2 tickets) or **NanoBanana Pro 2** (5 tickets at 2K).
+Use **Kling V3 Image** (2 tickets) or **NanoBanana Pro 2** (7 tickets at 2K).
 
 ### Image → Video (best quality):
 1. Generate image with NanoBanana Pro 2 or Kling V3 Image.
