@@ -2458,14 +2458,25 @@ export default function DatasetPage() {
                     >
                       <Pencil size={11} /> Rename
                     </button>
-                    <a
-                      href={`/api/admin/buckets/${b.id}/export`}
-                      download
-                      onClick={() => setBucketMenuId(null)}
+                    <button
+                      onClick={async () => {
+                        setBucketMenuId(null)
+                        try {
+                          const res = await fetch(`/api/admin/buckets/${b.id}/export`, { headers: authHeaders() })
+                          if (!res.ok) { alert(`Export failed: ${await res.text()}`); return }
+                          const blob = await res.blob()
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = `${b.name.replace(/[^a-z0-9-_]/gi, '_')}-dataset.zip`
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        } catch (e: any) { alert(`Export error: ${e.message}`) }
+                      }}
                       className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/[0.06] transition-colors"
                     >
                       <Download size={11} /> Export zip
-                    </a>
+                    </button>
                     <button
                       onClick={() => deleteBucket(b.id)}
                       className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/[0.06] transition-colors"
