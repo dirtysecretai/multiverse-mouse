@@ -10,14 +10,18 @@ import { cookies } from 'next/headers'
 const prisma = new PrismaClient()
 
 // Ticket packages — mirrors the TICKET_PACKAGES array on the buy-tickets page
-const TICKET_PACKAGES: Record<number, { variantId: number; freePrice: number; devPrice: number }> = {
-  25:   { variantId: 1377265, freePrice: 5.00,   devPrice: 3.50  },
-  50:   { variantId: 1377291, freePrice: 9.00,   devPrice: 6.30  },
-  100:  { variantId: 1377293, freePrice: 16.00,  devPrice: 11.20 },
-  250:  { variantId: 1377294, freePrice: 35.00,  devPrice: 24.50 },
-  500:  { variantId: 1377296, freePrice: 65.00,  devPrice: 45.50 },
-  1000: { variantId: 1377297, freePrice: 120.00, devPrice: 84.00 },
+const TICKET_PACKAGES: Record<number, { variantId: number; freePrice: number; devPrice30: number; devPrice20: number }> = {
+  25:   { variantId: 1377265, freePrice: 5.00,   devPrice30: 3.50,  devPrice20: 4.00  },
+  50:   { variantId: 1377291, freePrice: 9.00,   devPrice30: 6.30,  devPrice20: 7.20  },
+  100:  { variantId: 1377293, freePrice: 16.00,  devPrice30: 11.20, devPrice20: 12.80 },
+  250:  { variantId: 1377294, freePrice: 35.00,  devPrice30: 24.50, devPrice20: 28.00 },
+  500:  { variantId: 1377296, freePrice: 65.00,  devPrice30: 45.50, devPrice20: 52.00 },
+  1000: { variantId: 1377297, freePrice: 120.00, devPrice30: 84.00, devPrice20: 96.00 },
 }
+
+// Users who subscribed before this date keep their 30% discount until their current period ends.
+// Everyone else (and renewals after the period end) gets 20%.
+const GRANDFATHER_CUTOFF = new Date('2026-04-23T00:00:00Z')
 
 // Subscription plans — biweekly, monthly, yearly
 const SUBSCRIPTION_PLANS: Record<string, { variantId: number }> = {
@@ -112,9 +116,18 @@ export async function POST(request: Request) {
         where: { userId: user.id, tier: 'prompt-studio-dev', status: 'active' },
         orderBy: { createdAt: 'desc' },
       })
-      const isDevTier   = !!activeSub
-      const price       = isDevTier ? pkg.devPrice : undefined  // undefined = use variant's default price
-      const customPrice = isDevTier ? pkg.devPrice : undefined
+      const isDevTier = !!activeSub
+
+      // Grandfathered = subscribed before the discount cut AND still in that billing period → 30%
+      // Everyone else with dev tier → 20%
+      const isGrandfathered = !!(
+        activeSub &&
+        new Date(activeSub.createdAt) < GRANDFATHER_CUTOFF &&
+        (!activeSub.lsCurrentPeriodEnd || new Date(activeSub.lsCurrentPeriodEnd) > new Date())
+      )
+      const customPrice = isDevTier
+        ? (isGrandfathered ? pkg.devPrice30 : pkg.devPrice20)
+        : undefined
 
       const checkoutUrl = await createLSCheckout(
         pkg.variantId,

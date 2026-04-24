@@ -44,6 +44,7 @@ export default function DashboardPage() {
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([])
   const [totalImageCount, setTotalImageCount] = useState(0)
   const [hasPromptStudioDev, setHasPromptStudioDev] = useState(false)
+  const [isGrandfathered, setIsGrandfathered] = useState(false)
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false)
 
   // Echo Chamber state
@@ -134,7 +135,10 @@ export default function DashboardPage() {
     try {
       const res = await fetch('/api/user/subscription')
       const data = await res.json()
-      if (data.success) setHasPromptStudioDev(data.hasPromptStudioDev)
+      if (data.success) {
+        setHasPromptStudioDev(data.hasPromptStudioDev)
+        if (data.isGrandfathered) setIsGrandfathered(true)
+      }
     } catch {}
   }
 
@@ -474,7 +478,7 @@ export default function DashboardPage() {
                     <div>
                       <p className="text-xs font-semibold text-cyan-400">Buy Tickets</p>
                       <p className="text-[10px] text-slate-600">
-                        {hasPromptStudioDev ? 'Dev tier — 30% off' : 'From $5.00'}
+                        {hasPromptStudioDev ? `Dev tier — ${isGrandfathered ? '30%' : '20%'} off` : 'From $5.00'}
                       </p>
                     </div>
                   </div>
@@ -488,7 +492,7 @@ export default function DashboardPage() {
                       <Sparkles size={13} className="text-purple-400" />
                       <div>
                         <p className="text-xs font-semibold text-purple-400">Upgrade to Dev Tier</p>
-                        <p className="text-[10px] text-slate-600">30% off tickets · From $20</p>
+                        <p className="text-[10px] text-slate-600">20% off tickets · From $20</p>
                       </div>
                     </div>
                     <ArrowRight size={12} className="text-purple-500/50 group-hover:text-purple-400 transition-colors" />

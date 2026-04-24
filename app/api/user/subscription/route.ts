@@ -38,9 +38,19 @@ export async function GET(req: NextRequest) {
       }
     });
 
+    // Grandfathered = subscribed before the discount cut (Apr 23 2026) and still in that billing period.
+    // lsCurrentPeriodEnd being null means a manually granted/indefinite subscription — treat as always active.
+    const GRANDFATHER_CUTOFF = new Date('2026-04-23T00:00:00Z')
+    const isGrandfathered = !!(
+      subscription &&
+      new Date(subscription.createdAt) < GRANDFATHER_CUTOFF &&
+      (!subscription.lsCurrentPeriodEnd || new Date(subscription.lsCurrentPeriodEnd) > new Date())
+    )
+
     return NextResponse.json({
       success: true,
       hasPromptStudioDev: !!subscription,
+      isGrandfathered,
       subscription: subscription ? {
         tier: subscription.tier,
         status: subscription.status,
@@ -48,6 +58,8 @@ export async function GET(req: NextRequest) {
         endDate: subscription.endDate,
         billingCycle: subscription.billingCycle,
         nextBillingDate: subscription.nextBillingDate,
+        lsCurrentPeriodEnd: subscription.lsCurrentPeriodEnd,
+        createdAt: subscription.createdAt,
       } : null
     });
 

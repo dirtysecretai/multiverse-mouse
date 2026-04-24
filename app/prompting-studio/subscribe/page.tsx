@@ -179,7 +179,7 @@ export default function SubscribePage() {
           {/* Stat highlights */}
           <div className="grid grid-cols-3 gap-3 mb-6">
             {[
-              { value: '30%', label: 'off all ticket purchases', color: 'purple' },
+              { value: '20%', label: 'off all ticket purchases', color: 'purple' },
               { value: '8×', label: 'concurrent generations', color: 'cyan' },
               { value: '500', label: 'tickets per cycle', color: 'green' },
             ].map(({ value, label, color }) => (
@@ -207,7 +207,7 @@ export default function SubscribePage() {
             </div>
             <div className="px-5 py-4 grid sm:grid-cols-2 gap-3">
               {[
-                { text: '30% off all ticket package purchases', highlight: true },
+                { text: '20% off all ticket package purchases', highlight: true },
                 { text: '250–500 tickets auto-delivered each billing cycle', highlight: true },
                 { text: 'Up to 8 concurrent generations (6 image + 2 video)', highlight: true },
                 { text: '100 reference image slots in the Refs library', highlight: true },
@@ -258,7 +258,7 @@ export default function SubscribePage() {
   }
 
   const devTierFeatures = [
-    { text: '30% off all ticket package purchases', highlight: true },
+    { text: '20% off all ticket package purchases', highlight: true },
     { text: '250–500 tickets auto-delivered each billing cycle', highlight: true },
     { text: 'Up to 8 concurrent generations — 6 image + 2 video (vs 2 on free tier)', highlight: true },
     { text: '100 reference image slots in the Refs library (2× the free tier limit of 50)', highlight: true },
@@ -316,7 +316,7 @@ export default function SubscribePage() {
               {/* 3 stat highlights */}
               <div className="grid grid-cols-3 gap-2 mb-5">
                 <div className="p-2.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-center">
-                  <div className="text-xl font-black text-purple-400">30%</div>
+                  <div className="text-xl font-black text-purple-400">20%</div>
                   <div className="text-[10px] text-slate-500 leading-tight">off tickets</div>
                 </div>
                 <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-center">
