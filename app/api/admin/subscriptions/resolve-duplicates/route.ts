@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     const force = body.force === true
 
     const all = await prisma.subscription.findMany({
-      where: { tier: 'prompt-studio-dev' },
+      where: { tier: 'prompt-studio-dev', status: { not: 'expired' } },
       orderBy: [{ status: 'asc' }, { startDate: 'desc' }],
       select: {
         id: true,
@@ -88,7 +88,7 @@ export async function GET(req: NextRequest) {
     }
 
     const all = await prisma.subscription.findMany({
-      where: { tier: 'prompt-studio-dev' },
+      where: { tier: 'prompt-studio-dev', status: { not: 'expired' } },
       select: {
         id: true,
         userId: true,
