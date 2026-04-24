@@ -77,6 +77,11 @@ export default function DevTierAnalytics() {
   const [syncingSubId, setSyncingSubId]     = useState<number | null>(null)
   const [syncSingleResults, setSyncSingleResults] = useState<Record<number, { success: boolean; message: string }>>({})
 
+  // Duplicate detection
+  const [duplicateCount, setDuplicateCount] = useState<number | null>(null)
+  const [resolvingDuplicates, setResolvingDuplicates] = useState(false)
+  const [resolveResult, setResolveResult] = useState<{ count: number; deleted: any[] } | null>(null)
+
   // Search
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -89,22 +94,47 @@ export default function DevTierAnalytics() {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch('/api/admin/subscriptions', {
-        headers: {
-          'x-admin-password': sessionStorage.getItem('admin-password') || ''
-        }
-      })
+      const pw = sessionStorage.getItem('admin-password') || ''
+      const [response, dupRes] = await Promise.all([
+        fetch('/api/admin/subscriptions', { headers: { 'x-admin-password': pw } }),
+        fetch('/api/admin/subscriptions/resolve-duplicates', { headers: { 'x-admin-password': pw } }),
+      ])
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch subscriptions')
-      }
+      if (!response.ok) throw new Error('Failed to fetch subscriptions')
 
       const data = await response.json()
       setSubscriptions(data.subscriptions || [])
+
+      if (dupRes.ok) {
+        const dupData = await dupRes.json()
+        setDuplicateCount(dupData.duplicateUserCount ?? 0)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load subscriptions')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const resolveDuplicates = async () => {
+    setResolvingDuplicates(true)
+    setResolveResult(null)
+    try {
+      const res = await fetch('/api/admin/subscriptions/resolve-duplicates', {
+        method: 'POST',
+        headers: { 'x-admin-password': sessionStorage.getItem('admin-password') || '' },
+      })
+      const data = await res.json()
+      if (data.success) {
+        setResolveResult({ count: data.count, deleted: data.deleted })
+        await fetchSubscriptions()
+      } else {
+        alert(data.error || 'Failed to resolve duplicates')
+      }
+    } catch {
+      alert('Request failed')
+    } finally {
+      setResolvingDuplicates(false)
     }
   }
 
@@ -645,6 +675,39 @@ export default function DevTierAnalytics() {
             </div>
           )}
         </div>
+
+        {/* Duplicate Subscriptions Banner */}
+        {duplicateCount !== null && duplicateCount > 0 && (
+          <div className="mb-6 p-5 rounded-xl border border-yellow-500/40 bg-yellow-500/5">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle size={16} className="text-yellow-400" />
+                  <h2 className="text-sm font-bold text-yellow-400 uppercase tracking-wider">
+                    {duplicateCount} User{duplicateCount > 1 ? 's' : ''} with Duplicate Subscriptions
+                  </h2>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Auto-resolve deletes expired/cancelled duplicates. Active duplicates are left for manual review.
+                </p>
+                {resolveResult && (
+                  <p className="text-xs text-green-400 mt-1 font-medium">
+                    ✓ Deleted {resolveResult.count} stale record{resolveResult.count !== 1 ? 's' : ''}.
+                    {resolveResult.deleted.map(d => ` ${d.email}`).join(',')}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={resolveDuplicates}
+                disabled={resolvingDuplicates}
+                className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-yellow-900 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors"
+              >
+                <RefreshCw size={14} className={resolvingDuplicates ? 'animate-spin' : ''} />
+                {resolvingDuplicates ? 'Resolving...' : 'Auto-Resolve'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* LemonSqueezy Sync Tool */}
         <div className="mb-8 p-5 rounded-xl border border-orange-500/30 bg-orange-500/5">

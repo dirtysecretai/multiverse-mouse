@@ -162,35 +162,68 @@ async function handleSubscriptionCreated(payload: any, customData: any) {
     return
   }
 
-  // Idempotency
-  const existing = await prisma.subscription.findUnique({ where: { lsSubscriptionId } })
-  if (existing) {
+  // Idempotency — already processed this exact LS subscription
+  const exactMatch = await prisma.subscription.findUnique({ where: { lsSubscriptionId } })
+  if (exactMatch) {
     console.log('[LS webhook] subscription_created: already exists', lsSubscriptionId)
     return
   }
 
   const renewsAt = data.renews_at ? new Date(data.renews_at) : null
 
-  const subscription = await prisma.subscription.create({
-    data: {
-      userId,
-      tier:               'prompt-studio-dev',
-      status:             'active',
-      startDate:          new Date(data.created_at),
-      endDate:            renewsAt,
-      nextBillingDate:    renewsAt,
-      billingAmount:      planInfo.price,
-      billingCycle:       planInfo.billingCycle,
-      autoRenew:          true,
-      lsSubscriptionId,
-      lsVariantId:        variantId,
-      lsCurrentPeriodEnd: renewsAt,
-      metadata: {
-        ticketsPerCycle: planInfo.tickets,
-        planId:          planInfo.billingCycle,
-      },
-    },
+  // Check if this user already has a subscription record (re-subscribe after cancel).
+  // If so, update the existing record instead of creating a duplicate.
+  const existingForUser = await prisma.subscription.findFirst({
+    where: { userId, tier: 'prompt-studio-dev' },
+    orderBy: { createdAt: 'desc' },
   })
+
+  let subscription: { id: number }
+
+  if (existingForUser) {
+    subscription = await prisma.subscription.update({
+      where: { id: existingForUser.id },
+      data: {
+        status:             'active',
+        startDate:          new Date(data.created_at),
+        endDate:            renewsAt,
+        nextBillingDate:    renewsAt,
+        billingAmount:      planInfo.price,
+        billingCycle:       planInfo.billingCycle,
+        autoRenew:          true,
+        cancelledAt:        null,
+        lsSubscriptionId,
+        lsVariantId:        variantId,
+        lsCurrentPeriodEnd: renewsAt,
+        metadata: {
+          ticketsPerCycle: planInfo.tickets,
+          planId:          planInfo.billingCycle,
+        },
+      },
+    })
+    console.log(`[LS webhook] subscription_created: reused existing record #${existingForUser.id} for user ${userId}`)
+  } else {
+    subscription = await prisma.subscription.create({
+      data: {
+        userId,
+        tier:               'prompt-studio-dev',
+        status:             'active',
+        startDate:          new Date(data.created_at),
+        endDate:            renewsAt,
+        nextBillingDate:    renewsAt,
+        billingAmount:      planInfo.price,
+        billingCycle:       planInfo.billingCycle,
+        autoRenew:          true,
+        lsSubscriptionId,
+        lsVariantId:        variantId,
+        lsCurrentPeriodEnd: renewsAt,
+        metadata: {
+          ticketsPerCycle: planInfo.tickets,
+          planId:          planInfo.billingCycle,
+        },
+      },
+    })
+  }
 
   // Record initial payment
   await prisma.subscriptionTransaction.create({

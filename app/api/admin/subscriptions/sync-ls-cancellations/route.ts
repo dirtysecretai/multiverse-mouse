@@ -91,24 +91,30 @@ export async function POST(req: NextRequest) {
         const isActive  = !['cancelled', 'expired'].includes(lsStatus)
 
         try {
-          const newSub = await prisma.subscription.create({
-            data: {
-              userId,
-              tier:               'prompt-studio-dev',
-              status:             isActive ? 'active' : lsStatus,
-              startDate:          new Date(attrs.created_at),
-              endDate:            endsAt ?? renewsAt,
-              nextBillingDate:    renewsAt,
-              billingAmount:      planInfo.price,
-              billingCycle:       planInfo.billingCycle,
-              autoRenew:          isActive,
-              lsSubscriptionId:   lsId,
-              lsVariantId:        variantId,
-              lsCurrentPeriodEnd: renewsAt,
-              cancelledAt:        !isActive ? new Date() : null,
-              metadata: { ticketsPerCycle: planInfo.tickets, planId: planInfo.billingCycle, recoveredBySync: true },
-            },
+          // Reuse existing record for this user if one exists (avoids creating a duplicate)
+          const existingForUser = await prisma.subscription.findFirst({
+            where: { userId, tier: 'prompt-studio-dev' },
+            orderBy: { createdAt: 'desc' },
           })
+
+          const subData = {
+            status:             isActive ? 'active' : lsStatus,
+            startDate:          new Date(attrs.created_at),
+            endDate:            endsAt ?? renewsAt,
+            nextBillingDate:    renewsAt,
+            billingAmount:      planInfo.price,
+            billingCycle:       planInfo.billingCycle,
+            autoRenew:          isActive,
+            lsSubscriptionId:   lsId,
+            lsVariantId:        variantId,
+            lsCurrentPeriodEnd: renewsAt,
+            cancelledAt:        !isActive ? new Date() : null,
+            metadata: { ticketsPerCycle: planInfo.tickets, planId: planInfo.billingCycle, recoveredBySync: true },
+          }
+
+          const newSub = existingForUser
+            ? await prisma.subscription.update({ where: { id: existingForUser.id }, data: subData })
+            : await prisma.subscription.create({ data: { userId, tier: 'prompt-studio-dev', ...subData } })
 
           // Only deliver tickets if the subscription is still active
           if (isActive) {
