@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { uploadToR2 } from '@/lib/r2'
 
-export const config = { api: { bodyParser: false } }
-
 // POST /api/admin/upload-frame
 // Accepts multipart FormData with a single 'file' field, uploads to R2, returns the public URL.
 // Used by the portal-v2 video scanner for start/end frame, audio, and lipsync source video uploads.

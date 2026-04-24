@@ -5698,10 +5698,17 @@ export default function PortalV2Page() {
       const form = new FormData()
       form.append('file', uploadFile, file.name)
       const res = await fetch("/api/admin/upload-frame", { method: "POST", body: form })
-      if (!res.ok) return null
+      if (!res.ok) {
+        const errText = await res.text().catch(() => 'unknown error')
+        console.error(`upload-frame failed ${res.status}:`, errText)
+        return null
+      }
       const data = await res.json()
       return data.url ?? null
-    } catch { return null }
+    } catch (err) {
+      console.error('uploadVideoFrame error:', err)
+      return null
+    }
   }, [])
 
   const handleVideoStartFrameSelect = useCallback(async (file: File) => {
