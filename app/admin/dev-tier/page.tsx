@@ -457,12 +457,15 @@ export default function DevTierAnalytics() {
   const GRANDFATHER_CUTOFF = new Date('2026-04-23T00:00:00Z')
 
   const getDiscountInfo = (sub: Subscription) => {
-    if (sub.status !== 'active') return null
+    const state = getSubState(sub)
+    if (state !== 'active-renewing' && state !== 'active-cancelled') return null
     const createdBefore = new Date(sub.createdAt) < GRANDFATHER_CUTOFF
     const periodEnd = sub.lsCurrentPeriodEnd ? new Date(sub.lsCurrentPeriodEnd) : null
-    const stillInPeriod = !periodEnd || periodEnd > new Date()
+    const endDate   = sub.endDate ? new Date(sub.endDate) : null
+    const activeUntil = periodEnd ?? endDate
+    const stillInPeriod = !activeUntil || activeUntil > new Date()
     const isGrandfathered = createdBefore && stillInPeriod
-    return { isGrandfathered, periodEnd }
+    return { isGrandfathered, periodEnd: activeUntil }
   }
 
   const getSubState = (sub: Subscription): 'active-renewing' | 'active-cancelled' | 'cancelled-expired' | 'expired' | 'other' => {
