@@ -6505,12 +6505,16 @@ export default function PortalV2Page() {
 
         const currentSlots = pendingSlotsRef.current
         const trackedRequestIds = new Set(currentSlots.map((s) => s.nb2RequestId).filter(Boolean) as string[])
-        const trackedQueueJobIds = new Set(currentSlots.map((s) => s.queueJobId).filter(Boolean) as number[])
+        // queueJobId = capacity-overflow DB queue ID; queueId = regular FAL async DB queue ID (SeeDream, FLUX 2 multi)
+        // Both map to the same GenerationQueue.id that j.id comes from, so check both fields.
+        const trackedDbJobIds = new Set(
+          currentSlots.flatMap((s) => [s.queueJobId, s.queueId].filter((v): v is number => v != null))
+        )
         const doneNb2Ids = new Set(JSON.parse(localStorage.getItem("pv2-nb2-done") || "[]") as string[])
 
         for (const j of nb2DbJobs) {
-          // Skip if already tracked by requestId, by queueJobId (promoted but nb2RequestId not yet set), or already completed
-          if (trackedRequestIds.has(j.falRequestId) || trackedQueueJobIds.has(j.id) || doneNb2Ids.has(j.falRequestId)) continue
+          // Skip if already tracked by requestId, by any DB queue job ID, or already completed
+          if (trackedRequestIds.has(j.falRequestId) || trackedDbJobIds.has(j.id) || doneNb2Ids.has(j.falRequestId)) continue
           const params = j.parameters as any
           const newSlot: PendingSlot = {
             slotId:         `db-${j.id}-${j.falRequestId.slice(-6)}`,
