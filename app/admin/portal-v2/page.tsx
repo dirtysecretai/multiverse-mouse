@@ -6940,6 +6940,12 @@ export default function PortalV2Page() {
           <p className="text-slate-400 text-center max-w-sm text-sm leading-relaxed">
             AI generation is temporarily disabled for maintenance. Your tickets and images are safe — please check back soon.
           </p>
+          <button
+            onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/login" }}
+            className="mt-8 px-4 py-2 rounded-lg border border-white/15 text-sm text-slate-400 hover:text-white hover:border-white/30 transition-all"
+          >
+            Sign out
+          </button>
         </div>
       )}
 
