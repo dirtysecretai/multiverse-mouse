@@ -2851,6 +2851,7 @@ function PromptBox({
   maxConcurrent,
   promptOverride,
   configOverride,
+  isGenerationMaintenance = false,
 }: {
   model: ImageModelConfig
   onModelChange: (m: ImageModelConfig) => void
@@ -2873,6 +2874,7 @@ function PromptBox({
   maxConcurrent: number
   promptOverride?: { text: string; version: number }
   configOverride?: { aspectRatio?: string; quality?: string; outputFormat?: string; imageCount?: number; version: number }
+  isGenerationMaintenance?: boolean
 }) {
   const PROMPT_STORAGE_KEY = "pv2-prompt-state"
   const [prompt, setPrompt] = useState<string>("")
@@ -2957,7 +2959,7 @@ function PromptBox({
   const needsRefImage = !!model.requiresReferenceImage && activeRefImages.length === 0
   const slotsNeeded = (model.isFal || model.id === "nano-banana-pro-2" || model.id === "gpt-image-2") ? imageCount : 1
   const queueFull = activeJobCount + slotsNeeded > maxConcurrent
-  const canGenerate = !!userId && prompt.trim().length > 0 && !generating && !needsRefImage && !queueFull
+  const canGenerate = !isGenerationMaintenance && !!userId && prompt.trim().length > 0 && !generating && !needsRefImage && !queueFull
 
   const handleGenerate = async () => {
     if (!canGenerate) return
@@ -3696,8 +3698,8 @@ function PromptBox({
                 ) : (
                   <Ticket size={12} />
                 )}
-                {queueFull ? "Queue Full" : "Generate"}
-                {!queueFull && <span className="opacity-70">{totalCost}</span>}
+                {isGenerationMaintenance ? "Temporarily Offline" : queueFull ? "Queue Full" : "Generate"}
+                {!isGenerationMaintenance && !queueFull && <span className="opacity-70">{totalCost}</span>}
               </button>
             </div>
           </div>
@@ -4712,7 +4714,7 @@ function VideoPromptBar({
   onModelChange, promptOverride, characterOrientation, motionVideoDuration, onConfigOpen,
   startFramePreview, startFrameUploading, onStartFrameSelect,
   motionVideoFilename, motionVideoUploading, onMotionVideoSelect, onMotionVideoDurationChange,
-  motionPromptText, lipsyncVideoDuration,
+  motionPromptText, lipsyncVideoDuration, isGenerationMaintenance = false,
 }: {
   model: VideoModelConfig
   onGenerate: (prompt: string) => void
@@ -4738,6 +4740,7 @@ function VideoPromptBar({
   onMotionVideoDurationChange: (d: number) => void
   motionPromptText: string
   lipsyncVideoDuration?: number
+  isGenerationMaintenance?: boolean
 }) {
   const [prompt, setPrompt] = useState("")
   const [modelOpen, setModelOpen] = useState(false)
@@ -4787,7 +4790,7 @@ function VideoPromptBar({
     ? `${resolution} · ${duration === "auto" ? "auto" : duration + "s"}${audioEnabled ? " · audio" : ""}`
     : `${resolution} · ${duration}s`
 
-  const ready = (model.id === "kling-v3-motion" || isLipsyncModel) ? canGenerate : canGenerate && !!prompt.trim()
+  const ready = !isGenerationMaintenance && ((model.id === "kling-v3-motion" || isLipsyncModel) ? canGenerate : canGenerate && !!prompt.trim())
   const promptPlaceholder = model.id === "kling-v3-motion"
     ? "Describe additional details (optional)..."
     : isLipsyncModel
@@ -4901,9 +4904,9 @@ function VideoPromptBar({
               >
                 {generating
                   ? <div className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                  : <><Ticket size={11} />{ticketCost}</>
+                  : !isGenerationMaintenance && <><Ticket size={11} />{ticketCost}</>
                 }
-                Generate
+                {isGenerationMaintenance ? "Temporarily Offline" : "Generate"}
               </button>
             </div>
           </>
@@ -4945,9 +4948,9 @@ function VideoPromptBar({
               >
                 {generating
                   ? <div className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                  : <><Ticket size={11} />{ticketCost}</>
+                  : !isGenerationMaintenance && <><Ticket size={11} />{ticketCost}</>
                 }
-                Generate
+                {isGenerationMaintenance ? "Temporarily Offline" : "Generate"}
               </button>
             </div>
           </>
@@ -5015,9 +5018,9 @@ function VideoPromptBar({
           >
             {generating
               ? <div className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-              : <><Ticket size={11} />{ticketCost}</>
+              : !isGenerationMaintenance && <><Ticket size={11} />{ticketCost}</>
             }
-            Generate
+            {isGenerationMaintenance ? "Temporarily Offline" : "Generate"}
           </button>
         </div>
       </div>
@@ -6932,23 +6935,6 @@ export default function PortalV2Page() {
 
   return (
     <div className="bg-[#050810] text-white min-h-screen">
-      {/* Generation maintenance overlay — admin emails bypass this */}
-      {isGenerationMaintenance && user !== null && !['dirtysecretai@gmail.com', 'promptandprotocol@gmail.com'].includes(user.email) && (
-        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#050810]/95 backdrop-blur-sm px-6">
-          <div className="w-4 h-4 rounded-full bg-red-500 animate-pulse mb-6" />
-          <h1 className="text-2xl font-black text-white mb-3 text-center">Generation Unavailable</h1>
-          <p className="text-slate-400 text-center max-w-sm text-sm leading-relaxed">
-            AI generation is temporarily disabled for maintenance. Your tickets and images are safe — please check back soon.
-          </p>
-          <button
-            onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/login" }}
-            className="mt-8 px-4 py-2 rounded-lg border border-white/15 text-sm text-slate-400 hover:text-white hover:border-white/30 transition-all"
-          >
-            Sign out
-          </button>
-        </div>
-      )}
-
       {/* Taskbar */}
       <div className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md border-b border-white/5">
 
@@ -7123,6 +7109,7 @@ export default function PortalV2Page() {
             maxConcurrent={maxConcurrent}
             promptOverride={promptOverride}
             configOverride={configOverride}
+            isGenerationMaintenance={isGenerationMaintenance && !['dirtysecretai@gmail.com', 'promptandprotocol@gmail.com'].includes(user?.email ?? '')}
           />
         </>
       ) : !user ? (
@@ -7232,6 +7219,7 @@ export default function PortalV2Page() {
             generating={videoGenerating}
             canGenerate={!videoGenerating && (selectedVideoModel.supportsLipsync ? (!!videoLipsyncVideoUrl && !!videoLipsyncAudioUrl) : (selectedVideoModel.textToVideo || !!videoStartFrameUrl)) && (selectedVideoModel.id !== "kling-v3-motion" || !!videoMotionVideoUrl) && videoActiveJobCount < videoMaxConcurrent}
             queueFull={videoActiveJobCount >= videoMaxConcurrent && videoMaxConcurrent !== Infinity}
+            isGenerationMaintenance={isGenerationMaintenance && !['dirtysecretai@gmail.com', 'promptandprotocol@gmail.com'].includes(user?.email ?? '')}
             duration={videoDuration}
             resolution={videoResolution}
             aspectRatio={videoAspectRatio}
