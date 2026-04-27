@@ -43,8 +43,9 @@ export async function POST(request: Request) {
     // Check system state
     const systemState = await prisma.systemState.findFirst()
     
-    // Check global AI generation maintenance
-    if (systemState?.aiGenerationMaintenance) {
+    // Check global AI generation maintenance (admin emails bypass)
+    const ADMIN_EMAILS = ['dirtysecretai@gmail.com', 'promptandprotocol@gmail.com']
+    if (systemState?.aiGenerationMaintenance && !ADMIN_EMAILS.includes(user.email?.toLowerCase() ?? '')) {
       return NextResponse.json(
         { error: 'Multiverse Scanner is offline for maintenance' },
         { status: 503 }
