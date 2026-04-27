@@ -1087,6 +1087,7 @@ interface FeedItem {
   value:     string
   tags?:     string[]
   imageUrl?: string
+  error?:    string
 }
 
 function cleanTagsClient(raw: string): string[] {
@@ -1196,6 +1197,16 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
                 value:    event.value ?? '',
                 tags:     event.tags,
                 imageUrl: imageUrlById[event.id],
+              }
+              setFeedItems(prev => [...prev, item])
+              setCurrentId(null)
+            }
+            if (event.type === 'error' && event.id) {
+              const item: FeedItem = {
+                id:       event.id,
+                value:    '',
+                imageUrl: imageUrlById[event.id],
+                error:    event.error ?? 'Unknown error',
               }
               setFeedItems(prev => [...prev, item])
               setCurrentId(null)
@@ -1425,8 +1436,9 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
             const isSaving  = savingIds.has(item.id)
             const isEditing = editingId === item.id
             const isVideo   = item.imageUrl?.match(/\.(mp4|webm|mov)$/i)
+            const isError   = !!item.error
             return (
-              <div key={item.id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+              <div key={item.id} className={`rounded-xl border overflow-hidden ${isError ? 'border-red-500/20 bg-red-500/[0.04]' : 'border-white/[0.08] bg-white/[0.02]'}`}>
                 {/* Image + text */}
                 <div className="flex gap-2.5 p-2.5">
                   <div className="w-16 h-16 shrink-0 rounded-lg overflow-hidden bg-white/[0.04] border border-white/[0.07]">
@@ -1437,7 +1449,9 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[9px] text-slate-700 mb-1">#{item.id}</p>
-                    {isEditing ? (
+                    {isError ? (
+                      <p className="text-[11px] text-red-400 leading-relaxed">{item.error}</p>
+                    ) : isEditing ? (
                       <textarea
                         value={editValue}
                         onChange={e => setEditValue(e.target.value)}
@@ -1459,7 +1473,12 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
 
                 {/* Actions */}
                 <div className="flex border-t border-white/[0.05]">
-                  {isEditing ? (
+                  {isError ? (
+                    <button onClick={() => skipItem(item.id)}
+                      className="flex-1 py-1.5 text-[10px] text-slate-600 hover:bg-red-500/10 hover:text-red-400 transition-colors">
+                      Dismiss
+                    </button>
+                  ) : isEditing ? (
                     <>
                       <button onClick={() => saveItem(item, editValue)} disabled={isSaving}
                         className="flex-1 py-1.5 text-[10px] text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50 font-medium">

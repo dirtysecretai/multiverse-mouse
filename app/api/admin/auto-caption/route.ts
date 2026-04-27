@@ -29,7 +29,7 @@ async function fetchImageAsBase64Safe(url: string, timeoutMs = 20_000): Promise<
   try { return await fetchImageAsBase64(url, timeoutMs) } catch { return null }
 }
 
-async function callGeminiParts(parts: GeminiPart[], modelId: string, maxTokens = 400, timeoutMs = 60_000): Promise<string> {
+async function callGeminiParts(parts: GeminiPart[], modelId: string, maxTokens = 800, timeoutMs = 60_000): Promise<string> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${GEMINI_API_KEY}`
   const res = await fetch(endpoint, {
     method:  'POST',
@@ -42,12 +42,17 @@ async function callGeminiParts(parts: GeminiPart[], modelId: string, maxTokens =
   })
   if (!res.ok) {
     const err = await res.text()
-    throw new Error(`Gemini ${res.status}: ${err.slice(0, 200)}`)
+    throw new Error(`Gemini ${res.status}: ${err.slice(0, 300)}`)
   }
   const json = await res.json()
-  if (json.promptFeedback?.blockReason) throw new Error(`Blocked: ${json.promptFeedback.blockReason}`)
-  const text = json.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!text) throw new Error('No text in Gemini response')
+  if (json.promptFeedback?.blockReason) throw new Error(`Blocked by safety filter: ${json.promptFeedback.blockReason}`)
+  const candidate = json.candidates?.[0]
+  if (!candidate) throw new Error('No candidates in Gemini response')
+  const finishReason = candidate.finishReason
+  if (finishReason === 'SAFETY') throw new Error(`Blocked by output safety filter`)
+  const text = candidate.content?.parts?.[0]?.text
+  if (!text) throw new Error(`No text returned (finishReason: ${finishReason ?? 'unknown'})`)
+  if (finishReason === 'MAX_TOKENS') throw new Error(`Caption truncated — hit token limit (${maxTokens} tokens). Partial: ${text.slice(0, 80)}…`)
   return text.trim()
 }
 
@@ -294,8 +299,6 @@ export async function POST(req: Request) {
 
           if (mode === 'flux') {
             // ── FLUX LoRA caption mode ─────────────────────────────────────────
-            // Always fetch references for maximum context — they help identify
-            // costume/character elements more accurately.
             const refUrls   = (record.referenceImageUrls ?? []).slice(0, 3)
             const refImages = (await Promise.all(refUrls.map(url => fetchImageAsBase64Safe(url, 20_000)))).filter(Boolean) as { data: string; mimeType: string }[]
 
@@ -307,8 +310,8 @@ export async function POST(req: Request) {
               { text: instruction },
             ]
 
-            // Use high token limit — FLUX captions should be 120–220 words
-            result = await callGeminiParts(parts, modelId, 800, 90_000).catch(err => { throw new Error(`Gemini error: ${err.message}`) })
+            // FLUX captions target 120–220 words; use 1200 tokens to be safe
+            result = await callGeminiParts(parts, modelId, 1200, 90_000).catch(err => { throw new Error(err.message) })
 
             const caption = result.replace(/^["']|["']$/g, '').trim()
             if (!preview) await prisma.generatedImage.update({ where: { id: record.id }, data: { adminCaption: caption } })
@@ -317,10 +320,13 @@ export async function POST(req: Request) {
           } else if (!advanced) {
             // ── Basic mode ─────────────────────────────────────────────────────
             const instruction = buildBasicInstruction(mode, promptSnippet, curatorContext)
+            // 800 tokens for captions (~600 words), 400 for tags (shorter)
+            const tokenLimit = mode === 'caption' ? 800 : 400
             result = await callGeminiParts(
               [{ inlineData: mainImage }, { text: instruction }],
               modelId,
-            ).catch(err => { throw new Error(`Gemini error: ${err.message}`) })
+              tokenLimit,
+            ).catch(err => { throw new Error(err.message) })
 
             if (mode === 'caption') {
               const caption = result.replace(/^["']|["']$/g, '').trim()
@@ -345,7 +351,9 @@ export async function POST(req: Request) {
               { text: instruction },
             ]
 
-            result = await callGeminiParts(parts, modelId, 600, 90_000).catch(err => { throw new Error(`Gemini error: ${err.message}`) })
+            // 1000 tokens for captions, 500 for tags
+            const tokenLimit = mode === 'caption' ? 1000 : 500
+            result = await callGeminiParts(parts, modelId, tokenLimit, 90_000).catch(err => { throw new Error(err.message) })
 
             if (mode === 'caption') {
               const caption = result.replace(/^["']|["']$/g, '').trim()
