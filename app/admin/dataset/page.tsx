@@ -1144,6 +1144,13 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
   const [editValue,  setEditValue]  = useState('')
   const feedRef = useRef<HTMLDivElement>(null)
 
+  // Scroll to bottom when a new result arrives so it's always visible
+  useEffect(() => {
+    if (feedRef.current && feedItems.length > 0) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight
+    }
+  }, [feedItems.length])
+
   async function run(ids: number[]) {
     setPhase('running')
     setProgress(0)
@@ -1190,7 +1197,7 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
                 tags:     event.tags,
                 imageUrl: imageUrlById[event.id],
               }
-              setFeedItems(prev => [item, ...prev])
+              setFeedItems(prev => [...prev, item])
               setCurrentId(null)
             }
             if (event.type === 'done') {
@@ -1411,8 +1418,8 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
       {/* Feed */}
       {feedItems.length > 0 && (
         <div ref={feedRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
-          <p className="text-[10px] text-slate-600 uppercase tracking-wider px-1 sticky top-0 bg-[#0a0a15] py-1">
-            Review · {feedItems.length} pending
+          <p className="text-[10px] text-slate-600 uppercase tracking-wider px-1 pb-1">
+            {feedItems.length} pending — scroll up to review earlier results
           </p>
           {feedItems.map(item => {
             const isSaving  = savingIds.has(item.id)
