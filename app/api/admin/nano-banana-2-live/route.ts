@@ -6,6 +6,7 @@ import { syncAndClaimFalSlot } from '@/lib/admin-queue-helpers'
 import { getUserFromSession } from '@/lib/auth'
 import { checkUserConcurrency } from '@/lib/user-concurrency'
 import { cookies } from 'next/headers'
+import { isGenerationBlocked } from '@/lib/generation-guard'
 
 fal.config({ credentials: process.env.FAL_KEY })
 
@@ -17,6 +18,10 @@ export async function POST(req: Request) {
     const cookieStore = await cookies()
     const token = cookieStore.get('session')?.value
     const sessionUser = token ? await getUserFromSession(token) : null
+
+    if (await isGenerationBlocked(sessionUser?.email)) {
+      return NextResponse.json({ error: 'Generation is temporarily disabled for maintenance. Please check back soon.' }, { status: 503 })
+    }
 
     const body = await req.json()
     const {

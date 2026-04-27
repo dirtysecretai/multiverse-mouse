@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Ticket, LogOut, CreditCard, Image as ImageIcon, Receipt, Settings, Terminal, Sparkles, Video, ArrowRight, ShieldCheck, KeyRound, X, Eye, EyeOff } from "lucide-react"
+import { Ticket, LogOut, CreditCard, Image as ImageIcon, Receipt, Settings, Terminal, Sparkles, Video, ArrowRight, ShieldCheck, KeyRound, X, Eye, EyeOff, AlertTriangle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import ChatWidget from "@/components/ChatWidget"
@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const [hasPromptStudioDev, setHasPromptStudioDev] = useState(false)
   const [isGrandfathered, setIsGrandfathered] = useState(false)
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false)
+  const [isGenerationMaintenance, setIsGenerationMaintenance] = useState(false)
 
   // Echo Chamber state
   const [echoMessage, setEchoMessage] = useState("")
@@ -116,6 +117,7 @@ export default function DashboardPage() {
       if (res.ok) {
         const data = await res.json()
         setIsMaintenanceMode(!!data.isMaintenanceMode)
+        setIsGenerationMaintenance(!!data.aiGenerationMaintenance)
       }
     } catch {}
   }
@@ -262,6 +264,17 @@ export default function DashboardPage() {
       <div className="fixed bottom-0 right-1/4 w-[400px] h-[300px] bg-fuchsia-500/5 rounded-full blur-3xl pointer-events-none" />
 
       <div className="relative z-10 max-w-4xl mx-auto px-4 py-10">
+
+        {/* Generation maintenance banner — admin emails bypass this */}
+        {isGenerationMaintenance && user !== null && !['dirtysecretai@gmail.com', 'promptandprotocol@gmail.com'].includes(user.email) && (
+          <div className="mb-6 flex items-start gap-3 px-4 py-4 rounded-xl border border-red-500/40 bg-red-500/10">
+            <AlertTriangle size={18} className="text-red-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-red-300">Generation Temporarily Unavailable</p>
+              <p className="text-xs text-slate-400 mt-0.5">AI generation is currently disabled for maintenance. Your tickets are safe — please check back soon.</p>
+            </div>
+          </div>
+        )}
 
         {/* Brand header */}
         <div className="mb-8">

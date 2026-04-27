@@ -8,6 +8,7 @@ import { uploadToR2 } from '@/lib/r2';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getUserFromSession } from '@/lib/auth';
 import { cookies } from 'next/headers';
+import { isGenerationBlocked } from '@/lib/generation-guard';
 
 const prisma = new PrismaClient();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -35,6 +36,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid session' }, { status: 401 });
     }
     userId = sessionUser.id
+
+    if (await isGenerationBlocked(sessionUser.email)) {
+      return NextResponse.json({ success: false, error: 'Generation is temporarily disabled for maintenance. Please check back soon.' }, { status: 503 })
+    }
 
     const body = await req.json();
     const {

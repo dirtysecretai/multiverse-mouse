@@ -4,6 +4,7 @@ import { uploadToR2 } from '@/lib/r2'
 import { PrismaClient } from '@prisma/client'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
+import { isGenerationBlocked } from '@/lib/generation-guard'
 
 fal.config({ credentials: process.env.FAL_KEY })
 const prisma = new PrismaClient()
@@ -14,6 +15,10 @@ export async function POST(req: Request) {
     const cookieStore = await cookies()
     const token = cookieStore.get('session')?.value
     const sessionUser = token ? await getUserFromSession(token) : null
+
+    if (await isGenerationBlocked(sessionUser?.email)) {
+      return NextResponse.json({ error: 'Generation is temporarily disabled for maintenance. Please check back soon.' }, { status: 503 })
+    }
 
     step = 'parse-body'
     const body = await req.json()

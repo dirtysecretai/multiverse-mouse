@@ -5465,6 +5465,7 @@ export default function PortalV2Page() {
   const [refLibrary, setRefLibrary] = useState<RefImage[]>([])
   const [activeRefIds, setActiveRefIds] = useState<string[]>([])
   const [hasPromptStudioDev, setHasPromptStudioDev] = useState(false)
+  const [isGenerationMaintenance, setIsGenerationMaintenance] = useState(false)
   const [promptOverride, setPromptOverride] = useState<{ text: string; version: number }>({ text: "", version: 0 })
   const [videoPromptOverride, setVideoPromptOverride] = useState<{ text: string; version: number }>({ text: "", version: 0 })
   const [configOverride, setConfigOverride] = useState<{ aspectRatio?: string; quality?: string; outputFormat?: string; imageCount?: number; version: number }>({ version: 0 })
@@ -6693,6 +6694,12 @@ export default function PortalV2Page() {
   }, [])
 
   useEffect(() => {
+    fetch("/api/admin/config").then(r => r.ok ? r.json() : null).then(data => {
+      if (data) setIsGenerationMaintenance(!!data.aiGenerationMaintenance)
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
     async function fetchUser() {
       try {
         const res = await fetch("/api/auth/session", { cache: "no-store" })
@@ -6925,6 +6932,17 @@ export default function PortalV2Page() {
 
   return (
     <div className="bg-[#050810] text-white min-h-screen">
+      {/* Generation maintenance overlay — admin emails bypass this */}
+      {isGenerationMaintenance && user !== null && !['dirtysecretai@gmail.com', 'promptandprotocol@gmail.com'].includes(user.email) && (
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#050810]/95 backdrop-blur-sm px-6">
+          <div className="w-4 h-4 rounded-full bg-red-500 animate-pulse mb-6" />
+          <h1 className="text-2xl font-black text-white mb-3 text-center">Generation Unavailable</h1>
+          <p className="text-slate-400 text-center max-w-sm text-sm leading-relaxed">
+            AI generation is temporarily disabled for maintenance. Your tickets and images are safe — please check back soon.
+          </p>
+        </div>
+      )}
+
       {/* Taskbar */}
       <div className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md border-b border-white/5">
 

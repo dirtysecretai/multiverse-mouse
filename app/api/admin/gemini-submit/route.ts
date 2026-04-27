@@ -6,6 +6,7 @@ import { checkUserConcurrency } from '@/lib/user-concurrency'
 import { uploadToR2 } from '@/lib/r2'
 import prisma from '@/lib/prisma'
 import { getTicketCost, getModelById } from '@/config/ai-models.config'
+import { isGenerationBlocked } from '@/lib/generation-guard'
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 const GEMINI_IMAGE_MODELS = ['gemini-3-pro-image', 'gemini-2.5-flash-image']
@@ -22,6 +23,10 @@ export async function POST(req: Request) {
 
     const user = await getUserFromSession(token)
     if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
+
+    if (await isGenerationBlocked(user.email)) {
+      return NextResponse.json({ error: 'Generation is temporarily disabled for maintenance. Please check back soon.' }, { status: 503 })
+    }
 
     const { allowed, activeCount, limit } = await checkUserConcurrency(user.id)
     if (!allowed) {

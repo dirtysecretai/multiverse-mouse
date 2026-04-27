@@ -3,6 +3,7 @@ import { fal } from '@fal-ai/client'
 import { cookies } from 'next/headers'
 import { getUserFromSession } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { isGenerationBlocked } from '@/lib/generation-guard'
 
 fal.config({ credentials: process.env.FAL_KEY })
 
@@ -18,6 +19,10 @@ export async function POST(req: Request) {
 
     const user = await getUserFromSession(token)
     if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
+
+    if (await isGenerationBlocked(user.email)) {
+      return NextResponse.json({ error: 'Generation is temporarily disabled for maintenance. Please check back soon.' }, { status: 503 })
+    }
 
     const body = await req.json()
     const {

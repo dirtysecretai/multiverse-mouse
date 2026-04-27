@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { fal } from "@fal-ai/client";
 import { syncAndClaimFalSlot } from '@/lib/admin-queue-helpers';
+import { isGenerationBlocked } from '@/lib/generation-guard';
+import { cookies } from 'next/headers';
+import { getUserFromSession } from '@/lib/auth';
 
 const prisma = new PrismaClient();
 
@@ -28,6 +31,12 @@ const FAL_ENDPOINTS: Record<string, string> = {
 
 export async function POST(request: NextRequest) {
   try {
+    const _ck = await cookies(); const _tok = _ck.get('session')?.value
+    const _u = _tok ? await getUserFromSession(_tok) : null
+    if (await isGenerationBlocked(_u?.email)) {
+      return NextResponse.json({ error: 'Generation is temporarily disabled for maintenance. Please check back soon.' }, { status: 503 })
+    }
+
     const {
       userId,
       prompt,

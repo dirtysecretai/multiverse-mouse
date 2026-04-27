@@ -26,6 +26,7 @@ const SCANNERS = [
 
 interface AdminState {
   isMaintenanceMode: boolean
+  aiGenerationMaintenance: boolean
   echoChamberMaintenance: boolean
 
   // Scanner-level maintenance
@@ -50,6 +51,7 @@ export default function MaintenancePage() {
   const [isLoading, setIsLoading] = useState(true)
   const [adminState, setAdminState] = useState<AdminState>({
     isMaintenanceMode: false,
+    aiGenerationMaintenance: false,
     echoChamberMaintenance: false,
     mainScannerMaintenance: false,
     legacyScannerMaintenance: false,
@@ -220,6 +222,33 @@ export default function MaintenancePage() {
             <Button onClick={fetchCloudData} disabled={isLoading} className="bg-cyan-500 hover:bg-cyan-400 text-black">
               <RefreshCw className={isLoading ? 'animate-spin' : ''} size={16} />
             </Button>
+          </div>
+        </div>
+
+        {/* AI Generation Kill Switch */}
+        <div className="mb-6">
+          <div className={`p-6 rounded-xl border-2 ${adminState.aiGenerationMaintenance ? 'border-red-500 bg-red-500/15' : 'border-slate-700 bg-slate-900/40'}`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-3">
+                <div className={`w-4 h-4 rounded-full ${adminState.aiGenerationMaintenance ? 'bg-red-500 animate-pulse' : 'bg-slate-600'}`} />
+                <span className="font-black text-white text-xl tracking-wide">KILL ALL GENERATION</span>
+              </div>
+              <button
+                onClick={() => updateAdminState({ aiGenerationMaintenance: !adminState.aiGenerationMaintenance })}
+                className={`relative w-20 h-10 rounded-full transition-all ${
+                  adminState.aiGenerationMaintenance ? 'bg-red-600' : 'bg-slate-600'
+                }`}
+              >
+                <div className={`absolute top-1 w-8 h-8 bg-white rounded-full transition-transform shadow-lg ${
+                  adminState.aiGenerationMaintenance ? 'left-11' : 'left-1'
+                }`} />
+              </button>
+            </div>
+            <p className="text-sm text-slate-400 mt-1">
+              {adminState.aiGenerationMaintenance
+                ? '🔴 ALL generation blocked — FAL.ai and Gemini calls are rejected. Portal shows maintenance overlay.'
+                : '🟢 Generation active — FAL.ai and Gemini calls are allowed.'}
+            </p>
           </div>
         </div>
 

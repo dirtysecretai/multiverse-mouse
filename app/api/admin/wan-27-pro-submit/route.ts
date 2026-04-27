@@ -6,6 +6,7 @@ import { syncAndClaimFalSlot } from '@/lib/admin-queue-helpers'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
 import { checkUserConcurrency } from '@/lib/user-concurrency'
+import { isGenerationBlocked } from '@/lib/generation-guard'
 
 fal.config({ credentials: process.env.FAL_KEY })
 
@@ -27,6 +28,12 @@ function aspectRatioToImageSize(aspectRatio: string): string {
 // Returns immediately with { requestId, falEndpoint } — client polls /api/admin/wan-27-pro-status.
 export async function POST(req: Request) {
   try {
+    const _ck = await cookies(); const _tok = _ck.get('session')?.value
+    const _u = _tok ? await getUserFromSession(_tok) : null
+    if (await isGenerationBlocked(_u?.email)) {
+      return NextResponse.json({ error: 'Generation is temporarily disabled for maintenance. Please check back soon.' }, { status: 503 })
+    }
+
     const {
       prompt,
       image_urls,          // array of hosted URLs or base64 data URIs (edit mode)
