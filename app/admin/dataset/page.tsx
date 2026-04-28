@@ -2270,7 +2270,7 @@ export default function DatasetPage() {
   )
 
   return (
-    <div className="min-h-screen bg-[#09090f] text-white flex">
+    <div className="min-h-screen bg-[#09090f] text-white flex overflow-x-hidden w-full">
 
       {/* ── Auto Fill side panel (desktop) / bottom sheet (mobile) ── */}
       {autoFillOpen && (
