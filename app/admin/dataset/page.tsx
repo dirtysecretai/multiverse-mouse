@@ -8,7 +8,7 @@ import {
   Plus, Hash, ChevronDown, MousePointer2, Copy, ExternalLink,
   User, Calendar, Cpu, Layers, Clock, Fingerprint, Film, Video,
   FolderOpen, FolderPlus, Pencil, Trash2, MoreHorizontal,
-  UploadCloud, FileImage, HardDrive, Ruler
+  UploadCloud, FileImage, HardDrive, Ruler, Check
 } from "lucide-react"
 
 const UPLOADS_BUCKET_NAME = '__uploads__'
@@ -1761,12 +1761,19 @@ const ImageCard = memo(function ImageCard({ img, selected, selectMode, onSelect,
           <BookMarked size={11} className={img.markedForTraining ? "text-white" : "text-white/80"} />
         </button>
 
-        {/* Ref count (bottom-left) */}
-        {img.referenceImageUrls.length > 0 && (
-          <div className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/60 text-[9px] text-slate-300 leading-none">
-            {img.referenceImageUrls.length}ref
-          </div>
-        )}
+        {/* Bottom-left badges: caption check + ref count */}
+        <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
+          {img.adminCaption && (
+            <div className="w-4 h-4 rounded-full bg-emerald-500/80 flex items-center justify-center" title="Has caption">
+              <Check size={9} className="text-white" strokeWidth={3} />
+            </div>
+          )}
+          {img.referenceImageUrls.length > 0 && (
+            <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-[9px] text-slate-300 leading-none">
+              {img.referenceImageUrls.length}ref
+            </div>
+          )}
+        </div>
 
         {/* Rating (bottom-right) */}
         {img.imageRating && (
