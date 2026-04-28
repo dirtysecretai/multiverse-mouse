@@ -2270,7 +2270,7 @@ export default function DatasetPage() {
   )
 
   return (
-    <div className="min-h-screen bg-[#09090f] text-white flex">
+    <div className="min-h-screen bg-[#09090f] text-white flex w-full">
 
       {/* ── Auto Fill side panel (desktop) / bottom sheet (mobile) ── */}
       {autoFillOpen && (
@@ -2312,7 +2312,7 @@ export default function DatasetPage() {
       )}
 
       {/* ── Main content column ── */}
-      <div className={`flex flex-col min-w-0 flex-1 min-h-screen ${autoFillOpen ? 'sm:h-screen sm:overflow-y-auto' : ''}`}>
+      <div className={`flex flex-col w-full min-w-0 min-h-screen ${autoFillOpen ? 'sm:h-screen sm:overflow-y-auto' : ''}`}>
 
       {/* Modals */}
       {uploadModalOpen && uploadsBucketId && (
@@ -2351,7 +2351,7 @@ export default function DatasetPage() {
       )}
 
       {/* ── Header ── */}
-      <div className="sticky top-0 z-30 bg-[#09090f]/90 backdrop-blur border-b border-white/[0.06]">
+      <div className="sticky top-0 z-30 w-full bg-[#09090f]/90 backdrop-blur border-b border-white/[0.06]">
 
         {/* Title row */}
         <div className="px-3 py-2 flex items-center gap-2">
