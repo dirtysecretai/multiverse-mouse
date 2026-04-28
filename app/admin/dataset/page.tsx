@@ -1621,6 +1621,63 @@ function AddToBucketModal({ count, buckets, onClose, onAdd, onCreateAndAdd }: {
   )
 }
 
+// ─── Pagination nav ───────────────────────────────────────────────────────────
+
+function PageNav({ pagination, page, loading, setPage, className = "" }: {
+  pagination: { totalPages: number }
+  page: number
+  loading: boolean
+  setPage: (fn: (p: number) => number) => void
+  className?: string
+}) {
+  const total = pagination.totalPages
+  const mid   = Math.min(Math.max(page, 4), total - 3)
+  const pages = total <= 7
+    ? Array.from({ length: total }, (_, i) => i + 1)
+    : [...new Set([1, 2, 3, mid - 1, mid, mid + 1, total].filter(v => v > 0 && v <= total))].sort((a, b) => a - b)
+
+  return (
+    <div className={`flex items-center justify-center gap-2 flex-wrap ${className}`}>
+      <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1 || loading}
+        className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-400 hover:text-white disabled:opacity-30 transition-all">
+        <ChevronLeft size={15} />
+      </button>
+      <div className="flex items-center gap-1">
+        {pages.map(p => (
+          <button key={p} onClick={() => setPage(() => p)}
+            className={`w-8 h-8 rounded-lg text-xs font-medium transition-all
+              ${p === page ? "bg-cyan-500/20 border border-cyan-500/30 text-cyan-300" : "bg-white/[0.04] border border-white/[0.07] text-slate-500 hover:text-white"}`}>
+            {p}
+          </button>
+        ))}
+      </div>
+      <button onClick={() => setPage(p => Math.min(total, p + 1))} disabled={page >= total || loading}
+        className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-400 hover:text-white disabled:opacity-30 transition-all">
+        <ChevronRight size={15} />
+      </button>
+      <form
+        onSubmit={e => {
+          e.preventDefault()
+          const val = parseInt((e.currentTarget.elements.namedItem('gotopage') as HTMLInputElement).value)
+          if (!isNaN(val)) setPage(() => Math.max(1, Math.min(total, val)));
+          (e.currentTarget.elements.namedItem('gotopage') as HTMLInputElement).value = ''
+        }}
+        className="flex items-center gap-1.5 ml-1"
+      >
+        <span className="text-[10px] text-slate-600">Go to</span>
+        <input
+          name="gotopage"
+          type="number"
+          min={1}
+          max={total}
+          placeholder={String(page)}
+          className="w-14 h-8 rounded-lg bg-white/[0.04] border border-white/[0.07] text-xs text-white text-center outline-none focus:border-cyan-500/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        />
+      </form>
+    </div>
+  )
+}
+
 // ─── Image card ───────────────────────────────────────────────────────────────
 
 const ImageCard = memo(function ImageCard({ img, selected, selectMode, onSelect, onOpen, onToggleMark, index }: {
@@ -2208,29 +2265,47 @@ export default function DatasetPage() {
   return (
     <div className="min-h-screen bg-[#09090f] text-white flex">
 
-      {/* ── Auto Fill side panel ── */}
+      {/* ── Auto Fill side panel (desktop) / bottom sheet (mobile) ── */}
       {autoFillOpen && (
-        <aside className="w-[340px] shrink-0 h-screen sticky top-0 border-r border-white/[0.06] bg-[#0a0a15] flex flex-col">
-          <AutoFillPanel
-            selected={selected}
-            imageUrlById={autoFillImageUrlById}
-            onClose={() => setAutoFillOpen(false)}
-            onItemSaved={(id, data) => {
-              setImages(prev => prev.map(img => {
-                if (img.id !== id) return img
-                return {
-                  ...img,
-                  ...(data.caption !== undefined && { adminCaption: data.caption }),
-                  ...(data.tags    !== undefined && { adminTags:    data.tags    }),
-                }
-              }))
-            }}
+        <>
+          {/* Mobile backdrop */}
+          <div
+            className="fixed inset-0 bg-black/60 z-40 sm:hidden"
+            onClick={() => setAutoFillOpen(false)}
           />
-        </aside>
+          <aside className={[
+            // shared
+            "bg-[#0a0a15] flex flex-col z-50",
+            // mobile: fixed bottom sheet
+            "fixed inset-x-0 bottom-0 h-[88vh] rounded-t-2xl border-t border-white/[0.1] sm:rounded-none sm:border-t-0",
+            // desktop: sticky sidebar
+            "sm:relative sm:w-[340px] sm:shrink-0 sm:h-screen sm:sticky sm:top-0 sm:border-r sm:border-white/[0.06]",
+          ].join(" ")}>
+            {/* Mobile drag handle */}
+            <div className="sm:hidden flex justify-center pt-3 pb-1 shrink-0">
+              <div className="w-10 h-1 rounded-full bg-white/20" />
+            </div>
+            <AutoFillPanel
+              selected={selected}
+              imageUrlById={autoFillImageUrlById}
+              onClose={() => setAutoFillOpen(false)}
+              onItemSaved={(id, data) => {
+                setImages(prev => prev.map(img => {
+                  if (img.id !== id) return img
+                  return {
+                    ...img,
+                    ...(data.caption !== undefined && { adminCaption: data.caption }),
+                    ...(data.tags    !== undefined && { adminTags:    data.tags    }),
+                  }
+                }))
+              }}
+            />
+          </aside>
+        </>
       )}
 
       {/* ── Main content column ── */}
-      <div className={`flex flex-col min-w-0 flex-1 ${autoFillOpen ? 'h-screen overflow-y-auto' : 'min-h-screen'}`}>
+      <div className={`flex flex-col min-w-0 flex-1 ${autoFillOpen ? 'sm:h-screen sm:overflow-y-auto' : ''} min-h-screen`}>
 
       {/* Modals */}
       {uploadModalOpen && uploadsBucketId && (
@@ -2270,13 +2345,13 @@ export default function DatasetPage() {
 
       {/* ── Header ── */}
       <div className="sticky top-0 z-30 bg-[#09090f]/90 backdrop-blur border-b border-white/[0.06]">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-3 py-2.5 flex items-center gap-2">
           <button onClick={() => window.location.href = '/admin'}
-            className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
+            className="shrink-0 p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
             <ArrowLeft size={16} />
           </button>
 
-          <div className="flex items-center gap-2 flex-1">
+          <div className="flex items-center gap-2 shrink-0">
             <div className="w-7 h-7 rounded-lg bg-cyan-500/15 flex items-center justify-center">
               <Database size={14} className="text-cyan-400" />
             </div>
@@ -2288,10 +2363,11 @@ export default function DatasetPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Page stats */}
+          {/* Actions — scrollable on mobile */}
+          <div className="flex items-center gap-1.5 ml-auto overflow-x-auto scrollbar-hide flex-nowrap">
+            {/* Page stats — desktop only */}
             {pagination && (
-              <div className="hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.07] text-[11px]">
+              <div className="hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.07] text-[11px] shrink-0">
                 <span className="text-emerald-400/80">{pageStats.marked} marked</span>
                 <span className="text-cyan-400/70">{pageStats.tagged} tagged</span>
                 <span className="text-violet-400/70">{pageStats.captioned} captioned</span>
@@ -2299,10 +2375,10 @@ export default function DatasetPage() {
             )}
 
             {/* Page size */}
-            <div className="flex items-center rounded-lg border border-white/[0.07] overflow-hidden">
-              {[12, 20, 30].map(n => (
+            <div className="flex items-center rounded-lg border border-white/[0.07] overflow-hidden shrink-0">
+              {[12, 24, 48, 96].map(n => (
                 <button key={n} onClick={() => setPageSize(n)}
-                  className={`px-2.5 py-1.5 text-[11px] transition-colors ${pageSize === n ? 'bg-white/[0.08] text-white' : 'text-slate-500 hover:text-white'}`}>
+                  className={`px-2 py-1.5 text-[11px] transition-colors ${pageSize === n ? 'bg-white/[0.08] text-white' : 'text-slate-500 hover:text-white'}`}>
                   {n}
                 </button>
               ))}
@@ -2311,19 +2387,19 @@ export default function DatasetPage() {
             {/* Select mode toggle */}
             <button
               onClick={() => { setSelectMode(v => !v); setSelected(new Set()) }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] transition-all
+              className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
                 ${selectMode
                   ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300"
                   : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white"}`}
             >
               {selectMode
-                ? <><CheckSquare size={12} /> Selecting</>
+                ? <><CheckSquare size={12} /> <span className="hidden xs:inline">Selecting</span></>
                 : <><MousePointer2 size={12} /> Select</>
               }
             </button>
 
             <button onClick={() => setFiltersOpen(v => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] transition-all
+              className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
                 ${filtersOpen || hasActiveFilters
                   ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300"
                   : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white"}`}
@@ -2333,7 +2409,7 @@ export default function DatasetPage() {
             </button>
 
             <button onClick={() => setAutoFillOpen(v => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] transition-all
+              className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
                 ${autoFillOpen
                   ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
                   : 'bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white'}`}>
@@ -2342,19 +2418,19 @@ export default function DatasetPage() {
 
             {uploadsBucketId && (
               <button onClick={() => { setUploadModalOpen(true); setBucketFilter(String(uploadsBucketId)) }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all">
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all">
                 <UploadCloud size={12} /> Upload
               </button>
             )}
 
             <button onClick={handleExport} disabled={selected.size === 0}
               title={selected.size === 0 ? "Select images to export" : `Export ${selected.size} selected as JSON`}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] hover:bg-emerald-500/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] hover:bg-emerald-500/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
               <Download size={12} />
               Export{selected.size > 0 ? ` (${selected.size})` : ""}
             </button>
 
-            <button onClick={fetchData} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
+            <button onClick={fetchData} className="shrink-0 p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             </button>
           </div>
@@ -2362,13 +2438,13 @@ export default function DatasetPage() {
 
         {/* Filter bar */}
         {filtersOpen && (
-          <div className="border-t border-white/[0.06] px-4 py-3 max-w-7xl mx-auto space-y-2.5">
+          <div className="border-t border-white/[0.06] px-3 py-3 max-w-7xl mx-auto space-y-2.5">
             {/* Row 1 */}
             <div className="flex flex-wrap gap-2 items-center">
-              <div className="relative">
+              <div className="relative w-full sm:w-52">
                 <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search prompts…"
-                  className="pl-7 pr-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/40 w-52" />
+                  className="w-full pl-7 pr-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/40" />
                 {search && (
                   <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2">
                     <X size={10} className="text-slate-500" />
@@ -2410,48 +2486,48 @@ export default function DatasetPage() {
 
         {/* Bulk action bar — only in select mode */}
         {selectMode && selected.size > 0 && (
-          <div className="border-t border-cyan-500/20 bg-cyan-500/[0.04] px-4 py-2 max-w-7xl mx-auto flex items-center gap-2">
-            <span className="text-xs text-cyan-300 font-medium">{selected.size} selected</span>
-            <div className="flex items-center gap-2 ml-auto flex-wrap">
-              <button onClick={selectAll} className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
-                Select page
+          <div className="border-t border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2 max-w-7xl mx-auto flex items-center gap-2">
+            <span className="text-xs text-cyan-300 font-medium shrink-0">{selected.size}</span>
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide flex-nowrap ml-auto">
+              <button onClick={selectAll} className="shrink-0 text-[11px] text-slate-500 hover:text-slate-300 transition-colors whitespace-nowrap">
+                Page
               </button>
               <button onClick={selectAllRecords} disabled={selectAllLoading}
-                className="flex items-center gap-1 text-[11px] text-cyan-500/70 hover:text-cyan-300 transition-colors disabled:opacity-50">
+                className="shrink-0 flex items-center gap-1 text-[11px] text-cyan-500/70 hover:text-cyan-300 transition-colors disabled:opacity-50 whitespace-nowrap">
                 {selectAllLoading
                   ? <><Loader2 size={10} className="animate-spin" /> Selecting…</>
-                  : <>Select all {pagination ? pagination.total.toLocaleString() : ""} records</>
+                  : <>All {pagination ? pagination.total.toLocaleString() : ""}</>
                 }
               </button>
               <button onClick={() => setAddToBucketOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all">
-                <FolderOpen size={11} /> Add to Bucket
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all whitespace-nowrap">
+                <FolderOpen size={11} /> Bucket
               </button>
               {bucketFilter && (
                 <button onClick={() => removeFromBucket(parseInt(bucketFilter))} disabled={bulkLoading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] hover:bg-red-500/15 transition-all disabled:opacity-50">
-                  <FolderOpen size={11} /> Remove from bucket
+                  className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] hover:bg-red-500/15 transition-all disabled:opacity-50 whitespace-nowrap">
+                  <FolderOpen size={11} /> Remove
                 </button>
               )}
               <button onClick={() => setAutoFillOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/10 to-violet-500/10 border border-cyan-500/20 text-[11px] text-white/80 hover:text-white hover:from-cyan-500/15 hover:to-violet-500/15 transition-all">
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/10 to-violet-500/10 border border-cyan-500/20 text-[11px] text-white/80 hover:text-white transition-all whitespace-nowrap">
                 <Sparkles size={11} /> Auto Fill
               </button>
               <button onClick={() => setBulkMode("tags")} disabled={bulkLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[11px] hover:bg-cyan-500/15 transition-all disabled:opacity-50">
-                <Tag size={11} /> Add tags
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[11px] hover:bg-cyan-500/15 transition-all disabled:opacity-50 whitespace-nowrap">
+                <Tag size={11} /> Tags
               </button>
               <button onClick={() => setBulkMode("caption")} disabled={bulkLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all disabled:opacity-50">
-                <MessageSquare size={11} /> Set caption
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all disabled:opacity-50 whitespace-nowrap">
+                <MessageSquare size={11} /> Caption
               </button>
               <button onClick={() => toggleMark(selectedArr, !allPageMarked)} disabled={bulkLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] hover:bg-emerald-500/15 transition-all disabled:opacity-50">
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] hover:bg-emerald-500/15 transition-all disabled:opacity-50 whitespace-nowrap">
                 {bulkLoading ? <Loader2 size={11} className="animate-spin" /> : <BookMarked size={11} />}
-                {allPageMarked ? "Unmark" : "Mark training"}
+                {allPageMarked ? "Unmark" : "Mark"}
               </button>
               <button onClick={() => setSelected(new Set())}
-                className="p-1 rounded hover:bg-white/[0.06] text-slate-600 hover:text-slate-400 transition-colors">
+                className="shrink-0 p-1 rounded hover:bg-white/[0.06] text-slate-600 hover:text-slate-400 transition-colors">
                 <X size={13} />
               </button>
             </div>
@@ -2460,7 +2536,7 @@ export default function DatasetPage() {
       </div>
 
       {/* Body */}
-      <div className="max-w-7xl mx-auto px-4 py-5">
+      <div className="max-w-7xl mx-auto px-3 py-4">
 
         {/* ── Bucket bar ── */}
         {buckets.length > 0 && (
@@ -2611,6 +2687,10 @@ export default function DatasetPage() {
           </div>
         ) : (
           <>
+            {pagination && pagination.totalPages > 1 && (
+              <PageNav pagination={pagination} page={page} loading={loading} setPage={setPage} className="mb-4" />
+            )}
+
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
               {deferredImages.map((img, i) => (
                 <ImageCard
@@ -2627,51 +2707,7 @@ export default function DatasetPage() {
             </div>
 
             {pagination && pagination.totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-center gap-2 flex-wrap">
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1 || loading}
-                  className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-400 hover:text-white disabled:opacity-30 transition-all">
-                  <ChevronLeft size={15} />
-                </button>
-                <div className="flex items-center gap-1">
-                  {(() => {
-                    const total = pagination.totalPages
-                    const mid   = Math.min(Math.max(page, 4), total - 3)
-                    const pages = total <= 7
-                      ? Array.from({ length: total }, (_, i) => i + 1)
-                      : [...new Set([1, 2, 3, mid - 1, mid, mid + 1, total].filter(v => v > 0 && v <= total))].sort((a, b) => a - b)
-                    return pages.map(p => (
-                      <button key={p} onClick={() => setPage(p)}
-                        className={`w-8 h-8 rounded-lg text-xs font-medium transition-all
-                          ${p === page ? "bg-cyan-500/20 border border-cyan-500/30 text-cyan-300" : "bg-white/[0.04] border border-white/[0.07] text-slate-500 hover:text-white"}`}>
-                        {p}
-                      </button>
-                    ))
-                  })()}
-                </div>
-                <button onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} disabled={page >= pagination.totalPages || loading}
-                  className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-400 hover:text-white disabled:opacity-30 transition-all">
-                  <ChevronRight size={15} />
-                </button>
-                <form
-                  onSubmit={e => {
-                    e.preventDefault()
-                    const val = parseInt((e.currentTarget.elements.namedItem('gotopage') as HTMLInputElement).value)
-                    if (!isNaN(val)) setPage(Math.max(1, Math.min(pagination.totalPages, val)));
-                    (e.currentTarget.elements.namedItem('gotopage') as HTMLInputElement).value = ''
-                  }}
-                  className="flex items-center gap-1.5 ml-1"
-                >
-                  <span className="text-[10px] text-slate-600">Go to</span>
-                  <input
-                    name="gotopage"
-                    type="number"
-                    min={1}
-                    max={pagination.totalPages}
-                    placeholder={String(page)}
-                    className="w-14 h-8 rounded-lg bg-white/[0.04] border border-white/[0.07] text-xs text-white text-center outline-none focus:border-cyan-500/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                </form>
-              </div>
+              <PageNav pagination={pagination} page={page} loading={loading} setPage={setPage} className="mt-6" />
             )}
           </>
         )}
