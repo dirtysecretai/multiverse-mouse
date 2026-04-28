@@ -31,29 +31,51 @@ async function fetchImageAsBase64Safe(url: string, timeoutMs = 20_000): Promise<
 
 async function callGeminiParts(parts: GeminiPart[], modelId: string, maxTokens = 800, timeoutMs = 60_000): Promise<string> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${GEMINI_API_KEY}`
-  const res = await fetch(endpoint, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
-    }),
-    signal: AbortSignal.timeout(timeoutMs),
+  const body = JSON.stringify({
+    contents: [{ parts }],
+    generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
   })
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Gemini ${res.status}: ${err.slice(0, 300)}`)
+
+  // Retry up to 4 times on 503/429 (rate limit / overload) with exponential backoff
+  const MAX_RETRIES = 4
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const delayMs = Math.min(2000 * Math.pow(2, attempt - 1), 30_000) // 2s, 4s, 8s, 16s
+      await new Promise(r => setTimeout(r, delayMs))
+    }
+
+    const res = await fetch(endpoint, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+
+    if (res.status === 503 || res.status === 429) {
+      const err = await res.text().catch(() => '')
+      lastError = new Error(`Gemini ${res.status} (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${err.slice(0, 200)}`)
+      continue // retry
+    }
+
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`Gemini ${res.status}: ${err.slice(0, 300)}`)
+    }
+
+    const json = await res.json()
+    if (json.promptFeedback?.blockReason) throw new Error(`Blocked by safety filter: ${json.promptFeedback.blockReason}`)
+    const candidate = json.candidates?.[0]
+    if (!candidate) throw new Error('No candidates in Gemini response')
+    const finishReason = candidate.finishReason
+    if (finishReason === 'SAFETY') throw new Error(`Blocked by output safety filter`)
+    const text = candidate.content?.parts?.[0]?.text
+    if (!text) throw new Error(`No text returned (finishReason: ${finishReason ?? 'unknown'})`)
+    if (finishReason === 'MAX_TOKENS') throw new Error(`Caption truncated — hit token limit (${maxTokens} tokens). Partial: ${text.slice(0, 80)}…`)
+    return text.trim()
   }
-  const json = await res.json()
-  if (json.promptFeedback?.blockReason) throw new Error(`Blocked by safety filter: ${json.promptFeedback.blockReason}`)
-  const candidate = json.candidates?.[0]
-  if (!candidate) throw new Error('No candidates in Gemini response')
-  const finishReason = candidate.finishReason
-  if (finishReason === 'SAFETY') throw new Error(`Blocked by output safety filter`)
-  const text = candidate.content?.parts?.[0]?.text
-  if (!text) throw new Error(`No text returned (finishReason: ${finishReason ?? 'unknown'})`)
-  if (finishReason === 'MAX_TOKENS') throw new Error(`Caption truncated — hit token limit (${maxTokens} tokens). Partial: ${text.slice(0, 80)}…`)
-  return text.trim()
+
+  throw lastError ?? new Error('Gemini request failed after retries')
 }
 
 function cleanTags(raw: string): string[] {
@@ -283,6 +305,9 @@ export async function POST(req: Request) {
         if (isVideo) {
           skipped++; send({ type: 'skip', id: record.id, current: i + 1, total: records.length, reason: 'video — images only' }); continue
         }
+
+        // Small delay between images to stay under Gemini rate limits
+        if (i > 0) await new Promise(r => setTimeout(r, 800))
 
         send({ type: 'processing', id: record.id, current: i + 1, total: records.length })
 
