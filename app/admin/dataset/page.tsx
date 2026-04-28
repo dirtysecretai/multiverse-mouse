@@ -2270,7 +2270,7 @@ export default function DatasetPage() {
   )
 
   return (
-    <div className="min-h-screen bg-[#09090f] text-white flex" style={{maxWidth:'100vw',overflowX:'hidden'}}>
+    <div className="min-h-screen bg-[#09090f] text-white flex">
 
       {/* ── Auto Fill side panel (desktop) / bottom sheet (mobile) ── */}
       {autoFillOpen && (
@@ -2312,7 +2312,7 @@ export default function DatasetPage() {
       )}
 
       {/* ── Main content column ── */}
-      <div className={`flex flex-col min-w-0 flex-1 min-h-screen overflow-x-hidden ${autoFillOpen ? 'sm:h-screen sm:overflow-y-auto' : ''}`}>
+      <div className={`flex flex-col min-w-0 flex-1 min-h-screen ${autoFillOpen ? 'sm:h-screen sm:overflow-y-auto' : ''}`}>
 
       {/* Modals */}
       {uploadModalOpen && uploadsBucketId && (
@@ -2351,18 +2351,17 @@ export default function DatasetPage() {
       )}
 
       {/* ── Header ── */}
-      <div className="sticky top-0 z-30 bg-[#09090f]/90 backdrop-blur border-b border-white/[0.06] w-full" style={{maxWidth:'100vw',overflowX:'hidden'}}>
+      <div className="sticky top-0 z-30 bg-[#09090f]/90 backdrop-blur border-b border-white/[0.06]">
 
-        {/* Row 1: back + title + desktop actions / mobile: title + refresh */}
-        <div className="px-3 py-2.5 flex items-center gap-2">
+        {/* Title row */}
+        <div className="px-3 py-2 flex items-center gap-2">
           <button onClick={() => window.location.href = '/admin'}
             className="shrink-0 p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
             <ArrowLeft size={16} />
           </button>
-
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 shrink-0 rounded-lg bg-cyan-500/15 flex items-center justify-center">
-              <Database size={14} className="text-cyan-400" />
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="w-6 h-6 shrink-0 rounded-lg bg-cyan-500/15 flex items-center justify-center">
+              <Database size={12} className="text-cyan-400" />
             </div>
             <div className="min-w-0">
               <h1 className="text-sm font-bold text-white leading-none">Dataset</h1>
@@ -2371,97 +2370,53 @@ export default function DatasetPage() {
               </p>
             </div>
           </div>
-
-          {/* Desktop-only actions (inline) */}
-          <div className="hidden sm:flex items-center gap-2 ml-auto">
-            {pagination && (
-              <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.07] text-[11px]">
-                <span className="text-emerald-400/80">{pageStats.marked} marked</span>
-                <span className="text-cyan-400/70">{pageStats.tagged} tagged</span>
-                <span className="text-violet-400/70">{pageStats.captioned} captioned</span>
-              </div>
-            )}
-            <div className="flex items-center rounded-lg border border-white/[0.07] overflow-hidden">
-              {[12, 24, 48, 96].map(n => (
-                <button key={n} onClick={() => setPageSize(n)}
-                  className={`px-2 py-1.5 text-[11px] transition-colors ${pageSize === n ? 'bg-white/[0.08] text-white' : 'text-slate-500 hover:text-white'}`}>
-                  {n}
-                </button>
-              ))}
+          {pagination && (
+            <div className="hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.07] text-[11px]">
+              <span className="text-emerald-400/80">{pageStats.marked} marked</span>
+              <span className="text-cyan-400/70">{pageStats.tagged} tagged</span>
+              <span className="text-violet-400/70">{pageStats.captioned} captioned</span>
             </div>
-            <button onClick={() => { setSelectMode(v => !v); setSelected(new Set()) }}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
-                ${selectMode ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300" : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white"}`}>
-              {selectMode ? <><CheckSquare size={12} /> Selecting</> : <><MousePointer2 size={12} /> Select</>}
-            </button>
-            <button onClick={() => setFiltersOpen(v => !v)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
-                ${filtersOpen || hasActiveFilters ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300" : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white"}`}>
-              <SlidersHorizontal size={12} /> Filters{hasActiveFilters ? " •" : ""}
-            </button>
-            <button onClick={() => setAutoFillOpen(v => !v)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
-                ${autoFillOpen ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white'}`}>
-              <Sparkles size={12} /> Auto Fill
-            </button>
-            {uploadsBucketId && (
-              <button onClick={() => { setUploadModalOpen(true); setBucketFilter(String(uploadsBucketId)) }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all">
-                <UploadCloud size={12} /> Upload
-              </button>
-            )}
-            <button onClick={handleExport} disabled={selected.size === 0}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] hover:bg-emerald-500/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-              <Download size={12} /> Export{selected.size > 0 ? ` (${selected.size})` : ""}
-            </button>
-            <button onClick={fetchData} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            </button>
-          </div>
-
-          {/* Mobile-only: refresh on the right */}
-          <button onClick={fetchData} className="sm:hidden ml-auto shrink-0 p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
+          )}
+          <button onClick={fetchData} className="shrink-0 p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           </button>
         </div>
 
-        {/* Row 2 (mobile only): action button strip — its own full-width scrollable row */}
-        <div className="sm:hidden border-t border-white/[0.04] px-3 py-1.5">
-          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
-            <div className="flex items-center rounded-lg border border-white/[0.07] overflow-hidden shrink-0">
-              {[12, 24, 48, 96].map(n => (
-                <button key={n} onClick={() => setPageSize(n)}
-                  className={`px-2 py-1.5 text-[11px] transition-colors ${pageSize === n ? 'bg-white/[0.08] text-white' : 'text-slate-500 hover:text-white'}`}>
-                  {n}
-                </button>
-              ))}
-            </div>
-            <button onClick={() => { setSelectMode(v => !v); setSelected(new Set()) }}
-              className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] whitespace-nowrap transition-all
-                ${selectMode ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300" : "bg-white/[0.03] border-white/[0.07] text-slate-400"}`}>
-              {selectMode ? <><CheckSquare size={11} /> Selecting</> : <><MousePointer2 size={11} /> Select</>}
-            </button>
-            <button onClick={() => setFiltersOpen(v => !v)}
-              className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] whitespace-nowrap transition-all
-                ${filtersOpen || hasActiveFilters ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300" : "bg-white/[0.03] border-white/[0.07] text-slate-400"}`}>
-              <SlidersHorizontal size={11} /> Filters{hasActiveFilters ? " •" : ""}
-            </button>
-            <button onClick={() => setAutoFillOpen(v => !v)}
-              className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] whitespace-nowrap transition-all
-                ${autoFillOpen ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-400'}`}>
-              <Sparkles size={11} /> Auto Fill
-            </button>
-            {uploadsBucketId && (
-              <button onClick={() => { setUploadModalOpen(true); setBucketFilter(String(uploadsBucketId)) }}
-                className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] whitespace-nowrap hover:bg-violet-500/15 transition-all">
-                <UploadCloud size={11} /> Upload
+        {/* Action buttons — flex-wrap so they never overflow on any screen */}
+        <div className="border-t border-white/[0.04] px-3 py-1.5 flex flex-wrap gap-1.5">
+          <div className="flex items-center rounded-lg border border-white/[0.07] overflow-hidden">
+            {[12, 24, 48, 96].map(n => (
+              <button key={n} onClick={() => setPageSize(n)}
+                className={`px-2 py-1.5 text-[11px] transition-colors ${pageSize === n ? 'bg-white/[0.08] text-white' : 'text-slate-500 hover:text-white'}`}>
+                {n}
               </button>
-            )}
-            <button onClick={handleExport} disabled={selected.size === 0}
-              className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] whitespace-nowrap hover:bg-emerald-500/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-              <Download size={11} /> Export{selected.size > 0 ? ` (${selected.size})` : ""}
-            </button>
+            ))}
           </div>
+          <button onClick={() => { setSelectMode(v => !v); setSelected(new Set()) }}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
+              ${selectMode ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300" : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white"}`}>
+            {selectMode ? <><CheckSquare size={11} /> Selecting</> : <><MousePointer2 size={11} /> Select</>}
+          </button>
+          <button onClick={() => setFiltersOpen(v => !v)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
+              ${filtersOpen || hasActiveFilters ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300" : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white"}`}>
+            <SlidersHorizontal size={11} /> Filters{hasActiveFilters ? " •" : ""}
+          </button>
+          <button onClick={() => setAutoFillOpen(v => !v)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
+              ${autoFillOpen ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white'}`}>
+            <Sparkles size={11} /> Auto Fill
+          </button>
+          {uploadsBucketId && (
+            <button onClick={() => { setUploadModalOpen(true); setBucketFilter(String(uploadsBucketId)) }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all">
+              <UploadCloud size={11} /> Upload
+            </button>
+          )}
+          <button onClick={handleExport} disabled={selected.size === 0}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] hover:bg-emerald-500/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+            <Download size={11} /> Export{selected.size > 0 ? ` (${selected.size})` : ""}
+          </button>
         </div>
 
         {/* Filter bar */}
