@@ -121,8 +121,6 @@
   }
   body {
     @apply bg-background text-foreground;
-    max-width: 100%;
-    overflow-x: hidden;
     background-color: #09090f;
   }
 }
