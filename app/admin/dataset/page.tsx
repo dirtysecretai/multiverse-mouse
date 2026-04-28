@@ -2352,36 +2352,82 @@ export default function DatasetPage() {
 
       {/* ── Header ── */}
       <div className="sticky top-0 z-30 bg-[#09090f]/90 backdrop-blur border-b border-white/[0.06]">
-        <div className="max-w-7xl mx-auto px-3 py-2.5 flex items-center gap-2">
+
+        {/* Row 1: back + title + desktop actions / mobile: title + refresh */}
+        <div className="px-3 py-2.5 flex items-center gap-2">
           <button onClick={() => window.location.href = '/admin'}
             className="shrink-0 p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
             <ArrowLeft size={16} />
           </button>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="w-7 h-7 rounded-lg bg-cyan-500/15 flex items-center justify-center">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 shrink-0 rounded-lg bg-cyan-500/15 flex items-center justify-center">
               <Database size={14} className="text-cyan-400" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-sm font-bold text-white leading-none">Dataset</h1>
-              <p className="text-[10px] text-slate-600 leading-none mt-0.5">
+              <p className="text-[10px] text-slate-600 leading-none mt-0.5 truncate">
                 {pagination ? `${pagination.total.toLocaleString()} records` : "Loading…"}
               </p>
             </div>
           </div>
 
-          {/* Actions — scrollable on mobile */}
-          <div className="flex items-center gap-1.5 ml-auto overflow-x-auto scrollbar-hide flex-nowrap">
-            {/* Page stats — desktop only */}
+          {/* Desktop-only actions (inline) */}
+          <div className="hidden sm:flex items-center gap-2 ml-auto">
             {pagination && (
-              <div className="hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.07] text-[11px] shrink-0">
+              <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.07] text-[11px]">
                 <span className="text-emerald-400/80">{pageStats.marked} marked</span>
                 <span className="text-cyan-400/70">{pageStats.tagged} tagged</span>
                 <span className="text-violet-400/70">{pageStats.captioned} captioned</span>
               </div>
             )}
+            <div className="flex items-center rounded-lg border border-white/[0.07] overflow-hidden">
+              {[12, 24, 48, 96].map(n => (
+                <button key={n} onClick={() => setPageSize(n)}
+                  className={`px-2 py-1.5 text-[11px] transition-colors ${pageSize === n ? 'bg-white/[0.08] text-white' : 'text-slate-500 hover:text-white'}`}>
+                  {n}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => { setSelectMode(v => !v); setSelected(new Set()) }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
+                ${selectMode ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300" : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white"}`}>
+              {selectMode ? <><CheckSquare size={12} /> Selecting</> : <><MousePointer2 size={12} /> Select</>}
+            </button>
+            <button onClick={() => setFiltersOpen(v => !v)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
+                ${filtersOpen || hasActiveFilters ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300" : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white"}`}>
+              <SlidersHorizontal size={12} /> Filters{hasActiveFilters ? " •" : ""}
+            </button>
+            <button onClick={() => setAutoFillOpen(v => !v)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
+                ${autoFillOpen ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white'}`}>
+              <Sparkles size={12} /> Auto Fill
+            </button>
+            {uploadsBucketId && (
+              <button onClick={() => { setUploadModalOpen(true); setBucketFilter(String(uploadsBucketId)) }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all">
+                <UploadCloud size={12} /> Upload
+              </button>
+            )}
+            <button onClick={handleExport} disabled={selected.size === 0}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] hover:bg-emerald-500/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+              <Download size={12} /> Export{selected.size > 0 ? ` (${selected.size})` : ""}
+            </button>
+            <button onClick={fetchData} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            </button>
+          </div>
 
-            {/* Page size */}
+          {/* Mobile-only: refresh on the right */}
+          <button onClick={fetchData} className="sm:hidden ml-auto shrink-0 p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+          </button>
+        </div>
+
+        {/* Row 2 (mobile only): action button strip — its own full-width scrollable row */}
+        <div className="sm:hidden border-t border-white/[0.04] px-3 py-1.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
             <div className="flex items-center rounded-lg border border-white/[0.07] overflow-hidden shrink-0">
               {[12, 24, 48, 96].map(n => (
                 <button key={n} onClick={() => setPageSize(n)}
@@ -2390,55 +2436,30 @@ export default function DatasetPage() {
                 </button>
               ))}
             </div>
-
-            {/* Select mode toggle */}
-            <button
-              onClick={() => { setSelectMode(v => !v); setSelected(new Set()) }}
-              className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
-                ${selectMode
-                  ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300"
-                  : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white"}`}
-            >
-              {selectMode
-                ? <><CheckSquare size={12} /> <span className="hidden xs:inline">Selecting</span></>
-                : <><MousePointer2 size={12} /> Select</>
-              }
+            <button onClick={() => { setSelectMode(v => !v); setSelected(new Set()) }}
+              className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] whitespace-nowrap transition-all
+                ${selectMode ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300" : "bg-white/[0.03] border-white/[0.07] text-slate-400"}`}>
+              {selectMode ? <><CheckSquare size={11} /> Selecting</> : <><MousePointer2 size={11} /> Select</>}
             </button>
-
             <button onClick={() => setFiltersOpen(v => !v)}
-              className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
-                ${filtersOpen || hasActiveFilters
-                  ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300"
-                  : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white"}`}
-            >
-              <SlidersHorizontal size={12} />
-              Filters{hasActiveFilters ? " •" : ""}
+              className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] whitespace-nowrap transition-all
+                ${filtersOpen || hasActiveFilters ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300" : "bg-white/[0.03] border-white/[0.07] text-slate-400"}`}>
+              <SlidersHorizontal size={11} /> Filters{hasActiveFilters ? " •" : ""}
             </button>
-
             <button onClick={() => setAutoFillOpen(v => !v)}
-              className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
-                ${autoFillOpen
-                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
-                  : 'bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white'}`}>
-              <Sparkles size={12} /> Auto Fill
+              className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] whitespace-nowrap transition-all
+                ${autoFillOpen ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-400'}`}>
+              <Sparkles size={11} /> Auto Fill
             </button>
-
             {uploadsBucketId && (
               <button onClick={() => { setUploadModalOpen(true); setBucketFilter(String(uploadsBucketId)) }}
-                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] hover:bg-violet-500/15 transition-all">
-                <UploadCloud size={12} /> Upload
+                className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] whitespace-nowrap hover:bg-violet-500/15 transition-all">
+                <UploadCloud size={11} /> Upload
               </button>
             )}
-
             <button onClick={handleExport} disabled={selected.size === 0}
-              title={selected.size === 0 ? "Select images to export" : `Export ${selected.size} selected as JSON`}
-              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] hover:bg-emerald-500/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-              <Download size={12} />
-              Export{selected.size > 0 ? ` (${selected.size})` : ""}
-            </button>
-
-            <button onClick={fetchData} className="shrink-0 p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] whitespace-nowrap hover:bg-emerald-500/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+              <Download size={11} /> Export{selected.size > 0 ? ` (${selected.size})` : ""}
             </button>
           </div>
         </div>
@@ -2493,9 +2514,9 @@ export default function DatasetPage() {
 
         {/* Bulk action bar — only in select mode */}
         {selectMode && selected.size > 0 && (
-          <div className="border-t border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2 max-w-7xl mx-auto flex items-center gap-2">
-            <span className="text-xs text-cyan-300 font-medium shrink-0">{selected.size}</span>
-            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide flex-nowrap ml-auto">
+          <div className="border-t border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
+            <span className="text-xs text-cyan-300 font-medium shrink-0 pr-1">{selected.size} selected</span>
               <button onClick={selectAll} className="shrink-0 text-[11px] text-slate-500 hover:text-slate-300 transition-colors whitespace-nowrap">
                 Page
               </button>
@@ -2540,7 +2561,7 @@ export default function DatasetPage() {
             </div>
           </div>
         )}
-      </div>
+      </div>{/* end sticky header */}
 
       {/* Body */}
       <div className="max-w-7xl mx-auto px-3 py-4">
