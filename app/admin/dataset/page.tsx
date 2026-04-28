@@ -1785,8 +1785,8 @@ const ImageCard = memo(function ImageCard({ img, selected, selectMode, onSelect,
         )}
       </div>
 
-      {/* Metadata row */}
-      <div className="px-2 py-1.5 space-y-1">
+      {/* Metadata row — hidden on mobile, visible on sm+ */}
+      <div className="hidden sm:block px-2 py-1.5 space-y-1">
         <p className="text-[10px] text-slate-400 leading-snug line-clamp-2">{img.prompt}</p>
 
         {img.adminTags.length > 0 && (
@@ -2719,7 +2719,7 @@ export default function DatasetPage() {
               <PageNav pagination={pagination} page={page} loading={loading} setPage={setPage} className="mb-4" />
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1.5 sm:gap-2.5">
               {deferredImages.map((img, i) => (
                 <ImageCard
                   key={img.id}
