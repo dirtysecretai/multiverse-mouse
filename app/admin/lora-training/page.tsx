@@ -491,7 +491,17 @@ export default function LoraTrainingPage() {
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ jobId }),
     }).catch(console.error)
-    // Reload jobs after a short delay so UI shows updated status
+    setTimeout(() => loadJobs(), 1500)
+  }
+
+  // ── Force retry for stuck queued/in_progress jobs ─────────────────────────
+  async function forceRetry(jobId: number) {
+    // Resets status to 'preparing' then re-kicks prepare pipeline
+    await fetch('/api/admin/lora-training/force-retry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ jobId }),
+    }).catch(console.error)
     setTimeout(() => loadJobs(), 1500)
   }
 
@@ -892,13 +902,23 @@ export default function LoraTrainingPage() {
                         )}
 
                         {isActive && (
-                          <button
-                            onClick={() => checkJobStatus(job.id)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.07] text-[11px] text-slate-400 hover:text-slate-200 transition-all"
-                          >
-                            <RefreshCw size={11} />
-                            Check
-                          </button>
+                          <>
+                            <button
+                              onClick={() => checkJobStatus(job.id)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.07] text-[11px] text-slate-400 hover:text-slate-200 transition-all"
+                            >
+                              <RefreshCw size={11} />
+                              Check
+                            </button>
+                            <button
+                              onClick={() => forceRetry(job.id)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-[11px] text-amber-400 hover:text-amber-300 transition-all"
+                              title="Reset and resubmit this job to FAL"
+                            >
+                              <Play size={11} />
+                              Force Retry
+                            </button>
+                          </>
                         )}
 
                         {job.loraUrl && (

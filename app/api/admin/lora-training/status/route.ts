@@ -37,9 +37,12 @@ export async function GET(req: NextRequest) {
     if (status === 'COMPLETED') {
       const result = await fal.queue.result(job.modelId, { requestId: job.requestId })
       updateData.status    = 'completed'
-      updateData.loraUrl   = (result.data as Record<string, unknown> | null)
-        ? ((result.data as Record<string, { url?: string } | null>)?.diffusers_lora_file?.url ?? null)
-        : null
+      const rd = result.data as Record<string, { url?: string } | null> | null
+      updateData.loraUrl = rd?.diffusers_lora_file?.url
+        ?? rd?.lora_file?.url
+        ?? rd?.safetensors_lora_file?.url
+        ?? rd?.output_lora_file?.url
+        ?? null
       updateData.configUrl = (result.data as Record<string, unknown> | null)
         ? ((result.data as Record<string, { url?: string } | null>)?.config_file?.url ?? null)
         : null
