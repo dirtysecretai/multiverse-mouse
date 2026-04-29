@@ -116,11 +116,12 @@ export async function POST(req: NextRequest) {
           } else { skipped++ }
         } catch { skipped++ }
       }))
-      if (i % 200 === 0 && i > 0) {
-        await setProgress(jobId, `Downloading: ${downloaded} ok, ${skipped} skipped (${i}/${images.length})`)
+      const processed = downloaded + skipped
+      if (processed % 200 === 0 && processed > 0) {
+        await setProgress(jobId, `Downloading: ${downloaded} ok, ${skipped} skipped (${processed}/${images.length})`)
       }
     }
-    await setProgress(jobId, `Download complete: ${downloaded} ok, ${skipped} skipped`)
+    await setProgress(jobId, `Download complete: ${downloaded} ok, ${skipped} skipped (${images.length}/${images.length})`)
 
     await setProgress(jobId, `Building ZIP (${downloaded} images)...`)
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' })
