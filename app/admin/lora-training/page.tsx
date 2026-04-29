@@ -408,7 +408,7 @@ export default function LoraTrainingPage() {
     setImages([])
 
     try {
-      let url = '/api/admin/dataset?limit=500&'
+      let url = '/api/admin/dataset?all=true&'
       if (dataSource === 'marked') {
         url += 'markedOnly=true'
       } else {

@@ -15,7 +15,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const isExport    = searchParams.get('export') === 'true'
   const page        = Math.max(1, parseInt(searchParams.get('page') || '1'))
-  const limit       = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '30')))
+  const isAll       = searchParams.get('all') === 'true'
+  const limit       = isAll ? 10000 : Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '30')))
   const skip        = (page - 1) * limit
 
   // Filters — model, aspectRatio, userId support multi-value (repeated params)
