@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, memo } from "react"
 import {
   Brain, Zap, Download, RefreshCw, Play, CheckCircle, XCircle,
   Clock, ArrowLeft, Image as ImageIcon, FolderOpen, BookMarked,
-  Loader2, ChevronDown, Sparkles,
+  Loader2, ChevronDown, Sparkles, Copy, Check,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -321,6 +321,7 @@ export default function LoraTrainingPage() {
   const [starting, setStarting]     = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
   const [startSuccess, setStartSuccess] = useState<string | null>(null)
+  const [copiedId, setCopiedId]     = useState<number | null>(null)
 
   // Polling
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -901,15 +902,29 @@ export default function LoraTrainingPage() {
                         )}
 
                         {job.loraUrl && (
-                          <a
-                            href={job.loraUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-[11px] text-emerald-400 transition-all"
-                          >
-                            <Download size={11} />
-                            LoRA
-                          </a>
+                          <>
+                            <a
+                              href={job.loraUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-[11px] text-emerald-400 transition-all"
+                            >
+                              <Download size={11} />
+                              LoRA
+                            </a>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(job.loraUrl!)
+                                setCopiedId(job.id)
+                                setTimeout(() => setCopiedId(null), 2000)
+                              }}
+                              title="Copy LoRA URL"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 text-[11px] text-violet-400 transition-all"
+                            >
+                              {copiedId === job.id ? <Check size={11} /> : <Copy size={11} />}
+                              {copiedId === job.id ? "Copied!" : "Copy URL"}
+                            </button>
+                          </>
                         )}
 
                         {job.configUrl && (

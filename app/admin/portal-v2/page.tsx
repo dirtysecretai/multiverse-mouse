@@ -2913,6 +2913,8 @@ function PromptBox({
   const [showAddLora, setShowAddLora] = useState(false)
   const [newLoraName, setNewLoraName] = useState("")
   const [newLoraUrl, setNewLoraUrl] = useState("")
+  const [loraUploading, setLoraUploading] = useState(false)
+  const loraFileInputRef = useRef<HTMLInputElement>(null)
   const loraPickerRef = useRef<HTMLDivElement>(null)
   // Restore saved prompt state after mount to avoid SSR/client hydration mismatch
   useEffect(() => {
@@ -3728,7 +3730,7 @@ function PromptBox({
                             onClick={() => { setShowAddLora(true); setNewLoraName(""); setNewLoraUrl("") }}
                             className="w-full text-left px-3 py-2 text-[11px] text-slate-500 hover:text-violet-300 transition-colors"
                           >
-                            + Add LoRA URL
+                            + Add LoRA
                           </button>
                         ) : (
                           <div className="px-3 py-2 space-y-1.5">
@@ -3740,11 +3742,42 @@ function PromptBox({
                               className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
                             />
                             <input
-                              placeholder="https://... or fal://..."
+                              placeholder="Paste URL  (or upload file below)"
                               value={newLoraUrl}
                               onChange={e => setNewLoraUrl(e.target.value)}
                               className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
                             />
+                            {/* File upload */}
+                            <input
+                              ref={loraFileInputRef}
+                              type="file"
+                              accept=".safetensors,.bin,.pt,.ckpt"
+                              className="hidden"
+                              onChange={async e => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                setLoraUploading(true)
+                                try {
+                                  const fd = new FormData()
+                                  fd.append('file', file)
+                                  const res = await fetch('/api/admin/upload-lora', { method: 'POST', body: fd })
+                                  const data = await res.json()
+                                  if (data.url) {
+                                    setNewLoraUrl(data.url)
+                                    if (!newLoraName) setNewLoraName(file.name.replace(/\.[^.]+$/, ''))
+                                  }
+                                } catch { /* ignore */ }
+                                setLoraUploading(false)
+                                e.target.value = ''
+                              }}
+                            />
+                            <button
+                              onClick={() => loraFileInputRef.current?.click()}
+                              disabled={loraUploading}
+                              className="w-full py-1 rounded border border-dashed border-white/10 text-[11px] text-slate-500 hover:text-violet-300 hover:border-violet-500/30 transition-colors disabled:opacity-50"
+                            >
+                              {loraUploading ? "Uploading…" : "Upload .safetensors"}
+                            </button>
                             <div className="flex gap-1.5 pt-0.5">
                               <button
                                 onClick={() => {
@@ -3759,7 +3792,8 @@ function PromptBox({
                                   setShowAddLora(false)
                                   setLoraPickerOpen(false)
                                 }}
-                                className="flex-1 py-1 rounded bg-violet-500/20 border border-violet-500/30 text-[11px] text-violet-300 hover:bg-violet-500/30 transition-colors"
+                                disabled={!newLoraName.trim() || !newLoraUrl.trim()}
+                                className="flex-1 py-1 rounded bg-violet-500/20 border border-violet-500/30 text-[11px] text-violet-300 hover:bg-violet-500/30 transition-colors disabled:opacity-40"
                               >
                                 Save
                               </button>
