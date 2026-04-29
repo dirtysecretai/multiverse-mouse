@@ -3646,20 +3646,22 @@ function PromptBox({
             )}
 
             {/* LoRA picker — z-image-base / z-image-turbo only */}
-            {isZImageModel && loraJobs.length > 0 && (
+            {isZImageModel && (
               <>
                 <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
                 <div ref={loraPickerRef} className="relative shrink-0">
                   <button
-                    onClick={() => setLoraPickerOpen(v => !v)}
+                    onClick={() => loraJobs.length > 0 && setLoraPickerOpen(v => !v)}
                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-all ${
                       selectedLoraUrl
                         ? "bg-violet-500/15 border-violet-500/40 text-violet-300"
+                        : loraJobs.length === 0
+                        ? "border-white/[0.06] bg-white/[0.02] text-slate-600 cursor-default"
                         : "border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-white"
                     }`}
                   >
                     <Sparkles size={11} />
-                    {selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name ?? "LoRA") : "LoRA"}
+                    {selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name ?? "LoRA") : loraJobs.length === 0 ? "No LoRAs" : "LoRA"}
                   </button>
                   {loraPickerOpen && (
                     <div className="absolute bottom-full mb-1.5 left-0 z-50 min-w-[180px] rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1">
