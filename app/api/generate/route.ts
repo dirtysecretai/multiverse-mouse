@@ -226,7 +226,7 @@ export async function POST(request: Request) {
           inputParams.num_inference_steps = 28
           if (loraUrl) {
             modelEndpoint = 'fal-ai/flux-2/lora'
-            inputParams.loras = [{ path: loraUrl, scale: 1.0 }]
+            inputParams.loras = [{ url: loraUrl }]  // flux-2 uses `url`, not `path`
           }
           console.log(`FLUX 2: ${JSON.stringify(inputParams.image_size)}`)
 
