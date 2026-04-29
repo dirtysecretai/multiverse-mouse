@@ -162,8 +162,10 @@ export async function POST(req: NextRequest) {
     await setProgress(jobId, 'Submitting to FAL training queue...')
     const falInput = buildFalInput(job.modelId, config)
     const webhookUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://prompt-protocol.vercel.app'}/api/webhooks/fal`
+    // Field name differs per model: flux-lora-fast-training uses images_data_url (plural)
+    const zipKey = job.modelId === 'fal-ai/flux-lora-fast-training' ? 'images_data_url' : 'image_data_url'
     const submission = await fal.queue.submit(job.modelId, {
-      input: { image_data_url: zipUrl, ...falInput },
+      input: { [zipKey]: zipUrl, ...falInput },
       webhookUrl,
     })
 
