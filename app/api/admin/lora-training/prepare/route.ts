@@ -99,36 +99,41 @@ export async function POST(req: NextRequest) {
     const zip = new JSZip()
     let downloaded = 0
 
-    // Sequential downloads — avoids CDN rate-limiting when multiple jobs run concurrently
+    // Sequential downloads — 5s timeout per image so bad URLs don't eat the budget
+    let skipped = 0
     for (let i = 0; i < images.length; i++) {
       const img = images[i]
       try {
-        const res = await fetch(img.imageUrl, { signal: AbortSignal.timeout(20_000) })
+        const res = await fetch(img.imageUrl, { signal: AbortSignal.timeout(5_000) })
         if (res.ok) {
           const buf = await res.arrayBuffer()
           zip.file(`${img.id}.${getExtFromUrl(img.imageUrl)}`, Buffer.from(buf))
           const caption = img.adminCaption?.trim() || defaultCaption
           if (caption) zip.file(`${img.id}.txt`, caption)
           downloaded++
+        } else {
+          skipped++
         }
-      } catch { /* skip timed-out or failed image */ }
+      } catch {
+        skipped++
+      }
 
-      // Update progress every 40 images to reduce DB round-trips
-      if (i > 0 && i % 40 === 0) {
-        await setProgress(jobId, `Downloading images: ${i}/${images.length}`)
+      // Update progress every 50 images — fire-and-forget so DB slowness never blocks loop
+      if (i > 0 && i % 50 === 0) {
+        void setProgress(jobId, `Downloading: ${downloaded} ok, ${skipped} skipped (${i}/${images.length})`)
       }
     }
 
-    await setProgress(jobId, `Building ZIP archive (${downloaded} images)...`)
+    void setProgress(jobId, `Building ZIP (${downloaded} images, ${skipped} skipped)...`)
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' })
 
     const zipMB = (zipBuffer.length / 1024 / 1024).toFixed(1)
-    await setProgress(jobId, `Uploading ${zipMB}MB ZIP to FAL storage...`)
+    void setProgress(jobId, `Uploading ${zipMB}MB to FAL storage...`)
 
     const zipFile = new File([zipBuffer.buffer as ArrayBuffer], 'training.zip', { type: 'application/zip' })
     const zipUrl = await fal.storage.upload(zipFile)
 
-    await setProgress(jobId, 'Submitting to FAL training queue...')
+    void setProgress(jobId, 'Submitting to FAL training queue...')
 
     const falInput = buildFalInput(job.modelId, config)
     const webhookUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://prompt-protocol.vercel.app'}/api/webhooks/fal`
