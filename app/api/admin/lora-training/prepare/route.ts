@@ -53,10 +53,11 @@ function buildFalInput(modelId: string, config: Record<string, unknown>): Record
 
 async function setProgress(jobId: number, msg: string) {
   console.log(`[lora/prepare] job ${jobId}: ${msg}`)
-  await prisma.loraTrainingJob.update({
-    where: { id: jobId },
-    data: { errorMsg: msg },
-  }).catch(e => console.error('[lora/prepare] progress update failed:', e))
+  // 3s timeout — a hanging Prisma connection must never block the main flow
+  await Promise.race([
+    prisma.loraTrainingJob.update({ where: { id: jobId }, data: { errorMsg: msg } }),
+    new Promise<void>(resolve => setTimeout(resolve, 3_000)),
+  ]).catch(() => {})
 }
 
 export async function POST(req: NextRequest) {
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
     const output = fs.createWriteStream(zipPath)
     const archive = archiver('zip', { store: true })
     archive.on('warning', (err) => { if (err.code !== 'ENOENT') console.error('[archiver] warning:', err) })
-    archive.on('error', (err) => { throw err })
+    archive.on('error', (err) => { console.error('[archiver] error:', err) })
     archive.pipe(output)
 
     let downloaded = 0
