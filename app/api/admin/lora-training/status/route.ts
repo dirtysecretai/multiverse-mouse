@@ -29,10 +29,12 @@ export async function GET(req: NextRequest) {
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() }
 
-    if (falStatus.status === 'IN_QUEUE')    updateData.status = 'queued'
-    if (falStatus.status === 'IN_PROGRESS') updateData.status = 'in_progress'
+    const status = falStatus.status as string
 
-    if (falStatus.status === 'COMPLETED') {
+    if (status === 'IN_QUEUE')    updateData.status = 'queued'
+    if (status === 'IN_PROGRESS') updateData.status = 'in_progress'
+
+    if (status === 'COMPLETED') {
       const result = await fal.queue.result(job.modelId, { requestId: job.requestId })
       updateData.status    = 'completed'
       updateData.loraUrl   = (result.data as Record<string, unknown> | null)
@@ -43,7 +45,7 @@ export async function GET(req: NextRequest) {
         : null
     }
 
-    if (falStatus.status === 'FAILED') {
+    if (status === 'FAILED') {
       updateData.status   = 'failed'
       updateData.errorMsg = 'Training failed on FAL'
     }
