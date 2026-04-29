@@ -10,10 +10,15 @@ function authOk(req: NextRequest) {
 export async function GET(req: NextRequest) {
   if (!authOk(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const jobs = await prisma.loraTrainingJob.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 50,
-  })
-
-  return NextResponse.json({ jobs })
+  try {
+    const jobs = await prisma.loraTrainingJob.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    })
+    return NextResponse.json({ jobs })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[lora-training/jobs] DB error:', msg)
+    return NextResponse.json({ jobs: [], error: msg })
+  }
 }
