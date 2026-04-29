@@ -5,6 +5,7 @@ import archiver from 'archiver'
 import fs from 'fs'
 import path from 'path'
 import { finished } from 'stream/promises'
+import sharp from 'sharp'
 
 export const maxDuration = 300
 
@@ -117,15 +118,20 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < images.length; i += BATCH) {
       const batch = images.slice(i, i + BATCH)
 
-      // Download batch in parallel
+      // Download and compress batch in parallel
+      // Compress to JPEG 1024px max (~300KB each) — standard for LoRA training,
+      // keeps ZIP well under Vercel's 512MB /tmp limit for large datasets
       const results = await Promise.all(batch.map(async (img) => {
         try {
-          const res = await fetch(img.imageUrl, { signal: AbortSignal.timeout(5_000) })
+          const res = await fetch(img.imageUrl, { signal: AbortSignal.timeout(15_000) })
           if (!res.ok) return null
-          const buf = Buffer.from(await res.arrayBuffer())
-          const ext = getExtFromUrl(img.imageUrl)
+          const rawBuf = Buffer.from(await res.arrayBuffer())
+          const buf = await sharp(rawBuf)
+            .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 90 })
+            .toBuffer()
           const caption = img.adminCaption?.trim() || defaultCaption
-          return { name: `${img.id}.${ext}`, buf, caption, id: img.id }
+          return { name: `${img.id}.jpg`, buf, caption, id: img.id }
         } catch { return null }
       }))
 
