@@ -42,7 +42,14 @@ export async function POST(request: Request) {
           console.log(`LoRA job #${loraJob.id} marked failed: ${errorMsg}`)
         } else if (status === 'OK' || status === 'COMPLETED') {
           const data = payload as Record<string, { url?: string } | null> | null
-          const loraUrl   = data?.diffusers_lora_file?.url ?? null
+          console.log('[lora-webhook] payload keys:', data ? Object.keys(data) : 'null')
+          console.log('[lora-webhook] payload sample:', JSON.stringify(data).substring(0, 500))
+          // Try multiple field names — different trainers use different keys
+          const loraUrl   = data?.diffusers_lora_file?.url
+            ?? data?.lora_file?.url
+            ?? data?.safetensors_lora_file?.url
+            ?? data?.output_lora_file?.url
+            ?? null
           const configUrl = data?.config_file?.url ?? null
           await prisma.loraTrainingJob.update({
             where: { id: loraJob.id },

@@ -3781,15 +3781,28 @@ function PromptBox({
                                 if (!file) return
                                 setLoraUploading(true)
                                 try {
-                                  const fd = new FormData()
-                                  fd.append('file', file)
-                                  const res = await fetch('/api/admin/upload-lora', { method: 'POST', body: fd })
-                                  const data = await res.json()
-                                  if (data.url) {
-                                    setNewLoraUrl(data.url)
-                                    if (!newLoraName) setNewLoraName(file.name.replace(/\.[^.]+$/, ''))
-                                  }
-                                } catch { /* ignore */ }
+                                  // Step 1: get a presigned R2 PUT URL (bypasses Vercel 4.5 MB limit)
+                                  const presignRes = await fetch('/api/admin/upload-lora', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ filename: file.name }),
+                                  })
+                                  const presignData = await presignRes.json()
+                                  if (!presignData.uploadUrl) throw new Error(presignData.error || 'Failed to get upload URL')
+
+                                  // Step 2: PUT file directly to R2 (no Vercel size limit)
+                                  const putRes = await fetch(presignData.uploadUrl, {
+                                    method: 'PUT',
+                                    body: file,
+                                    headers: { 'Content-Type': 'application/octet-stream' },
+                                  })
+                                  if (!putRes.ok) throw new Error(`R2 upload failed: ${putRes.status}`)
+
+                                  setNewLoraUrl(presignData.publicUrl)
+                                  if (!newLoraName) setNewLoraName(file.name.replace(/\.[^.]+$/, ''))
+                                } catch (err) {
+                                  console.error('[lora-upload]', err)
+                                }
                                 setLoraUploading(false)
                                 e.target.value = ''
                               }}

@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const r2 = new S3Client({
   region: 'auto',
@@ -24,6 +25,16 @@ export async function uploadToR2(
     ContentType: contentType,
   }))
   return `${PUBLIC_URL}/${key}`
+}
+
+export async function presignPutUrl(
+  key: string,
+  contentType: string,
+  expiresIn = 3600
+): Promise<{ uploadUrl: string; publicUrl: string }> {
+  const cmd = new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType })
+  const uploadUrl = await getSignedUrl(r2, cmd, { expiresIn })
+  return { uploadUrl, publicUrl: `${PUBLIC_URL}/${key}` }
 }
 
 export async function deleteFromR2(urlOrKey: string | string[]): Promise<void> {

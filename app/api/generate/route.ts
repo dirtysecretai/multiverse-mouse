@@ -420,6 +420,7 @@ export async function POST(request: Request) {
 
           if (isAtGlobalLimit) {
             // ── QUEUED PATH: hold job in our DB, submit to FAL when a slot opens ──
+            console.log(`[generate] queued — model=${model} endpoint=${modelEndpoint} loraUrl=${loraUrl ?? 'none'} loras=${JSON.stringify(inputParams.loras ?? null)}`)
             const queueEntry = await prisma.generationQueue.create({
               data: {
                 userId: user.id,
@@ -461,6 +462,8 @@ export async function POST(request: Request) {
           }
 
           // ── IMMEDIATE PATH: submit to FAL now ───────────────────────
+          console.log(`[generate] model=${model} endpoint=${modelEndpoint}`)
+          console.log(`[generate] loraUrl=${loraUrl ?? 'none'} loras=${JSON.stringify(inputParams.loras ?? null)}`)
           console.log(`Submitting to FAL.ai queue: ${modelEndpoint}`)
           console.log(`Webhook URL: ${webhookUrl}`)
 
