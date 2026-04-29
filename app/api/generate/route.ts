@@ -276,9 +276,14 @@ export async function POST(request: Request) {
             modelEndpoint = 'fal-ai/nano-banana-pro/edit'
           } else if (model === 'flux-2') {
             modelEndpoint = 'fal-ai/flux-2/edit'
+          } else if (model === 'z-image-turbo') {
+            modelEndpoint = loraUrl
+              ? 'fal-ai/z-image/turbo/image-to-image/lora'
+              : 'fal-ai/z-image/turbo/image-to-image'
           }
 
-          const maxImages = model === 'flux-2' ? 4 : referenceImages.length
+          const isZTurboI2I = model === 'z-image-turbo'
+          const maxImages = model === 'flux-2' ? 4 : isZTurboI2I ? 1 : referenceImages.length
           const imagesToUpload = referenceImages.slice(0, maxImages)
 
           const imageUrls: string[] = []
@@ -300,8 +305,15 @@ export async function POST(request: Request) {
           }
 
           if (imageUrls.length > 0) {
-            inputParams.image_urls = imageUrls
-            console.log(`Edit mode: ${imageUrls.length} reference images uploaded`)
+            if (isZTurboI2I) {
+              // i2i uses singular image_url + strength
+              inputParams.image_url = imageUrls[0]
+              inputParams.strength = 0.6
+              console.log(`Z-Image Turbo i2i: image_url set, strength=0.6`)
+            } else {
+              inputParams.image_urls = imageUrls
+              console.log(`Edit mode: ${imageUrls.length} reference images uploaded`)
+            }
           }
         }
 
