@@ -70,6 +70,20 @@ export const AI_MODELS: AIModel[] = [
   },
 
   // FLUX 2 - FAL.ai (Black Forest Labs)
+  // FLUX 1 Dev - FAL.ai text-to-image and image-to-image
+  {
+    id: 'flux-1-dev',
+    name: 'fal-ai/flux-1/dev',
+    displayName: 'FLUX 1 Dev',
+    description: 'FLUX.1 Dev — 2 tickets (1k), 5 tickets (2k), 6 tickets (4k)',
+    ticketCost: 2,
+    category: 'standard',
+    rateLimit: { rpm: 0, rpd: 0 },
+    quality: 'high',
+    isAvailable: true,
+    provider: 'fal'
+  },
+
   {
     id: 'flux-2',
     name: 'fal-ai/flux-2',

@@ -53,6 +53,7 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
   { id: "seedream-4.5",         apiId: "seedream-4.5",             name: "SeeDream 4.5",        aspectRatios: ["1:1", "2:3", "3:2", "4:5", "3:4", "4:3", "9:16", "16:9"], supportsQuality: true,  maxReferenceImages: 8,  isFal: true,  maxImages: 4 },
   { id: "seedream-5-lite",      apiId: "seedream-5-lite",          name: "SeeDream 5.0 Lite",   aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "4:5"],                     supportsQuality: true,  qualityOptions: ["2k", "3k"], maxReferenceImages: 10, isFal: false, maxImages: 4 },
   { id: "wan-2.7-pro",          apiId: "wan-2.7-pro",              name: "Wan 2.7 Pro",         aspectRatios: ["1:1", "4:3", "16:9", "3:4", "9:16"],                     supportsQuality: false, maxReferenceImages: 4,  isFal: false, maxImages: 4 },
+  { id: "flux-1-dev",           apiId: "flux-1-dev",               name: "FLUX 1 Dev",          aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4"], supportsQuality: true, qualityOptions: ["1k", "2k", "4k"], maxReferenceImages: 1, isFal: true, maxImages: 1 },
   { id: "flux-2",               apiId: "flux-2",                   name: "FLUX 2",              aspectRatios: ["1:1", "4:5", "9:16", "16:9"],                            supportsQuality: false, maxReferenceImages: 4,  isFal: true  },
   { id: "pro-scanner-v3",       apiId: "gemini-3-pro-image",       name: "Pro Scanner v3",      aspectRatios: ["1:1", "2:3", "3:2", "4:5", "3:4", "4:3", "9:16", "16:9"], supportsQuality: true,  maxReferenceImages: 8,  isFal: false },
   { id: "flash-scanner-v2.5",   apiId: "gemini-2.5-flash-image",   name: "Flash Scanner v2.5",  aspectRatios: ["1:1", "4:5", "9:16", "16:9"],                            supportsQuality: false, maxReferenceImages: 4,  isFal: false },
@@ -67,6 +68,10 @@ function calcTicketCost(modelId: string, quality: Quality, aspectRatio?: AspectR
   if (modelId === "nano-banana-pro-2")   return quality === "4k" ? 12 : 7
   if (modelId === "seedream-4.5")        return quality === "4k" ? 4 : 2
   if (modelId === "seedream-5-lite")     return quality === "3k" ? 4 : 2
+  if (modelId === "flux-1-dev") {
+    if (hasRefImages) return quality === "4k" ? 8 : quality === "2k" ? 6 : 3  // i2i
+    return quality === "4k" ? 6 : quality === "2k" ? 5 : 2                    // t2i
+  }
   if (modelId === "flux-2") {
     if (loraActive && hasRefImages) return 3  // i2i+LoRA (1024×1024 tier)
     if (loraActive) return 2                  // t2i+LoRA (0-2 GB tier)
@@ -425,6 +430,7 @@ const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
   "seedance-2.0":       "$$$",
   "kling-v3":           "$$$",
   "happy-horse":        "$$",
+  "flux-1-dev":         "$$",
   "z-image-base":       "$$",
   "z-image-turbo":      "$",
 }

@@ -230,6 +230,23 @@ export async function POST(request: Request) {
           }
           console.log(`FLUX 2: ${JSON.stringify(inputParams.image_size)}`)
 
+        } else if (model === 'flux-1-dev') {
+          const f1Sizes: Record<string, Record<string, { width: number; height: number }>> = {
+            '1k': { '1:1': {width:1024,height:1024}, '16:9': {width:1280,height:720}, '9:16': {width:720,height:1280}, '4:3': {width:1024,height:768}, '3:4': {width:768,height:1024} },
+            '2k': { '1:1': {width:1920,height:1920}, '16:9': {width:1920,height:1080}, '9:16': {width:1080,height:1920}, '4:3': {width:1920,height:1440}, '3:4': {width:1440,height:1920} },
+            '4k': { '1:1': {width:2560,height:2560}, '16:9': {width:2560,height:1440}, '9:16': {width:1440,height:2560}, '4:3': {width:2560,height:1920}, '3:4': {width:1920,height:2560} },
+          }
+          const tier = quality === '4k' ? '4k' : quality === '2k' ? '2k' : '1k'
+          const dims = (f1Sizes[tier] || f1Sizes['1k'])[aspectRatio] || f1Sizes[tier]['1:1']
+          inputParams.image_size = { width: dims.width, height: dims.height }
+          inputParams.num_inference_steps = 40
+          inputParams.guidance_scale = 3.5
+          inputParams.num_images = 1
+          inputParams.enable_safety_checker = false
+          inputParams.output_format = 'png'
+          inputParams.acceleration = 'regular'
+          console.log(`FLUX 1 Dev: ${dims.width}x${dims.height}`)
+
         } else if (model === 'z-image-base' || model === 'z-image-turbo') {
           const zSizes: Record<string, { w: number; h: number }> = {
             '1:1':  { w: 1024, h: 1024 },
@@ -284,10 +301,12 @@ export async function POST(request: Request) {
             modelEndpoint = loraUrl
               ? 'fal-ai/z-image/turbo/image-to-image/lora'
               : 'fal-ai/z-image/turbo/image-to-image'
+          } else if (model === 'flux-1-dev') {
+            modelEndpoint = 'fal-ai/flux-1/dev/image-to-image'
           }
 
-          const isZTurboI2I = model === 'z-image-turbo'
-          const maxImages = model === 'flux-2' ? 4 : isZTurboI2I ? 1 : referenceImages.length
+          const isSingularI2I = model === 'z-image-turbo' || model === 'flux-1-dev'
+          const maxImages = model === 'flux-2' ? 4 : isSingularI2I ? 1 : referenceImages.length
           const imagesToUpload = referenceImages.slice(0, maxImages)
 
           const imageUrls: string[] = []
@@ -309,11 +328,10 @@ export async function POST(request: Request) {
           }
 
           if (imageUrls.length > 0) {
-            if (isZTurboI2I) {
-              // i2i uses singular image_url + strength
+            if (isSingularI2I) {
               inputParams.image_url = imageUrls[0]
-              inputParams.strength = 0.6
-              console.log(`Z-Image Turbo i2i: image_url set, strength=0.6`)
+              inputParams.strength = model === 'flux-1-dev' ? 0.95 : 0.6
+              console.log(`${model} i2i: image_url set, strength=${inputParams.strength}`)
             } else {
               inputParams.image_urls = imageUrls
               console.log(`Edit mode: ${imageUrls.length} reference images uploaded`)
