@@ -544,6 +544,7 @@ export default function LoraTrainingPage() {
   const accent = accentClasses[selectedModel.color] ?? accentClasses.cyan
   const hasImages = images.length > 0
   const tooFewImages = images.length > 0 && images.length < 10
+  const tooManyImages = images.length > 50
 
   return (
     <div className="min-h-screen bg-[#09090f] text-white">
@@ -695,6 +696,11 @@ export default function LoraTrainingPage() {
               {tooFewImages && (
                 <p className="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
                   Warning: Training typically requires at least 10 images. You have {images.length}.
+                </p>
+              )}
+              {tooManyImages && (
+                <p className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2">
+                  ⚠ {images.length} images is far above the recommended 9–50. More images = slower training, higher overfitting risk, and longer queue times. Consider using your 15–30 best images for better results.
                 </p>
               )}
               {hasImages && images.length < 5 && (

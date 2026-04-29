@@ -118,20 +118,26 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < images.length; i += BATCH) {
       const batch = images.slice(i, i + BATCH)
 
-      // Download and compress batch in parallel
-      // Compress to JPEG 1024px max (~300KB each) — standard for LoRA training,
-      // keeps ZIP well under Vercel's 512MB /tmp limit for large datasets
+      // Resize to max 1024px, preserve original format (PNG stays PNG to avoid JPEG artifacts)
       const results = await Promise.all(batch.map(async (img) => {
         try {
           const res = await fetch(img.imageUrl, { signal: AbortSignal.timeout(15_000) })
           if (!res.ok) return null
           const rawBuf = Buffer.from(await res.arrayBuffer())
-          const buf = await sharp(rawBuf)
-            .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 90 })
-            .toBuffer()
+          const meta = await sharp(rawBuf).metadata()
+          const isPng = meta.format === 'png'
+          const buf = isPng
+            ? await sharp(rawBuf)
+                .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+                .png({ compressionLevel: 6 })
+                .toBuffer()
+            : await sharp(rawBuf)
+                .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 95 })
+                .toBuffer()
+          const ext = isPng ? 'png' : 'jpg'
           const caption = img.adminCaption?.trim() || defaultCaption
-          return { name: `${img.id}.jpg`, buf, caption, id: img.id }
+          return { name: `${img.id}.${ext}`, buf, caption, id: img.id }
         } catch { return null }
       }))
 
