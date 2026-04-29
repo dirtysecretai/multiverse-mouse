@@ -25,7 +25,36 @@ export async function POST(request: Request) {
     })
 
     if (!queueItem) {
-      console.error(`No queue item found for request_id: ${request_id}`)
+      // Check if this is a LoRA training job
+      const loraJob = await prisma.loraTrainingJob.findFirst({
+        where: { requestId: request_id },
+      })
+
+      if (loraJob) {
+        console.log(`Found LoRA training job #${loraJob.id} for request_id: ${request_id}`)
+
+        if (status === 'ERROR' || status === 'FAILED' || error) {
+          const errorMsg = error?.message || error || 'FAL training failed'
+          await prisma.loraTrainingJob.update({
+            where: { id: loraJob.id },
+            data: { status: 'failed', errorMsg },
+          })
+          console.log(`LoRA job #${loraJob.id} marked failed: ${errorMsg}`)
+        } else if (status === 'OK' || status === 'COMPLETED') {
+          const data = payload as Record<string, { url?: string } | null> | null
+          const loraUrl   = data?.diffusers_lora_file?.url ?? null
+          const configUrl = data?.config_file?.url ?? null
+          await prisma.loraTrainingJob.update({
+            where: { id: loraJob.id },
+            data: { status: 'completed', loraUrl, configUrl },
+          })
+          console.log(`LoRA job #${loraJob.id} completed — loraUrl: ${loraUrl}`)
+        }
+
+        return NextResponse.json({ received: true })
+      }
+
+      console.error(`No queue item or LoRA job found for request_id: ${request_id}`)
       // Return 200 anyway — if we return non-200 FAL.ai retries indefinitely
       return NextResponse.json({ received: true })
     }

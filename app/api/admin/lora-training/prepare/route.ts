@@ -108,8 +108,10 @@ export async function POST(req: NextRequest) {
     const zipUrl = await fal.storage.upload(zipFile)
 
     const falInput = buildFalInput(job.modelId, config)
+    const webhookUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://prompt-protocol.vercel.app'}/api/webhooks/fal`
     const submission = await fal.queue.submit(job.modelId, {
       input: { image_data_url: zipUrl, ...falInput },
+      webhookUrl,
     })
 
     await prisma.loraTrainingJob.update({
