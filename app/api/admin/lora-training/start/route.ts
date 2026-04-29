@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
   // Upload to FAL storage
   let zipUrl: string
   try {
-    const zipBlob = new Blob([zipBuffer], { type: 'application/zip' })
+    const zipBlob = new Blob([zipBuffer.buffer as ArrayBuffer], { type: 'application/zip' })
     zipUrl = await fal.storage.upload(zipBlob)
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
