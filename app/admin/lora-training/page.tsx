@@ -366,9 +366,16 @@ export default function LoraTrainingPage() {
 
   // ── Auto-poll active jobs ─────────────────────────────────────────────────
   const pollActiveJobs = useCallback(async () => {
-    const active = jobs.filter(j => ['preparing', 'queued', 'in_progress'].includes(j.status))
-    if (active.length === 0) return
+    const preparing = jobs.filter(j => j.status === 'preparing')
+    const active    = jobs.filter(j => j.status === 'queued' || j.status === 'in_progress')
 
+    // For preparing: reload all from DB to pick up progress messages
+    if (preparing.length > 0) {
+      await loadJobs()
+      return
+    }
+
+    // For queued/in_progress: check FAL status individually
     await Promise.all(
       active.map(async job => {
         try {
@@ -384,15 +391,19 @@ export default function LoraTrainingPage() {
         }
       })
     )
-  }, [jobs])
+  }, [jobs, loadJobs])
 
   useEffect(() => {
     const active = jobs.filter(j => ['preparing', 'queued', 'in_progress'].includes(j.status))
     if (active.length === 0) return
 
+    // Poll faster when preparing (5s) vs queued/training (15s)
+    const hasPreparing = active.some(j => j.status === 'preparing')
+    const interval = hasPreparing ? 5_000 : 15_000
+
     pollTimerRef.current = setTimeout(async () => {
       await pollActiveJobs()
-    }, 10_000)
+    }, interval)
 
     return () => {
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current)
@@ -857,7 +868,10 @@ export default function LoraTrainingPage() {
                             </span>
                           )}
                         </div>
-                        {job.errorMsg && (
+                        {job.status === 'preparing' && job.errorMsg && (
+                          <p className="text-[11px] text-slate-400 font-mono">{job.errorMsg}</p>
+                        )}
+                        {job.status === 'failed' && job.errorMsg && (
                           <p className="text-[11px] text-red-400">{job.errorMsg}</p>
                         )}
                       </div>

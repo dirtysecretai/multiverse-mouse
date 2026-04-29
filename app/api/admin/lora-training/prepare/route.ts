@@ -48,6 +48,14 @@ function buildFalInput(modelId: string, config: Record<string, unknown>): Record
   return { ...config }
 }
 
+async function setProgress(jobId: number, msg: string) {
+  console.log(`[lora/prepare] job ${jobId}: ${msg}`)
+  await prisma.loraTrainingJob.update({
+    where: { id: jobId },
+    data: { errorMsg: msg },
+  }).catch(e => console.error('[lora/prepare] progress update failed:', e))
+}
+
 export async function POST(req: NextRequest) {
   if (!authOk(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -68,7 +76,8 @@ export async function POST(req: NextRequest) {
     const defaultCaption = config.default_caption ? String(config.default_caption) : ''
     const imageIds = Array.isArray(config._imageIds) ? (config._imageIds as number[]) : []
 
-    // Fallback for jobs created before _imageIds was stored: use all marked-for-training images
+    await setProgress(jobId, 'Fetching image list...')
+
     const images = imageIds.length > 0
       ? await prisma.generatedImage.findMany({
           where: { id: { in: imageIds } },
@@ -84,10 +93,13 @@ export async function POST(req: NextRequest) {
       throw new Error('No images found — mark images for training or re-submit with a bucket')
     }
 
+    await setProgress(jobId, `Found ${images.length} images — downloading...`)
+
     fal.config({ credentials: process.env.FAL_KEY! })
     const zip = new JSZip()
+    let downloaded = 0
 
-    // Download in batches of 30 to avoid flooding connections
+    // Download in batches of 30, update progress every batch
     for (let i = 0; i < images.length; i += 30) {
       const batch = images.slice(i, i + 30)
       await Promise.all(batch.map(async (img) => {
@@ -98,14 +110,22 @@ export async function POST(req: NextRequest) {
           zip.file(`${img.id}.${getExtFromUrl(img.imageUrl)}`, Buffer.from(buf))
           const caption = img.adminCaption?.trim() || defaultCaption
           if (caption) zip.file(`${img.id}.txt`, caption)
+          downloaded++
         } catch { /* skip failed image */ }
       }))
+      await setProgress(jobId, `Downloading images: ${Math.min(i + 30, images.length)}/${images.length}`)
     }
 
-    // STORE = no compression (images are already compressed), much faster
+    await setProgress(jobId, `Building ZIP archive (${downloaded} images)...`)
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' })
+
+    const zipMB = (zipBuffer.length / 1024 / 1024).toFixed(1)
+    await setProgress(jobId, `Uploading ${zipMB}MB ZIP to FAL storage...`)
+
     const zipFile = new File([zipBuffer.buffer as ArrayBuffer], 'training.zip', { type: 'application/zip' })
     const zipUrl = await fal.storage.upload(zipFile)
+
+    await setProgress(jobId, 'Submitting to FAL training queue...')
 
     const falInput = buildFalInput(job.modelId, config)
     const webhookUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://prompt-protocol.vercel.app'}/api/webhooks/fal`
@@ -116,7 +136,7 @@ export async function POST(req: NextRequest) {
 
     await prisma.loraTrainingJob.update({
       where: { id: jobId },
-      data: { requestId: submission.request_id, status: 'queued' },
+      data: { requestId: submission.request_id, status: 'queued', errorMsg: null },
     })
 
     return NextResponse.json({ ok: true, requestId: submission.request_id })
@@ -126,7 +146,7 @@ export async function POST(req: NextRequest) {
     await prisma.loraTrainingJob.update({
       where: { id: jobId },
       data: { status: 'failed', errorMsg: msg },
-    })
+    }).catch(e => console.error('[lora/prepare] failed to mark job failed:', e))
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
