@@ -99,29 +99,24 @@ export async function POST(req: NextRequest) {
     const zip = new JSZip()
     let downloaded = 0
 
-    // Sequential downloads — 5s timeout per image so bad URLs don't eat the budget
+    // 10 concurrent downloads, 5s per-image timeout, fire-and-forget progress
     let skipped = 0
-    for (let i = 0; i < images.length; i++) {
-      const img = images[i]
-      try {
-        const res = await fetch(img.imageUrl, { signal: AbortSignal.timeout(5_000) })
-        if (res.ok) {
-          const buf = await res.arrayBuffer()
-          zip.file(`${img.id}.${getExtFromUrl(img.imageUrl)}`, Buffer.from(buf))
-          const caption = img.adminCaption?.trim() || defaultCaption
-          if (caption) zip.file(`${img.id}.txt`, caption)
-          downloaded++
-        } else {
-          skipped++
-        }
-      } catch {
-        skipped++
-      }
-
-      // Update progress every 50 images — fire-and-forget so DB slowness never blocks loop
-      if (i > 0 && i % 50 === 0) {
-        void setProgress(jobId, `Downloading: ${downloaded} ok, ${skipped} skipped (${i}/${images.length})`)
-      }
+    const BATCH = 10
+    for (let i = 0; i < images.length; i += BATCH) {
+      const batch = images.slice(i, i + BATCH)
+      await Promise.all(batch.map(async (img) => {
+        try {
+          const res = await fetch(img.imageUrl, { signal: AbortSignal.timeout(5_000) })
+          if (res.ok) {
+            const buf = await res.arrayBuffer()
+            zip.file(`${img.id}.${getExtFromUrl(img.imageUrl)}`, Buffer.from(buf))
+            const caption = img.adminCaption?.trim() || defaultCaption
+            if (caption) zip.file(`${img.id}.txt`, caption)
+            downloaded++
+          } else { skipped++ }
+        } catch { skipped++ }
+      }))
+      void setProgress(jobId, `Downloading: ${downloaded} ok, ${skipped} skipped (${Math.min(i + BATCH, images.length)}/${images.length})`)
     }
 
     void setProgress(jobId, `Building ZIP (${downloaded} images, ${skipped} skipped)...`)
