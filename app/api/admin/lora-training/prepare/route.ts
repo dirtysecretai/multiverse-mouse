@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
     const zipMB = (zipBuffer.length / 1024 / 1024).toFixed(1)
     await setProgress(jobId, `Uploading ${zipMB}MB ZIP to FAL storage...`)
 
-    const zipFile = new File([zipBuffer.buffer as ArrayBuffer], 'training.zip', { type: 'application/zip' })
+    const zipFile = new File([new Uint8Array(zipBuffer.buffer, zipBuffer.byteOffset, zipBuffer.byteLength)], 'training.zip', { type: 'application/zip' })
     const zipUrl = await fal.storage.upload(zipFile)
 
     await setProgress(jobId, 'Submitting to FAL training queue...')
