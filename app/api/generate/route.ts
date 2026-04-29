@@ -64,6 +64,9 @@ export async function POST(request: Request) {
       syncMode = false,   // If true: wait for FAL.ai and return imageUrl directly (used by composition canvas)
       loraUrl,            // Optional LoRA weights URL
       loraName,           // Optional LoRA display name (for metadata)
+      loraScale = 1.0,    // LoRA strength (0-2)
+      loraGuidanceScale,  // Guidance / CFG scale override
+      loraSteps,          // Inference steps override
     } = body
 
     // Check if admin mode is requested and user is actually admin
@@ -223,8 +226,8 @@ export async function POST(request: Request) {
           inputParams.num_images = 1
           inputParams.output_format = 'png'
           inputParams.enable_safety_checker = false
-          inputParams.guidance_scale = 2.5
-          inputParams.num_inference_steps = 28
+          inputParams.guidance_scale = loraUrl && loraGuidanceScale ? loraGuidanceScale : 2.5
+          inputParams.num_inference_steps = loraUrl && loraSteps ? loraSteps : 28
           if (loraUrl) {
             modelEndpoint = 'fal-ai/flux-2/lora'
             inputParams.loras = [{ url: loraUrl }]  // flux-2 uses `url`, not `path`
@@ -240,15 +243,15 @@ export async function POST(request: Request) {
           const tier = quality === '4k' ? '4k' : quality === '2k' ? '2k' : '1k'
           const dims = (f1Sizes[tier] || f1Sizes['1k'])[aspectRatio] || f1Sizes[tier]['1:1']
           inputParams.image_size = { width: dims.width, height: dims.height }
-          inputParams.num_inference_steps = loraUrl ? 28 : 40
-          inputParams.guidance_scale = 3.5
+          inputParams.num_inference_steps = loraUrl ? (loraSteps ?? 28) : 40
+          inputParams.guidance_scale = loraUrl ? (loraGuidanceScale ?? 3.5) : 3.5
           inputParams.num_images = 1
           inputParams.enable_safety_checker = false
           inputParams.output_format = 'png'
           inputParams.acceleration = loraUrl ? 'none' : 'regular'
           if (loraUrl) {
             modelEndpoint = 'fal-ai/flux-lora'
-            inputParams.loras = [{ path: loraUrl, scale: 1.0 }]
+            inputParams.loras = [{ path: loraUrl, scale: loraScale ?? 1.0 }]
           }
           console.log(`FLUX 1 Dev${loraUrl ? ' LoRA' : ''}: ${dims.width}x${dims.height}`)
 
@@ -270,7 +273,9 @@ export async function POST(request: Request) {
           inputParams.num_images = 1
           if (loraUrl) {
             modelEndpoint = model === 'z-image-turbo' ? 'fal-ai/z-image/turbo/lora' : 'fal-ai/z-image/base/lora'
-            inputParams.loras = [{ path: loraUrl, scale: 1.0 }]
+            inputParams.loras = [{ path: loraUrl, scale: loraScale ?? 1.0 }]
+            if (loraGuidanceScale) inputParams.guidance_scale = loraGuidanceScale
+            if (loraSteps) inputParams.num_inference_steps = loraSteps
           }
 
         } else if (model === 'nano-banana-pro') {

@@ -2921,6 +2921,9 @@ function PromptBox({
   const [imageCount, setImageCount] = useState<number>(1)
   const [loraJobs, setLoraJobs] = useState<Array<{ id: number; name: string; loraUrl: string; custom?: boolean; triggerWord?: string }>>([])
   const [selectedLoraUrl, setSelectedLoraUrl] = useState<string | null>(null)
+  const [loraScale, setLoraScale] = useState(1.0)
+  const [loraGuidanceScale, setLoraGuidanceScale] = useState(3.5)
+  const [loraSteps, setLoraSteps] = useState(28)
   const [loraPickerOpen, setLoraPickerOpen] = useState(false)
   const [showAddLora, setShowAddLora] = useState(false)
   const [newLoraName, setNewLoraName] = useState("")
@@ -3487,7 +3490,7 @@ function PromptBox({
             const res = await fetch("/api/generate", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined }),
+              body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined, loraScale: selectedLoraUrl ? loraScale : undefined, loraGuidanceScale: selectedLoraUrl ? loraGuidanceScale : undefined, loraSteps: selectedLoraUrl ? loraSteps : undefined }),
             })
             const data = await res.json()
             if (!res.ok) { onUpdatePending(sid, { status: "failed", error: data.error || "Generation failed" }); return }
@@ -3503,7 +3506,7 @@ function PromptBox({
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined }),
+          body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined, loraScale: selectedLoraUrl ? loraScale : undefined, loraGuidanceScale: selectedLoraUrl ? loraGuidanceScale : undefined, loraSteps: selectedLoraUrl ? loraSteps : undefined }),
         })
         const data = await res.json()
         if (!res.ok) {
@@ -3584,6 +3587,13 @@ function PromptBox({
       .catch(() => { setLoraJobs(customLoras) })
   }, [model.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reset LoRA config to model-appropriate defaults when model changes
+  useEffect(() => {
+    setLoraScale(1.0)
+    setLoraGuidanceScale(model.id === 'flux-2' ? 2.5 : 3.5)
+    setLoraSteps(model.id === 'flux-2' ? 28 : model.id === 'flux-1-dev' ? 28 : 30)
+  }, [model.id])
+
   // Close lora picker on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -3646,6 +3656,55 @@ function PromptBox({
             }}
             className="w-full resize-none bg-transparent px-5 pt-4 pb-3 text-sm text-white placeholder-slate-500 focus:outline-none leading-relaxed"
           />
+
+          {/* LoRA config row — visible when a LoRA is active */}
+          {isZImageModel && selectedLoraUrl && (
+            <div className="flex items-center gap-4 px-4 py-2 border-t border-violet-500/10 flex-wrap">
+              <span className="text-[10px] font-mono text-violet-400/50 uppercase tracking-wider shrink-0">LoRA</span>
+
+              {/* Scale */}
+              <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-12">Scale</span>
+                <input
+                  type="range" min="0" max="2" step="0.05" value={loraScale}
+                  onChange={e => setLoraScale(parseFloat(e.target.value))}
+                  className="flex-1 accent-violet-400 cursor-pointer h-0.5"
+                />
+                <span className="text-[11px] font-mono text-violet-300 tabular-nums w-8 text-right shrink-0">{loraScale.toFixed(2)}</span>
+              </div>
+
+              {/* Guidance */}
+              <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-12">CFG</span>
+                <input
+                  type="range" min="1" max="15" step="0.5" value={loraGuidanceScale}
+                  onChange={e => setLoraGuidanceScale(parseFloat(e.target.value))}
+                  className="flex-1 accent-violet-400 cursor-pointer h-0.5"
+                />
+                <span className="text-[11px] font-mono text-violet-300 tabular-nums w-8 text-right shrink-0">{loraGuidanceScale.toFixed(1)}</span>
+              </div>
+
+              {/* Steps */}
+              <div className="flex items-center gap-2 flex-1 min-w-[120px]">
+                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-12">Steps</span>
+                <input
+                  type="range" min="10" max="60" step="1" value={loraSteps}
+                  onChange={e => setLoraSteps(parseInt(e.target.value))}
+                  className="flex-1 accent-violet-400 cursor-pointer h-0.5"
+                />
+                <span className="text-[11px] font-mono text-violet-300 tabular-nums w-6 text-right shrink-0">{loraSteps}</span>
+              </div>
+
+              <button
+                onClick={() => {
+                  setLoraScale(1.0)
+                  setLoraGuidanceScale(model.id === 'flux-2' ? 2.5 : 3.5)
+                  setLoraSteps(model.id === 'flux-2' ? 28 : 28)
+                }}
+                className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors shrink-0"
+              >reset</button>
+            </div>
+          )}
 
           {/* Controls strip */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3 pb-3 pt-1 border-t border-white/5">
