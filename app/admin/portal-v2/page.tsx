@@ -2907,7 +2907,7 @@ function PromptBox({
   const [quality, setQuality] = useState<Quality>("2k")
   const [outputFormat, setOutputFormat] = useState<"png" | "jpeg" | "webp">("png")
   const [imageCount, setImageCount] = useState<number>(1)
-  const [loraJobs, setLoraJobs] = useState<Array<{ id: number; name: string; loraUrl: string; custom?: boolean }>>([])
+  const [loraJobs, setLoraJobs] = useState<Array<{ id: number; name: string; loraUrl: string; custom?: boolean; triggerWord?: string }>>([])
   const [selectedLoraUrl, setSelectedLoraUrl] = useState<string | null>(null)
   const [loraPickerOpen, setLoraPickerOpen] = useState(false)
   const [showAddLora, setShowAddLora] = useState(false)
@@ -3531,18 +3531,35 @@ function PromptBox({
     localStorage.setItem(CUSTOM_LORAS_KEY, JSON.stringify(loras))
   }
 
+  // Which training model IDs produce LoRAs compatible with each portal model
+  const LORA_TRAINER_COMPAT: Record<string, string[]> = {
+    "flux-1-dev":   ["fal-ai/flux-lora-fast-training"],
+    "flux-2":       ["fal-ai/flux-2-trainer"],
+    "z-image-turbo":["fal-ai/z-image-turbo-trainer-v2"],
+    "z-image-base": [], // no dedicated trainer yet — custom uploads only
+  }
+
   // Fetch completed LoRA jobs when a LoRA-capable model is selected
   const isZImageModel = model.id === "z-image-base" || model.id === "z-image-turbo" || model.id === "flux-2" || model.id === "flux-1-dev"
   useEffect(() => {
     if (!isZImageModel) { setSelectedLoraUrl(null); setLoraJobs([]); return }
     const customLoras = loadCustomLoras()
+    const compatTrainers = LORA_TRAINER_COMPAT[model.id] ?? []
     const pass = typeof sessionStorage !== "undefined" ? (sessionStorage.getItem("admin-password") ?? "") : ""
     fetch("/api/admin/lora-training/jobs", { headers: pass ? { "x-admin-password": pass } : {} })
       .then(r => r.json())
-      .then((data: { jobs: Array<{ id: number; name: string; loraUrl: string | null; status: string; modelId: string }> }) => {
-        const completed = (data.jobs ?? []).filter(j => j.status === "completed" && j.loraUrl)
+      .then((data: { jobs: Array<{ id: number; name: string; loraUrl: string | null; status: string; modelId: string; config: Record<string, unknown> }> }) => {
+        const completed = (data.jobs ?? []).filter(j =>
+          j.status === "completed" && j.loraUrl &&
+          (compatTrainers.length === 0 || compatTrainers.includes(j.modelId))
+        )
         setLoraJobs([
-          ...completed.map(j => ({ id: j.id, name: j.name, loraUrl: j.loraUrl! })),
+          ...completed.map(j => ({
+            id: j.id,
+            name: j.name,
+            loraUrl: j.loraUrl!,
+            triggerWord: j.config?.trigger_word as string | undefined,
+          })),
           ...customLoras,
         ])
       })
@@ -3691,7 +3708,12 @@ function PromptBox({
                     }`}
                   >
                     <Sparkles size={11} />
-                    {selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name ?? "LoRA") : "LoRA"}
+                    {(() => {
+                      if (!selectedLoraUrl) return "LoRA"
+                      const job = loraJobs.find(j => j.loraUrl === selectedLoraUrl)
+                      if (!job) return "LoRA"
+                      return job.triggerWord ? `${job.name} · ${job.triggerWord}` : job.name
+                    })()}
                   </button>
                   {loraPickerOpen && (
                     <div className="absolute bottom-full mb-1.5 left-0 z-50 min-w-[220px] rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1">
@@ -3705,9 +3727,10 @@ function PromptBox({
                         <div key={j.id} className="flex items-center group">
                           <button
                             onClick={() => { setSelectedLoraUrl(j.loraUrl); setLoraPickerOpen(false) }}
-                            className={`flex-1 text-left px-3 py-2 text-[11px] transition-colors truncate ${selectedLoraUrl === j.loraUrl ? "text-violet-300 bg-violet-500/10" : "text-slate-400 hover:text-white hover:bg-white/[0.06]"}`}
+                            className={`flex-1 text-left px-3 py-2 text-[11px] transition-colors ${selectedLoraUrl === j.loraUrl ? "text-violet-300 bg-violet-500/10" : "text-slate-400 hover:text-white hover:bg-white/[0.06]"}`}
                           >
-                            {j.name}{j.custom && <span className="ml-1 text-slate-600">·custom</span>}
+                            <div className="truncate">{j.name}{j.custom && <span className="ml-1 text-slate-600">·custom</span>}</div>
+                            {j.triggerWord && <div className="text-[10px] text-amber-400/70 mt-0.5">trigger: <span className="font-mono">{j.triggerWord}</span></div>}
                           </button>
                           {j.custom && (
                             <button
@@ -3751,7 +3774,7 @@ function PromptBox({
                             <input
                               ref={loraFileInputRef}
                               type="file"
-                              accept=".safetensors,.bin,.pt,.ckpt"
+                              accept="*/*"
                               className="hidden"
                               onChange={async e => {
                                 const file = e.target.files?.[0]
