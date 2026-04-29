@@ -56,7 +56,7 @@ async function setProgress(jobId: number, msg: string) {
   // 3s timeout — a hanging Prisma connection must never block the main flow
   await Promise.race([
     prisma.loraTrainingJob.update({ where: { id: jobId }, data: { errorMsg: msg } }),
-    new Promise<void>(resolve => setTimeout(resolve, 3_000)),
+    new Promise<void>(resolve => setTimeout(resolve, 1_000)),
   ]).catch(() => {})
 }
 
@@ -138,9 +138,7 @@ export async function POST(req: NextRequest) {
       }
 
       const processed = downloaded + skipped
-      if (processed % 50 === 0 && processed > 0) {
-        await setProgress(jobId, `Downloading: ${downloaded} ok, ${skipped} skipped (${processed}/${images.length})`)
-      }
+      await setProgress(jobId, `Downloading: ${downloaded} ok, ${skipped} skipped (${processed}/${images.length})`)
     }
 
     await setProgress(jobId, `Download complete: ${downloaded} ok, ${skipped} skipped — finalizing ZIP...`)
