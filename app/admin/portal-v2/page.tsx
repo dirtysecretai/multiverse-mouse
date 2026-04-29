@@ -62,12 +62,16 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
 ]
 
 // --- HELPERS ---
-function calcTicketCost(modelId: string, quality: Quality, aspectRatio?: AspectRatio, loraActive?: boolean): number {
+function calcTicketCost(modelId: string, quality: Quality, aspectRatio?: AspectRatio, loraActive?: boolean, hasRefImages?: boolean): number {
   if (modelId === "nano-banana-pro")     return quality === "4k" ? 14 : 7
   if (modelId === "nano-banana-pro-2")   return quality === "4k" ? 12 : 7
   if (modelId === "seedream-4.5")        return quality === "4k" ? 4 : 2
   if (modelId === "seedream-5-lite")     return quality === "3k" ? 4 : 2
-  if (modelId === "flux-2")             return 1
+  if (modelId === "flux-2") {
+    if (loraActive && hasRefImages) return 3  // i2i+LoRA (1024×1024 tier)
+    if (loraActive) return 2                  // t2i+LoRA (0-2 GB tier)
+    return 1
+  }
   if (modelId === "z-image-base")        return quality === "4k" ? 15 : quality === "2k" ? 4 : 1
   if (modelId === "z-image-turbo")       return loraActive ? (quality === "4k" ? 17 : quality === "2k" ? 5 : 1) : (quality === "4k" ? 8 : quality === "2k" ? 2 : 1)
   if (modelId === "kling-v3-image")     return 2
@@ -2976,7 +2980,8 @@ function PromptBox({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configOverride?.version])
 
-  const ticketCost = calcTicketCost(model.id, quality, aspectRatio, (model.id === "z-image-base" || model.id === "z-image-turbo") && !!selectedLoraUrl)
+  const supportsLora = model.id === "z-image-base" || model.id === "z-image-turbo" || model.id === "flux-2"
+  const ticketCost = calcTicketCost(model.id, quality, aspectRatio, supportsLora && !!selectedLoraUrl, activeRefImages.length > 0)
   const totalCost = ticketCost * (model.maxImages ? imageCount : 1)
   const needsRefImage = !!model.requiresReferenceImage && activeRefImages.length === 0
   const slotsNeeded = (model.isFal || model.id === "nano-banana-pro-2" || model.id === "gpt-image-2") ? imageCount : 1
@@ -3518,8 +3523,8 @@ function PromptBox({
     localStorage.setItem(CUSTOM_LORAS_KEY, JSON.stringify(loras))
   }
 
-  // Fetch completed LoRA jobs when a z-image model is selected
-  const isZImageModel = model.id === "z-image-base" || model.id === "z-image-turbo"
+  // Fetch completed LoRA jobs when a LoRA-capable model is selected
+  const isZImageModel = model.id === "z-image-base" || model.id === "z-image-turbo" || model.id === "flux-2"
   useEffect(() => {
     if (!isZImageModel) { setSelectedLoraUrl(null); setLoraJobs([]); return }
     const customLoras = loadCustomLoras()

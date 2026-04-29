@@ -224,6 +224,10 @@ export async function POST(request: Request) {
           inputParams.enable_safety_checker = false
           inputParams.guidance_scale = 2.5
           inputParams.num_inference_steps = 28
+          if (loraUrl) {
+            modelEndpoint = 'fal-ai/flux-2/lora'
+            inputParams.loras = [{ path: loraUrl, scale: 1.0 }]
+          }
           console.log(`FLUX 2: ${JSON.stringify(inputParams.image_size)}`)
 
         } else if (model === 'z-image-base' || model === 'z-image-turbo') {
@@ -275,7 +279,7 @@ export async function POST(request: Request) {
           } else if (model === 'nano-banana-pro') {
             modelEndpoint = 'fal-ai/nano-banana-pro/edit'
           } else if (model === 'flux-2') {
-            modelEndpoint = 'fal-ai/flux-2/edit'
+            modelEndpoint = loraUrl ? 'fal-ai/flux-2/lora/edit' : 'fal-ai/flux-2/edit'
           } else if (model === 'z-image-turbo') {
             modelEndpoint = loraUrl
               ? 'fal-ai/z-image/turbo/image-to-image/lora'
