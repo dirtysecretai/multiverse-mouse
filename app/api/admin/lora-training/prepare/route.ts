@@ -103,9 +103,10 @@ export async function POST(req: NextRequest) {
     fal.config({ credentials: process.env.FAL_KEY! })
 
     // Stream ZIP directly to /tmp — each image buffer is written to disk and freed immediately
-    // This avoids holding all images in memory simultaneously (the JSZip approach OOM'd at ~150 images)
     const output = fs.createWriteStream(zipPath)
-    const archive = archiver('zip', { store: true }) // store = no compression, much faster
+    const archive = archiver('zip', { store: true })
+    archive.on('warning', (err) => { if (err.code !== 'ENOENT') console.error('[archiver] warning:', err) })
+    archive.on('error', (err) => { throw err })
     archive.pipe(output)
 
     let downloaded = 0
@@ -136,7 +137,7 @@ export async function POST(req: NextRequest) {
       }
 
       const processed = downloaded + skipped
-      if (processed % 200 === 0 && processed > 0) {
+      if (processed % 50 === 0 && processed > 0) {
         await setProgress(jobId, `Downloading: ${downloaded} ok, ${skipped} skipped (${processed}/${images.length})`)
       }
     }
