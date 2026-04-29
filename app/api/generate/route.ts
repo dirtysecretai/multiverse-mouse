@@ -62,7 +62,8 @@ export async function POST(request: Request) {
       model = 'gemini-2.5-flash-image',  // Default to Flash Scanner v2.5
       adminMode = false,  // Admin mode - no ticket deduction
       syncMode = false,   // If true: wait for FAL.ai and return imageUrl directly (used by composition canvas)
-      loraUrl,            // Optional LoRA weights URL (z-image-base/lora)
+      loraUrl,            // Optional LoRA weights URL
+      loraName,           // Optional LoRA display name (for metadata)
     } = body
 
     // Check if admin mode is requested and user is actually admin
@@ -434,6 +435,8 @@ export async function POST(request: Request) {
                   model,
                   adminMode: skipTickets,
                   referenceImageUrls: permanentReferenceUrls,
+                  loraUrl: loraUrl || null,
+                  loraName: loraName || null,
                   // Stored so promoteNextQueuedJob can replay this job later
                   falEndpoint: modelEndpoint,
                   falInput: inputParams,
@@ -488,6 +491,8 @@ export async function POST(request: Request) {
                 model,
                 adminMode: skipTickets,
                 referenceImageUrls: permanentReferenceUrls,
+                loraUrl: loraUrl || null,
+                loraName: loraName || null,
               },
               status: 'processing',
               ticketCost: skipTickets ? 0 : ticketCost,

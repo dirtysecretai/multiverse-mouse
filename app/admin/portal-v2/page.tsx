@@ -24,6 +24,8 @@ interface ImageItem {
   aspectRatio?: string
   quality?: string
   videoMetadata?: Record<string, any>
+  loraUrl?: string | null
+  loraName?: string | null
 }
 
 type AspectRatio = "auto" | "1:1" | "2:3" | "3:2" | "4:5" | "5:4" | "3:4" | "4:3" | "9:16" | "16:9" | "21:9"
@@ -1975,6 +1977,15 @@ function ImageDetailModal({
                 </div>
               </div>
             )}
+            {image.loraUrl && (
+              <div>
+                <p className="text-[10px] font-mono text-slate-600 uppercase tracking-widest mb-1.5">LoRA</p>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] font-mono">
+                  <Sparkles size={9} />
+                  {image.loraName || "Custom LoRA"}
+                </span>
+              </div>
+            )}
             {image.referenceImageUrls && image.referenceImageUrls.length > 0 && (
               <div>
                 <p className="text-[10px] font-mono text-slate-600 uppercase tracking-widest mb-1.5">
@@ -2003,6 +2014,7 @@ function ImageDetailModal({
               <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-mono">{modelName}</span>
               {image.aspectRatio && <span className="px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-mono">{image.aspectRatio}</span>}
               {image.quality && <span className="px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-mono">{image.quality.toUpperCase()}</span>}
+              {image.loraUrl && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] font-mono"><Sparkles size={8} />{image.loraName || "LoRA"}</span>}
               {formattedDate && <span className="text-[10px] text-slate-600">{formattedDate}</span>}
             </div>
             {!image.failed && image.id > 0 && (
@@ -3469,7 +3481,7 @@ function PromptBox({
             const res = await fetch("/api/generate", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined }),
+              body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined }),
             })
             const data = await res.json()
             if (!res.ok) { onUpdatePending(sid, { status: "failed", error: data.error || "Generation failed" }); return }
@@ -3485,7 +3497,7 @@ function PromptBox({
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined }),
+          body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined }),
         })
         const data = await res.json()
         if (!res.ok) {

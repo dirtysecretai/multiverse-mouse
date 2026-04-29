@@ -81,6 +81,7 @@ export async function POST(request: Request) {
     console.log(`Found queue item #${queueItem.id} for user ${queueItem.userId}`)
 
     const params = queueItem.parameters as any
+    console.log(`[webhook] loraUrl=${params?.loraUrl ?? 'none'} loraName=${params?.loraName ?? 'none'} endpoint stored=${params?.falEndpoint ?? 'immediate-path'}`)
 
     // ─── FAILURE PATH ───────────────────────────────────────────────
     if (status === 'ERROR' || status === 'FAILED' || error) {
@@ -202,6 +203,7 @@ export async function POST(request: Request) {
               referenceImageUrls: (params?.referenceImageUrls as string[]) || [],
               quality: (params?.quality as string) || null,
               aspectRatio: (params?.aspectRatio as string) || null,
+              videoMetadata: params?.loraUrl ? { loraUrl: params.loraUrl, loraName: params.loraName || null } : null,
               expiresAt,
             }
           })

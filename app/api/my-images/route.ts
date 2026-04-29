@@ -62,6 +62,8 @@ export async function GET(request: Request) {
           quality: img.quality || null,
           aspectRatio: img.aspectRatio || null,
           videoMetadata: img.videoMetadata || null,
+          loraUrl: (img.videoMetadata as any)?.loraUrl || null,
+          loraName: (img.videoMetadata as any)?.loraName || null,
           falRequestId: img.falRequestId || null,
         })),
       })
@@ -98,6 +100,8 @@ export async function GET(request: Request) {
         quality: img.quality || null,
         aspectRatio: img.aspectRatio || null,
         videoMetadata: img.videoMetadata || null,
+        loraUrl: (img.videoMetadata as any)?.loraUrl || null,
+        loraName: (img.videoMetadata as any)?.loraName || null,
       })),
       pagination: {
         page,
