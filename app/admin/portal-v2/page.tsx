@@ -62,14 +62,14 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
 ]
 
 // --- HELPERS ---
-function calcTicketCost(modelId: string, quality: Quality, aspectRatio?: AspectRatio): number {
+function calcTicketCost(modelId: string, quality: Quality, aspectRatio?: AspectRatio, loraActive?: boolean): number {
   if (modelId === "nano-banana-pro")     return quality === "4k" ? 14 : 7
   if (modelId === "nano-banana-pro-2")   return quality === "4k" ? 12 : 7
   if (modelId === "seedream-4.5")        return quality === "4k" ? 4 : 2
   if (modelId === "seedream-5-lite")     return quality === "3k" ? 4 : 2
   if (modelId === "flux-2")             return 1
   if (modelId === "z-image-base")        return quality === "4k" ? 15 : quality === "2k" ? 4 : 1
-  if (modelId === "z-image-turbo")       return quality === "4k" ? 8  : quality === "2k" ? 2 : 1
+  if (modelId === "z-image-turbo")       return loraActive ? (quality === "4k" ? 17 : quality === "2k" ? 5 : 1) : (quality === "4k" ? 8 : quality === "2k" ? 2 : 1)
   if (modelId === "kling-v3-image")     return 2
   if (modelId === "kling-o3-image")     return quality === "4k" ? 4 : 2
   if (modelId === "wan-2.7-pro")        return 4
@@ -2973,7 +2973,7 @@ function PromptBox({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configOverride?.version])
 
-  const ticketCost = calcTicketCost(model.id, quality, aspectRatio)
+  const ticketCost = calcTicketCost(model.id, quality, aspectRatio, isZImageModel && !!selectedLoraUrl)
   const totalCost = ticketCost * (model.maxImages ? imageCount : 1)
   const needsRefImage = !!model.requiresReferenceImage && activeRefImages.length === 0
   const slotsNeeded = (model.isFal || model.id === "nano-banana-pro-2" || model.id === "gpt-image-2") ? imageCount : 1
