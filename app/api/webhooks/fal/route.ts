@@ -203,7 +203,7 @@ export async function POST(request: Request) {
               referenceImageUrls: (params?.referenceImageUrls as string[]) || [],
               quality: (params?.quality as string) || null,
               aspectRatio: (params?.aspectRatio as string) || null,
-              videoMetadata: params?.loraUrl ? { loraUrl: params.loraUrl, loraName: params.loraName || null } : null,
+              videoMetadata: params?.loraUrl ? { loraUrl: params.loraUrl, loraName: params.loraName ?? undefined } : undefined,
               expiresAt,
             }
           })

@@ -3011,7 +3011,13 @@ function PromptBox({
   const handleGenerate = async () => {
     if (!canGenerate) return
     setGenerating(true)
-    const currentPrompt = prompt.trim()
+    const selectedLoraJob = loraJobs.find(j => j.loraUrl === selectedLoraUrl)
+    const triggerWord = selectedLoraJob?.triggerWord?.trim()
+    const rawPrompt = prompt.trim()
+    // Auto-prepend trigger word for FLUX LoRAs if not already present
+    const currentPrompt = (triggerWord && !rawPrompt.toLowerCase().includes(triggerWord.toLowerCase()))
+      ? `${triggerWord} ${rawPrompt}`
+      : rawPrompt
     const count = model.maxImages ? imageCount : 1
     // Create N slots upfront — one per image
     // Permanent (Vercel Blob) URLs for storing in DB — data URIs are ephemeral and excluded
