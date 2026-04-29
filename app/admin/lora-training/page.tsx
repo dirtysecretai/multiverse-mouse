@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, memo } from "react"
 import {
   Brain, Zap, Download, RefreshCw, Play, CheckCircle, XCircle,
   Clock, ArrowLeft, Image as ImageIcon, FolderOpen, BookMarked,
-  Loader2, ChevronDown, Sparkles, Copy, Check,
+  Loader2, ChevronDown, Sparkles, Copy, Check, Upload, FileArchive, Info,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -119,6 +119,44 @@ const TRAINING_MODELS: ModelDef[] = [
       { key: 'steps',           label: 'Steps',           type: 'number', min: 100,      max: 10000, step: 100 },
       { key: 'learning_rate',   label: 'Learning Rate',   type: 'float',  min: 0.000001, max: 0.01,  step: 0.0001 },
       { key: 'default_caption', label: 'Default Caption', type: 'text',   placeholder: 'Fallback caption for uncaptioned images' },
+    ],
+  },
+  {
+    id: 'fal-ai/z-image-base-trainer',
+    name: 'Z-Image Base',
+    tag: 'zbase',
+    color: 'emerald',
+    description: 'Z-Image base model LoRA trainer',
+    estimatedTime: '10-20 min',
+    defaultConfig: {
+      steps: 2000,
+      learning_rate: 0.0005,
+      default_caption: '',
+    },
+    configFields: [
+      { key: 'steps',           label: 'Steps',           type: 'number', min: 100,      max: 10000, step: 100 },
+      { key: 'learning_rate',   label: 'Learning Rate',   type: 'float',  min: 0.000001, max: 0.01,  step: 0.0001 },
+      { key: 'default_caption', label: 'Default Caption', type: 'text',   placeholder: 'Fallback caption for uncaptioned images' },
+    ],
+  },
+  {
+    id: 'fal-ai/flux-2-trainer/edit',
+    name: 'FLUX 2 Edit',
+    tag: 'flux2edit',
+    color: 'rose',
+    description: 'Before/after edit LoRA — requires paired image ZIP',
+    estimatedTime: '20-40 min',
+    defaultConfig: {
+      steps: 1000,
+      learning_rate: 0.00005,
+      default_caption: '',
+      output_lora_format: 'fal',
+    },
+    configFields: [
+      { key: 'steps',              label: 'Steps',           type: 'number', min: 100,      max: 4000,  step: 100 },
+      { key: 'learning_rate',      label: 'Learning Rate',   type: 'float',  min: 0.000001, max: 0.001, step: 0.000001 },
+      { key: 'default_caption',    label: 'Default Caption (required)', type: 'text', placeholder: 'e.g. Applying a vintage film effect' },
+      { key: 'output_lora_format', label: 'Output Format',  type: 'select', options: ['fal', 'comfy'] },
     ],
   },
 ]
@@ -290,9 +328,11 @@ function ConfigFieldInput({
 // ─── Model card ───────────────────────────────────────────────────────────────
 
 const accentClasses: Record<string, { ring: string; bg: string; text: string; border: string }> = {
-  cyan:   { ring: 'ring-cyan-500/40',   bg: 'bg-cyan-500/10',   text: 'text-cyan-400',   border: 'border-cyan-500/30' },
-  violet: { ring: 'ring-violet-500/40', bg: 'bg-violet-500/10', text: 'text-violet-400', border: 'border-violet-500/30' },
-  amber:  { ring: 'ring-amber-500/40',  bg: 'bg-amber-500/10',  text: 'text-amber-400',  border: 'border-amber-500/30' },
+  cyan:    { ring: 'ring-cyan-500/40',    bg: 'bg-cyan-500/10',    text: 'text-cyan-400',    border: 'border-cyan-500/30' },
+  violet:  { ring: 'ring-violet-500/40',  bg: 'bg-violet-500/10',  text: 'text-violet-400',  border: 'border-violet-500/30' },
+  amber:   { ring: 'ring-amber-500/40',   bg: 'bg-amber-500/10',   text: 'text-amber-400',   border: 'border-amber-500/30' },
+  rose:    { ring: 'ring-rose-500/40',    bg: 'bg-rose-500/10',    text: 'text-rose-400',    border: 'border-rose-500/30' },
+  emerald: { ring: 'ring-emerald-500/40', bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -322,6 +362,13 @@ export default function LoraTrainingPage() {
   const [startError, setStartError] = useState<string | null>(null)
   const [startSuccess, setStartSuccess] = useState<string | null>(null)
   const [copiedId, setCopiedId]     = useState<number | null>(null)
+
+  // Edit trainer ZIP upload
+  const [trainingZipFile, setTrainingZipFile] = useState<File | null>(null)
+  const [trainingZipUrl, setTrainingZipUrl]   = useState<string | null>(null)
+  const [uploadingZip, setUploadingZip]       = useState(false)
+  const [zipUploadError, setZipUploadError]   = useState<string | null>(null)
+  const zipInputRef = useRef<HTMLInputElement>(null)
 
   // Polling
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -415,10 +462,43 @@ export default function LoraTrainingPage() {
   function switchModel(m: ModelDef) {
     setSelected(m)
     setConfig({ ...m.defaultConfig })
+    setTrainingZipFile(null)
+    setTrainingZipUrl(null)
+    setZipUploadError(null)
   }
 
   function updateConfig(key: string, val: unknown) {
     setConfig(prev => ({ ...prev, [key]: val }))
+  }
+
+  // ── Upload training ZIP (edit trainer) ───────────────────────────────────────
+  async function uploadTrainingZip(file: File) {
+    setUploadingZip(true)
+    setZipUploadError(null)
+    setTrainingZipUrl(null)
+
+    try {
+      const presignRes = await fetch('/api/admin/upload-training-zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ filename: file.name }),
+      })
+      if (!presignRes.ok) throw new Error(`Presign failed: ${presignRes.status}`)
+      const { uploadUrl, publicUrl } = await presignRes.json() as { uploadUrl: string; publicUrl: string }
+
+      const putRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/zip' },
+        body: file,
+      })
+      if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`)
+
+      setTrainingZipUrl(publicUrl)
+    } catch (e) {
+      setZipUploadError(e instanceof Error ? e.message : 'Upload failed')
+    } finally {
+      setUploadingZip(false)
+    }
   }
 
   // ── Load images ───────────────────────────────────────────────────────────────
@@ -449,7 +529,9 @@ export default function LoraTrainingPage() {
 
   // ── Start training ────────────────────────────────────────────────────────────
   async function startTraining() {
-    if (images.length === 0) return
+    const isEditTrainer = selectedModel.id === 'fal-ai/flux-2-trainer/edit'
+    if (!isEditTrainer && images.length === 0) return
+    if (isEditTrainer && !trainingZipUrl) { setStartError('Upload a training ZIP first'); return }
     if (!jobName.trim()) { setStartError('Job name is required'); return }
 
     setStarting(true)
@@ -457,24 +539,23 @@ export default function LoraTrainingPage() {
     setStartSuccess(null)
 
     try {
+      const body = isEditTrainer
+        ? { zipUrl: trainingZipUrl, modelId: selectedModel.id, config, name: jobName.trim() }
+        : { imageIds: images.map(i => i.id), modelId: selectedModel.id, config, name: jobName.trim() }
+
       const r = await fetch('/api/admin/lora-training/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({
-          imageIds: images.map(i => i.id),
-          modelId: selectedModel.id,
-          config,
-          name: jobName.trim(),
-        }),
+        body: JSON.stringify(body),
       })
 
       const data = await r.json() as { jobId?: number; error?: string }
 
       if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`)
 
-      setStartSuccess(`Job #${data.jobId} is preparing — building zip & uploading to FAL in background`)
+      setStartSuccess(`Job #${data.jobId} is preparing — submitting to FAL in background`)
       setJobName("")
-      // Reload jobs
+      if (isEditTrainer) { setTrainingZipFile(null); setTrainingZipUrl(null) }
       await loadJobs()
     } catch (e) {
       setStartError(e instanceof Error ? e.message : 'Failed to start training')
@@ -542,9 +623,13 @@ export default function LoraTrainingPage() {
   }
 
   const accent = accentClasses[selectedModel.color] ?? accentClasses.cyan
+  const isEditTrainer = selectedModel.id === 'fal-ai/flux-2-trainer/edit'
   const hasImages = images.length > 0
   const tooFewImages = images.length > 0 && images.length < 10
   const tooManyImages = images.length > 50
+  const canStartTraining = isEditTrainer
+    ? !!trainingZipUrl && !!jobName.trim()
+    : hasImages && images.length >= 5 && !!jobName.trim()
 
   return (
     <div className="min-h-screen bg-[#09090f] text-white">
@@ -608,137 +693,217 @@ export default function LoraTrainingPage() {
 
           {/* ── LEFT: Data source ──────────────────────────────────────── */}
           <div className="space-y-5">
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <ImageIcon size={16} className="text-slate-400" />
-                <h2 className="text-sm font-semibold text-slate-200">Training Data</h2>
-              </div>
+            {isEditTrainer ? (
+              /* ── Edit trainer: ZIP upload ────────────────────────────── */
+              <div className="rounded-2xl border border-rose-500/20 bg-white/[0.02] p-5 space-y-4">
+                <div className="flex items-center gap-2">
+                  <FileArchive size={16} className="text-rose-400" />
+                  <h2 className="text-sm font-semibold text-slate-200">Training ZIP</h2>
+                </div>
 
-              {/* Radio source selector */}
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="radio"
-                    name="dataSource"
-                    checked={dataSource === 'marked'}
-                    onChange={() => { setDataSource('marked'); setImages([]); setImageError(null) }}
-                    className="sr-only"
-                  />
-                  <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-all
-                    ${dataSource === 'marked'
-                      ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
-                      : 'bg-white/[0.04] text-slate-400 border-white/[0.06] group-hover:text-slate-300'}`}
+                {/* Format guide */}
+                <div className="rounded-xl bg-rose-500/[0.06] border border-rose-500/20 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-rose-300 text-xs font-medium">
+                    <Info size={13} />
+                    ZIP Naming Convention
+                  </div>
+                  <div className="space-y-1 text-[11px] text-slate-400 font-mono">
+                    <p>photo1_start.jpg &nbsp;← before image</p>
+                    <p>photo1_end.jpg &nbsp;&nbsp;← after image</p>
+                    <p>photo1.txt &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← edit instruction (optional)</p>
+                    <p className="border-t border-white/[0.06] pt-1 mt-1">photo2_start.png</p>
+                    <p>photo2_end.png</p>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    15–50 high-quality before/after pairs recommended.
+                    If no .txt files, set <span className="text-rose-300">Default Caption</span> in the config.
+                  </p>
+                </div>
+
+                {/* File input */}
+                <input
+                  ref={zipInputRef}
+                  type="file"
+                  accept=".zip,application/zip"
+                  className="sr-only"
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (!f) return
+                    setTrainingZipFile(f)
+                    setTrainingZipUrl(null)
+                    setZipUploadError(null)
+                  }}
+                />
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => zipInputRef.current?.click()}
+                    disabled={uploadingZip}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-sm text-slate-300 hover:text-white transition-all disabled:opacity-50"
                   >
-                    <BookMarked size={12} />
-                    Marked for Training
-                  </span>
-                </label>
+                    <FileArchive size={14} />
+                    {trainingZipFile ? trainingZipFile.name : 'Choose ZIP…'}
+                  </button>
 
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="radio"
-                    name="dataSource"
-                    checked={dataSource === 'bucket'}
-                    onChange={() => { setDataSource('bucket'); setImages([]); setImageError(null) }}
-                    className="sr-only"
-                  />
-                  <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-all
-                    ${dataSource === 'bucket'
-                      ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
-                      : 'bg-white/[0.04] text-slate-400 border-white/[0.06] group-hover:text-slate-300'}`}
-                  >
-                    <FolderOpen size={12} />
-                    From Bucket
-                  </span>
-                </label>
-              </div>
-
-              {/* Bucket picker */}
-              {dataSource === 'bucket' && (
-                <div className="space-y-1.5">
-                  <label className="text-xs text-slate-500">Select Bucket</label>
-                  {buckets.length === 0 ? (
-                    <p className="text-xs text-slate-600 italic">No buckets found</p>
-                  ) : (
-                    <FilterSelect
-                      value={selectedBucket}
-                      onChange={v => { setSelectedBucket(v); setImages([]); setImageError(null) }}
-                      options={buckets.map(b => ({ value: String(b.id), label: `${b.name} (${b.count})` }))}
-                    />
+                  {trainingZipFile && !trainingZipUrl && (
+                    <button
+                      onClick={() => uploadTrainingZip(trainingZipFile)}
+                      disabled={uploadingZip}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-sm text-rose-300 hover:text-rose-200 transition-all disabled:opacity-50"
+                    >
+                      {uploadingZip ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                      {uploadingZip ? 'Uploading…' : 'Upload ZIP'}
+                    </button>
                   )}
                 </div>
-              )}
 
-              {/* Load button + count */}
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={loadImages}
-                  disabled={loadingImages || (dataSource === 'bucket' && !selectedBucket)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-sm text-slate-300 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loadingImages ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                  Load Images
-                </button>
+                {zipUploadError && (
+                  <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                    {zipUploadError}
+                  </p>
+                )}
 
-                {hasImages && (
-                  <span className={`text-sm font-medium ${tooFewImages ? 'text-yellow-400' : 'text-emerald-400'}`}>
-                    {images.length} images loaded
-                  </span>
+                {trainingZipUrl && (
+                  <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                    <CheckCircle size={13} />
+                    ZIP uploaded — ready to train
+                  </div>
                 )}
               </div>
-
-              {/* Warnings */}
-              {imageError && (
-                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                  {imageError}
-                </p>
-              )}
-              {tooFewImages && (
-                <p className="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
-                  Warning: Training typically requires at least 10 images. You have {images.length}.
-                </p>
-              )}
-              {tooManyImages && (
-                <p className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2">
-                  ⚠ {images.length} images is far above the recommended 9–50. More images = slower training, higher overfitting risk, and longer queue times. Consider using your 15–30 best images for better results.
-                </p>
-              )}
-              {hasImages && images.length < 5 && (
-                <p className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2">
-                  Too few images ({images.length}). Please add at least 5 images before training.
-                </p>
-              )}
-
-              {/* Preview grid */}
-              {hasImages && (
-                <div className="mt-2">
-                  <p className="text-[11px] text-slate-600 mb-2">
-                    Preview (first {Math.min(12, images.length)} of {images.length})
-                  </p>
-                  <div className="grid grid-cols-6 gap-1.5">
-                    {images.slice(0, 12).map(img => (
-                      <div
-                        key={img.id}
-                        className="aspect-square rounded-lg overflow-hidden bg-white/[0.04] border border-white/[0.06] relative group"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={img.imageUrl}
-                          alt={`img-${img.id}`}
-                          className="w-full h-full object-cover"
-                          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                        />
-                        {img.adminCaption && (
-                          <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1">
-                            <p className="text-[9px] text-slate-300 line-clamp-3 leading-tight">{img.adminCaption}</p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+            ) : (
+              /* ── Standard trainers: image dataset ────────────────────── */
+              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5 space-y-4">
+                <div className="flex items-center gap-2">
+                  <ImageIcon size={16} className="text-slate-400" />
+                  <h2 className="text-sm font-semibold text-slate-200">Training Data</h2>
                 </div>
-              )}
-            </div>
+
+                {/* Radio source selector */}
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input
+                      type="radio"
+                      name="dataSource"
+                      checked={dataSource === 'marked'}
+                      onChange={() => { setDataSource('marked'); setImages([]); setImageError(null) }}
+                      className="sr-only"
+                    />
+                    <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-all
+                      ${dataSource === 'marked'
+                        ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                        : 'bg-white/[0.04] text-slate-400 border-white/[0.06] group-hover:text-slate-300'}`}
+                    >
+                      <BookMarked size={12} />
+                      Marked for Training
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input
+                      type="radio"
+                      name="dataSource"
+                      checked={dataSource === 'bucket'}
+                      onChange={() => { setDataSource('bucket'); setImages([]); setImageError(null) }}
+                      className="sr-only"
+                    />
+                    <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-all
+                      ${dataSource === 'bucket'
+                        ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                        : 'bg-white/[0.04] text-slate-400 border-white/[0.06] group-hover:text-slate-300'}`}
+                    >
+                      <FolderOpen size={12} />
+                      From Bucket
+                    </span>
+                  </label>
+                </div>
+
+                {/* Bucket picker */}
+                {dataSource === 'bucket' && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-slate-500">Select Bucket</label>
+                    {buckets.length === 0 ? (
+                      <p className="text-xs text-slate-600 italic">No buckets found</p>
+                    ) : (
+                      <FilterSelect
+                        value={selectedBucket}
+                        onChange={v => { setSelectedBucket(v); setImages([]); setImageError(null) }}
+                        options={buckets.map(b => ({ value: String(b.id), label: `${b.name} (${b.count})` }))}
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* Load button + count */}
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={loadImages}
+                    disabled={loadingImages || (dataSource === 'bucket' && !selectedBucket)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-sm text-slate-300 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loadingImages ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    Load Images
+                  </button>
+
+                  {hasImages && (
+                    <span className={`text-sm font-medium ${tooFewImages ? 'text-yellow-400' : 'text-emerald-400'}`}>
+                      {images.length} images loaded
+                    </span>
+                  )}
+                </div>
+
+                {/* Warnings */}
+                {imageError && (
+                  <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                    {imageError}
+                  </p>
+                )}
+                {tooFewImages && (
+                  <p className="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
+                    Warning: Training typically requires at least 10 images. You have {images.length}.
+                  </p>
+                )}
+                {tooManyImages && (
+                  <p className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2">
+                    ⚠ {images.length} images is far above the recommended 9–50. More images = slower training, higher overfitting risk, and longer queue times. Consider using your 15–30 best images for better results.
+                  </p>
+                )}
+                {hasImages && images.length < 5 && (
+                  <p className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2">
+                    Too few images ({images.length}). Please add at least 5 images before training.
+                  </p>
+                )}
+
+                {/* Preview grid */}
+                {hasImages && (
+                  <div className="mt-2">
+                    <p className="text-[11px] text-slate-600 mb-2">
+                      Preview (first {Math.min(12, images.length)} of {images.length})
+                    </p>
+                    <div className="grid grid-cols-6 gap-1.5">
+                      {images.slice(0, 12).map(img => (
+                        <div
+                          key={img.id}
+                          className="aspect-square rounded-lg overflow-hidden bg-white/[0.04] border border-white/[0.06] relative group"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={img.imageUrl}
+                            alt={`img-${img.id}`}
+                            className="w-full h-full object-cover"
+                            onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                          />
+                          {img.adminCaption && (
+                            <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1">
+                              <p className="text-[9px] text-slate-300 line-clamp-3 leading-tight">{img.adminCaption}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* ── RIGHT: Config panel ─────────────────────────────────────── */}
@@ -784,8 +949,10 @@ export default function LoraTrainingPage() {
               {/* Image count + time estimate */}
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <div className="flex items-center gap-1.5">
-                  <ImageIcon size={12} />
-                  <span>{hasImages ? `${images.length} images` : 'No images loaded'}</span>
+                  {isEditTrainer
+                    ? <><FileArchive size={12} /><span>{trainingZipUrl ? 'ZIP ready' : 'No ZIP uploaded'}</span></>
+                    : <><ImageIcon size={12} /><span>{hasImages ? `${images.length} images` : 'No images loaded'}</span></>
+                  }
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Clock size={12} />
@@ -796,9 +963,9 @@ export default function LoraTrainingPage() {
               {/* Start button */}
               <button
                 onClick={startTraining}
-                disabled={starting || !hasImages || images.length < 5 || !jobName.trim()}
+                disabled={starting || !canStartTraining}
                 className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all
-                  ${(!hasImages || images.length < 5 || !jobName.trim())
+                  ${!canStartTraining
                     ? 'bg-white/[0.05] text-slate-600 cursor-not-allowed border border-white/[0.06]'
                     : `${accent.bg} ${accent.text} ${accent.border} border hover:opacity-90 ring-1 ${accent.ring}`}`}
               >

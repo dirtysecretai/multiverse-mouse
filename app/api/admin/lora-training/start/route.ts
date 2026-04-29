@@ -10,45 +10,55 @@ function authOk(req: NextRequest) {
 }
 
 
+const EDIT_TRAINER = 'fal-ai/flux-2-trainer/edit'
+
 export async function POST(req: NextRequest) {
   if (!authOk(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { imageIds: number[]; modelId: string; config: Record<string, unknown>; name: string }
+  let body: { imageIds?: number[]; zipUrl?: string; modelId: string; config: Record<string, unknown>; name: string }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { imageIds, modelId, config, name } = body
+  const { imageIds, zipUrl, modelId, config, name } = body
 
-  if (!Array.isArray(imageIds) || imageIds.length === 0)
-    return NextResponse.json({ error: 'imageIds must be a non-empty array' }, { status: 400 })
   if (!modelId?.trim())
     return NextResponse.json({ error: 'modelId is required' }, { status: 400 })
   if (!name?.trim())
     return NextResponse.json({ error: 'name is required' }, { status: 400 })
 
-  // Fetch image records from DB
-  const images = await prisma.generatedImage.findMany({
-    where: { id: { in: imageIds } },
-    select: { id: true, imageUrl: true, adminCaption: true },
-  })
+  let jobConfig: Record<string, unknown>
+  let imageCount: number
 
-  if (images.length === 0)
-    return NextResponse.json({ error: 'No images found for given imageIds' }, { status: 400 })
+  if (modelId === EDIT_TRAINER) {
+    if (!zipUrl?.trim())
+      return NextResponse.json({ error: 'zipUrl is required for edit trainer' }, { status: 400 })
+    jobConfig = { ...config, _zipUrl: zipUrl }
+    imageCount = 0
+  } else {
+    if (!Array.isArray(imageIds) || imageIds.length === 0)
+      return NextResponse.json({ error: 'imageIds must be a non-empty array' }, { status: 400 })
 
-  // Store imageIds in config so the prepare worker can find them
-  const jobConfig = { ...config, _imageIds: images.map(i => i.id) }
+    const images = await prisma.generatedImage.findMany({
+      where: { id: { in: imageIds } },
+      select: { id: true },
+    })
+    if (images.length === 0)
+      return NextResponse.json({ error: 'No images found for given imageIds' }, { status: 400 })
 
-  // Create job immediately — returns to client right away
+    jobConfig = { ...config, _imageIds: images.map(i => i.id) }
+    imageCount = images.length
+  }
+
   const job = await prisma.loraTrainingJob.create({
     data: {
       name: name.trim(),
       modelId,
       status: 'preparing',
       config: jobConfig as object,
-      imageCount: images.length,
+      imageCount,
     },
   })
 

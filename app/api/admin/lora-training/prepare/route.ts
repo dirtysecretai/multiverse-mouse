@@ -35,6 +35,14 @@ function buildFalInput(modelId: string, config: Record<string, unknown>): Record
     if (config.output_lora_format !== undefined) input.output_lora_format = String(config.output_lora_format)
     return input
   }
+  if (modelId === 'fal-ai/flux-2-trainer/edit') {
+    const input: Record<string, unknown> = {}
+    if (config.steps              !== undefined) input.steps              = Number(config.steps)
+    if (config.learning_rate      !== undefined) input.learning_rate      = Number(config.learning_rate)
+    if (config.default_caption    !== undefined && config.default_caption !== '') input.default_caption    = String(config.default_caption)
+    if (config.output_lora_format !== undefined) input.output_lora_format = String(config.output_lora_format)
+    return input
+  }
   if (modelId === 'fal-ai/flux-lora-fast-training') {
     const input: Record<string, unknown> = {}
     if (config.steps         !== undefined) input.steps         = Number(config.steps)
@@ -42,7 +50,7 @@ function buildFalInput(modelId: string, config: Record<string, unknown>): Record
     if (config.trigger_word  !== undefined && config.trigger_word !== '') input.trigger_word = String(config.trigger_word)
     return input
   }
-  if (modelId === 'fal-ai/z-image-turbo-trainer-v2') {
+  if (modelId === 'fal-ai/z-image-turbo-trainer-v2' || modelId === 'fal-ai/z-image-base-trainer') {
     const input: Record<string, unknown> = {}
     if (config.steps           !== undefined) input.steps           = Number(config.steps)
     if (config.learning_rate   !== undefined) input.learning_rate   = Number(config.learning_rate)
@@ -80,6 +88,30 @@ export async function POST(req: NextRequest) {
 
   try {
     const config = job.config as Record<string, unknown>
+
+    // Edit trainer: user uploads their own paired ZIP — skip download/build step
+    if (job.modelId === 'fal-ai/flux-2-trainer/edit') {
+      const zipUrl = config._zipUrl ? String(config._zipUrl) : null
+      if (!zipUrl) throw new Error('No _zipUrl in config for edit trainer')
+
+      await setProgress(jobId, 'Submitting edit trainer ZIP to FAL...')
+      fal.config({ credentials: process.env.FAL_KEY! })
+
+      const falInput = buildFalInput(job.modelId, config)
+      const webhookUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://prompt-protocol.vercel.app'}/api/webhooks/fal`
+      const submission = await fal.queue.submit(job.modelId, {
+        input: { image_data_url: zipUrl, ...falInput },
+        webhookUrl,
+      })
+
+      await prisma.loraTrainingJob.update({
+        where: { id: jobId },
+        data: { requestId: submission.request_id, status: 'queued', errorMsg: null },
+      })
+
+      return NextResponse.json({ ok: true, requestId: submission.request_id })
+    }
+
     const defaultCaption = config.default_caption ? String(config.default_caption) : ''
     const imageIds = Array.isArray(config._imageIds) ? (config._imageIds as number[]) : []
 
@@ -192,7 +224,7 @@ export async function POST(req: NextRequest) {
     await prisma.loraTrainingJob.update({
       where: { id: jobId },
       data: { status: 'failed', errorMsg: msg },
-    }).catch(e => console.error('[lora/prepare] failed to mark job failed:', e))
+    }).catch((e: unknown) => console.error('[lora/prepare] failed to mark job failed:', e))
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
