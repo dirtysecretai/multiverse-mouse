@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { after } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { fal } from '@fal-ai/client'
 import JSZip from 'jszip'
@@ -18,9 +19,7 @@ function getExtFromUrl(url: string): string {
     if (ext && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) {
       return ext === 'jpeg' ? 'jpg' : ext
     }
-  } catch {
-    // ignore
-  }
+  } catch { /* ignore */ }
   return 'jpg'
 }
 
@@ -56,20 +55,40 @@ function buildFalInput(modelId: string, config: Record<string, unknown>): Record
     return input
   }
 
-  // Generic fallback — pass everything
   return { ...config }
+}
+
+// Download images in parallel batches to avoid overwhelming connections
+async function downloadImages(
+  images: { id: number; imageUrl: string; adminCaption: string | null }[],
+  defaultCaption: string,
+  zip: JSZip,
+  batchSize = 30,
+) {
+  for (let i = 0; i < images.length; i += batchSize) {
+    const batch = images.slice(i, i + batchSize)
+    await Promise.all(
+      batch.map(async (img) => {
+        try {
+          const res = await fetch(img.imageUrl)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const buf = await res.arrayBuffer()
+          const ext = getExtFromUrl(img.imageUrl)
+          zip.file(`${img.id}.${ext}`, Buffer.from(buf))
+          const caption = img.adminCaption?.trim() || defaultCaption
+          if (caption) zip.file(`${img.id}.txt`, caption)
+        } catch (err) {
+          console.error(`[lora/start] Failed to fetch image ${img.id}:`, err)
+        }
+      })
+    )
+  }
 }
 
 export async function POST(req: NextRequest) {
   if (!authOk(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: {
-    imageIds: number[]
-    modelId: string
-    config: Record<string, unknown>
-    name: string
-  }
-
+  let body: { imageIds: number[]; modelId: string; config: Record<string, unknown>; name: string }
   try {
     body = await req.json()
   } catch {
@@ -78,98 +97,65 @@ export async function POST(req: NextRequest) {
 
   const { imageIds, modelId, config, name } = body
 
-  if (!Array.isArray(imageIds) || imageIds.length === 0) {
+  if (!Array.isArray(imageIds) || imageIds.length === 0)
     return NextResponse.json({ error: 'imageIds must be a non-empty array' }, { status: 400 })
-  }
-  if (!modelId?.trim()) {
+  if (!modelId?.trim())
     return NextResponse.json({ error: 'modelId is required' }, { status: 400 })
-  }
-  if (!name?.trim()) {
+  if (!name?.trim())
     return NextResponse.json({ error: 'name is required' }, { status: 400 })
-  }
 
-  // Fetch image records
+  // Fetch image records from DB
   const images = await prisma.generatedImage.findMany({
     where: { id: { in: imageIds } },
-    select: { id: true, imageUrl: true, adminCaption: true, adminTags: true },
+    select: { id: true, imageUrl: true, adminCaption: true },
   })
 
-  if (images.length === 0) {
+  if (images.length === 0)
     return NextResponse.json({ error: 'No images found for given imageIds' }, { status: 400 })
-  }
 
-  // Configure FAL
-  fal.config({ credentials: process.env.FAL_KEY! })
-
-  // Build ZIP
-  const zip = new JSZip()
-
-  const defaultCaption = config.default_caption ? String(config.default_caption) : ''
-
-  await Promise.all(
-    images.map(async (img) => {
-      try {
-        const response = await fetch(img.imageUrl)
-        if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        const buffer = await response.arrayBuffer()
-        const ext = getExtFromUrl(img.imageUrl)
-        const filename = `${img.id}.${ext}`
-        zip.file(filename, Buffer.from(buffer))
-
-        // Add caption file
-        const caption = img.adminCaption?.trim() || defaultCaption
-        if (caption) {
-          zip.file(`${img.id}.txt`, caption)
-        }
-      } catch (err) {
-        console.error(`[lora-training/start] Failed to fetch image ${img.id}:`, err)
-        // Skip failed images silently — training continues with fetched ones
-      }
-    })
-  )
-
-  // Generate ZIP buffer
-  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' })
-
-  // Upload to FAL storage
-  let zipUrl: string
-  try {
-    const zipBlob = new Blob([zipBuffer.buffer as ArrayBuffer], { type: 'application/zip' })
-    zipUrl = await fal.storage.upload(zipBlob)
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: `FAL storage upload failed: ${msg}` }, { status: 502 })
-  }
-
-  // Build FAL input
-  const falInput = buildFalInput(modelId, config)
-
-  // Submit training job to FAL queue
-  let requestId: string
-  try {
-    const submission = await fal.queue.submit(modelId, {
-      input: {
-        image_data_url: zipUrl,
-        ...falInput,
-      },
-    })
-    requestId = submission.request_id
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: `FAL queue submit failed: ${msg}` }, { status: 502 })
-  }
-
-  // Save to DB
+  // Create job immediately — returns to client right away
   const job = await prisma.loraTrainingJob.create({
     data: {
-      requestId,
       name: name.trim(),
       modelId,
-      status: 'queued',
+      status: 'preparing',
       config: config as object,
       imageCount: images.length,
     },
   })
 
-  return NextResponse.json({ jobId: job.id, requestId })
+  // All the heavy work happens after the response is sent
+  after(async () => {
+    try {
+      fal.config({ credentials: process.env.FAL_KEY! })
+
+      const zip = new JSZip()
+      const defaultCaption = config.default_caption ? String(config.default_caption) : ''
+
+      await downloadImages(images, defaultCaption, zip)
+
+      const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' })
+      const zipFile = new File([zipBuffer.buffer as ArrayBuffer], 'training.zip', { type: 'application/zip' })
+      const zipUrl = await fal.storage.upload(zipFile)
+
+      const falInput = buildFalInput(modelId, config)
+      const submission = await fal.queue.submit(modelId, {
+        input: { image_data_url: zipUrl, ...falInput },
+      })
+
+      await prisma.loraTrainingJob.update({
+        where: { id: job.id },
+        data: { requestId: submission.request_id, status: 'queued' },
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[lora/start] Background processing failed for job ${job.id}:`, msg)
+      await prisma.loraTrainingJob.update({
+        where: { id: job.id },
+        data: { status: 'failed', errorMsg: msg },
+      }).catch(() => {})
+    }
+  })
+
+  return NextResponse.json({ jobId: job.id })
 }

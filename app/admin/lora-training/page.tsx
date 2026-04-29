@@ -184,6 +184,14 @@ const FilterSelect = memo(function FilterSelect({
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
+  if (status === 'preparing') {
+    return (
+      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
+        <Loader2 size={11} className="animate-spin" />
+        Preparing
+      </span>
+    )
+  }
   if (status === 'queued') {
     return (
       <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
@@ -358,7 +366,7 @@ export default function LoraTrainingPage() {
 
   // ── Auto-poll active jobs ─────────────────────────────────────────────────
   const pollActiveJobs = useCallback(async () => {
-    const active = jobs.filter(j => j.status === 'queued' || j.status === 'in_progress')
+    const active = jobs.filter(j => ['preparing', 'queued', 'in_progress'].includes(j.status))
     if (active.length === 0) return
 
     await Promise.all(
@@ -379,7 +387,7 @@ export default function LoraTrainingPage() {
   }, [jobs])
 
   useEffect(() => {
-    const active = jobs.filter(j => j.status === 'queued' || j.status === 'in_progress')
+    const active = jobs.filter(j => ['preparing', 'queued', 'in_progress'].includes(j.status))
     if (active.length === 0) return
 
     pollTimerRef.current = setTimeout(async () => {
@@ -448,11 +456,11 @@ export default function LoraTrainingPage() {
         }),
       })
 
-      const data = await r.json() as { jobId?: number; requestId?: string; error?: string }
+      const data = await r.json() as { jobId?: number; error?: string }
 
       if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`)
 
-      setStartSuccess(`Job started! ID: ${data.jobId} — Request: ${data.requestId}`)
+      setStartSuccess(`Job #${data.jobId} is preparing — building zip & uploading to FAL in background`)
       setJobName("")
       // Reload jobs
       await loadJobs()
