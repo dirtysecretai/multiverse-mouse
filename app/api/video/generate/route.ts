@@ -27,6 +27,7 @@ const FAL_ENDPOINTS: Record<string, string> = {
   'seedance-2.0-fast-i2v':      'fal-ai/bytedance/seedance-2.0/fast/image-to-video',
   'seedance-2.0-fast-r2v':      'fal-ai/bytedance/seedance-2.0/fast/reference-to-video',
   'lipsync-v3':                 'fal-ai/sync-lipsync/v3',
+  'happy-horse':                'alibaba/happy-horse/image-to-video',
 };
 
 export async function POST(request: NextRequest) {
@@ -133,6 +134,8 @@ export async function POST(request: NextRequest) {
       const outputDurSec = duration === 'auto' ? 5 : parseInt(duration)
       const effectiveDur = outputDurSec + (hasVideoRefs ? (referenceVideoDurationSec || 0) : 0)
       ticketCost = Math.ceil(effectiveDur * 12 * resMultiplier * videoInputMultiplier)
+    } else if (model === 'happy-horse') {
+      ticketCost = parseInt(duration) * (resolution === '1080p' ? 12 : 7);
     } else {
       const pricing: Record<string, Record<string, number>> = {
         '480p':  { '5': 7,  '10': 14 },
@@ -247,6 +250,14 @@ export async function POST(request: NextRequest) {
         // t2v
         falInput = { ...sd20Base };
       }
+    } else if (model === 'happy-horse') {
+      falInput = {
+        image_url: imageUrl,
+        resolution,
+        duration: parseInt(duration),
+        enable_safety_checker: false,
+      };
+      if (prompt?.trim()) falInput.prompt = prompt.trim();
     } else {
       // WAN 2.5
       falInput = {

@@ -383,6 +383,14 @@ const VIDEO_MODEL_CONFIGS: VideoModelConfig[] = [
     audioType: "none",
     supportsLipsync: true,
   },
+  {
+    id: "happy-horse",
+    name: "Happy Horse",
+    durations: ["3","4","5","6","7","8","9","10","11","12","13","14","15"],
+    resolutions: ["720p", "1080p"],
+    supportsEndFrame: false,
+    audioType: "none",
+  },
 ]
 const VIDEO_MODELS = VIDEO_MODEL_CONFIGS.map(m => m.name)
 
@@ -408,6 +416,7 @@ const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
   "seedance-2.0-fast":  "$$$",
   "seedance-2.0":       "$$$",
   "kling-v3":           "$$$",
+  "happy-horse":        "$$",
 }
 function CostBadge({ tier }: { tier: "$" | "$$" | "$$$" }) {
   const color = tier === "$"   ? "text-green-400"
@@ -4065,6 +4074,8 @@ function VideoCustomizationPanel({
     ? Math.ceil(parseInt(duration) * 2.0 * (resolution === "1080p" ? 2.25 : resolution === "480p" ? 0.5 : 1.0) * (audioEnabled ? 1.0 : 0.5)) + 1
     : isSD20Family
     ? Math.ceil(parseInt(duration === "auto" ? "5" : duration) * (model.id === "seedance-2.0-fast" ? 12 : 15) * sd20ResMultiplier)
+    : model.id === "happy-horse"
+    ? parseInt(duration) * (resolution === "1080p" ? 12 : 7)
     : ({ "480p": { "5": 7, "10": 14 }, "720p": { "5": 13, "10": 26 }, "1080p": { "5": 20, "10": 40 } } as any)[resolution]?.[duration] ?? 20
 
   const btnBase   = "py-1.5 rounded text-[11px] font-mono transition-all border"
@@ -4776,6 +4787,8 @@ function VideoPromptBar({
     ? Math.ceil(parseInt(duration) * 2.0 * (resolution === "1080p" ? 2.25 : resolution === "480p" ? 0.5 : 1.0) * (audioEnabled ? 1.0 : 0.5)) + 1
     : isSD20FamilyBar
     ? Math.ceil(parseInt(duration === "auto" ? "5" : duration) * (model.id === "seedance-2.0-fast" ? 12 : 15) * (resolution === "1080p" ? 2.25 : resolution === "480p" ? 0.5 : 1.0))
+    : model.id === "happy-horse"
+    ? parseInt(duration) * (resolution === "1080p" ? 12 : 7)
     : ({ "480p": { "5": 7, "10": 14 }, "720p": { "5": 13, "10": 26 }, "1080p": { "5": 20, "10": 40 } } as any)[resolution]?.[duration] ?? 20
 
   const metaLine = isLipsyncModel
