@@ -3507,7 +3507,8 @@ function PromptBox({
   const isZImageModel = model.id === "z-image-base" || model.id === "z-image-turbo"
   useEffect(() => {
     if (!isZImageModel) { setSelectedLoraUrl(null); setLoraJobs([]); return }
-    fetch("/api/admin/lora-training/jobs", { headers: authHeaders() })
+    const pass = typeof sessionStorage !== "undefined" ? (sessionStorage.getItem("admin-password") ?? "") : ""
+    fetch("/api/admin/lora-training/jobs", { headers: pass ? { "x-admin-password": pass } : {} })
       .then(r => r.json())
       .then((data: { jobs: Array<{ id: number; name: string; loraUrl: string | null; status: string; modelId: string }> }) => {
         const completed = (data.jobs ?? []).filter(j => j.status === "completed" && j.loraUrl)
