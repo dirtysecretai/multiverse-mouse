@@ -2973,7 +2973,7 @@ function PromptBox({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configOverride?.version])
 
-  const ticketCost = calcTicketCost(model.id, quality, aspectRatio, isZImageModel && !!selectedLoraUrl)
+  const ticketCost = calcTicketCost(model.id, quality, aspectRatio, (model.id === "z-image-base" || model.id === "z-image-turbo") && !!selectedLoraUrl)
   const totalCost = ticketCost * (model.maxImages ? imageCount : 1)
   const needsRefImage = !!model.requiresReferenceImage && activeRefImages.length === 0
   const slotsNeeded = (model.isFal || model.id === "nano-banana-pro-2" || model.id === "gpt-image-2") ? imageCount : 1
