@@ -239,13 +239,17 @@ export async function POST(request: Request) {
           const tier = quality === '4k' ? '4k' : quality === '2k' ? '2k' : '1k'
           const dims = (f1Sizes[tier] || f1Sizes['1k'])[aspectRatio] || f1Sizes[tier]['1:1']
           inputParams.image_size = { width: dims.width, height: dims.height }
-          inputParams.num_inference_steps = 40
+          inputParams.num_inference_steps = loraUrl ? 28 : 40
           inputParams.guidance_scale = 3.5
           inputParams.num_images = 1
           inputParams.enable_safety_checker = false
           inputParams.output_format = 'png'
-          inputParams.acceleration = 'regular'
-          console.log(`FLUX 1 Dev: ${dims.width}x${dims.height}`)
+          inputParams.acceleration = loraUrl ? 'none' : 'regular'
+          if (loraUrl) {
+            modelEndpoint = 'fal-ai/flux-lora'
+            inputParams.loras = [{ path: loraUrl, scale: 1.0 }]
+          }
+          console.log(`FLUX 1 Dev${loraUrl ? ' LoRA' : ''}: ${dims.width}x${dims.height}`)
 
         } else if (model === 'z-image-base' || model === 'z-image-turbo') {
           const zSizes: Record<string, { w: number; h: number }> = {
@@ -302,7 +306,7 @@ export async function POST(request: Request) {
               ? 'fal-ai/z-image/turbo/image-to-image/lora'
               : 'fal-ai/z-image/turbo/image-to-image'
           } else if (model === 'flux-1-dev') {
-            modelEndpoint = 'fal-ai/flux-1/dev/image-to-image'
+            modelEndpoint = loraUrl ? 'fal-ai/flux-lora/image-to-image' : 'fal-ai/flux-1/dev/image-to-image'
           }
 
           const isSingularI2I = model === 'z-image-turbo' || model === 'flux-1-dev'
@@ -330,7 +334,7 @@ export async function POST(request: Request) {
           if (imageUrls.length > 0) {
             if (isSingularI2I) {
               inputParams.image_url = imageUrls[0]
-              inputParams.strength = model === 'flux-1-dev' ? 0.95 : 0.6
+              inputParams.strength = model === 'flux-1-dev' ? (loraUrl ? 0.85 : 0.95) : 0.6
               console.log(`${model} i2i: image_url set, strength=${inputParams.strength}`)
             } else {
               inputParams.image_urls = imageUrls

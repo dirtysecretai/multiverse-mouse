@@ -2986,7 +2986,7 @@ function PromptBox({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configOverride?.version])
 
-  const supportsLora = model.id === "z-image-base" || model.id === "z-image-turbo" || model.id === "flux-2"
+  const supportsLora = model.id === "z-image-base" || model.id === "z-image-turbo" || model.id === "flux-2" || model.id === "flux-1-dev"
   const ticketCost = calcTicketCost(model.id, quality, aspectRatio, supportsLora && !!selectedLoraUrl, activeRefImages.length > 0)
   const totalCost = ticketCost * (model.maxImages ? imageCount : 1)
   const needsRefImage = !!model.requiresReferenceImage && activeRefImages.length === 0
@@ -3530,7 +3530,7 @@ function PromptBox({
   }
 
   // Fetch completed LoRA jobs when a LoRA-capable model is selected
-  const isZImageModel = model.id === "z-image-base" || model.id === "z-image-turbo" || model.id === "flux-2"
+  const isZImageModel = model.id === "z-image-base" || model.id === "z-image-turbo" || model.id === "flux-2" || model.id === "flux-1-dev"
   useEffect(() => {
     if (!isZImageModel) { setSelectedLoraUrl(null); setLoraJobs([]); return }
     const customLoras = loadCustomLoras()
