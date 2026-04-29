@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { fal } from '@fal-ai/client'
-import JSZip from 'jszip'
+import archiver from 'archiver'
+import fs from 'fs'
+import path from 'path'
+import { finished } from 'stream/promises'
 
 export const maxDuration = 300
 
@@ -25,10 +28,10 @@ function getExtFromUrl(url: string): string {
 function buildFalInput(modelId: string, config: Record<string, unknown>): Record<string, unknown> {
   if (modelId === 'fal-ai/flux-2-trainer') {
     const input: Record<string, unknown> = {}
-    if (config.steps               !== undefined) input.steps               = Number(config.steps)
-    if (config.learning_rate       !== undefined) input.learning_rate       = Number(config.learning_rate)
-    if (config.default_caption     !== undefined && config.default_caption !== '') input.default_caption     = String(config.default_caption)
-    if (config.output_lora_format  !== undefined) input.output_lora_format  = String(config.output_lora_format)
+    if (config.steps              !== undefined) input.steps              = Number(config.steps)
+    if (config.learning_rate      !== undefined) input.learning_rate      = Number(config.learning_rate)
+    if (config.default_caption    !== undefined && config.default_caption !== '') input.default_caption    = String(config.default_caption)
+    if (config.output_lora_format !== undefined) input.output_lora_format = String(config.output_lora_format)
     return input
   }
   if (modelId === 'fal-ai/flux-lora-fast-training') {
@@ -71,6 +74,8 @@ export async function POST(req: NextRequest) {
   if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   if (job.status !== 'preparing') return NextResponse.json({ ok: true, skipped: true })
 
+  const zipPath = path.join('/tmp', `lora-${jobId}.zip`)
+
   try {
     const config = job.config as Record<string, unknown>
     const defaultCaption = config.default_caption ? String(config.default_caption) : ''
@@ -90,50 +95,65 @@ export async function POST(req: NextRequest) {
         })
 
     if (images.length === 0) {
-      throw new Error('No images found — mark images for training or re-submit with a bucket')
+      throw new Error('No images found')
     }
 
-    await setProgress(jobId, `Found ${images.length} images — downloading...`)
+    await setProgress(jobId, `Found ${images.length} images — building ZIP...`)
 
     fal.config({ credentials: process.env.FAL_KEY! })
-    const zip = new JSZip()
-    let downloaded = 0
 
-    // 20 concurrent, 3s timeout, progress update every 200 images (awaited, sequential — avoids DB lock contention)
+    // Stream ZIP directly to /tmp — each image buffer is written to disk and freed immediately
+    // This avoids holding all images in memory simultaneously (the JSZip approach OOM'd at ~150 images)
+    const output = fs.createWriteStream(zipPath)
+    const archive = archiver('zip', { store: true }) // store = no compression, much faster
+    archive.pipe(output)
+
+    let downloaded = 0
     let skipped = 0
     const BATCH = 20
+
     for (let i = 0; i < images.length; i += BATCH) {
       const batch = images.slice(i, i + BATCH)
-      await Promise.all(batch.map(async (img) => {
+
+      // Download batch in parallel
+      const results = await Promise.all(batch.map(async (img) => {
         try {
-          const res = await fetch(img.imageUrl, { signal: AbortSignal.timeout(3_000) })
-          if (res.ok) {
-            const buf = await res.arrayBuffer()
-            zip.file(`${img.id}.${getExtFromUrl(img.imageUrl)}`, Buffer.from(buf))
-            const caption = img.adminCaption?.trim() || defaultCaption
-            if (caption) zip.file(`${img.id}.txt`, caption)
-            downloaded++
-          } else { skipped++ }
-        } catch { skipped++ }
+          const res = await fetch(img.imageUrl, { signal: AbortSignal.timeout(5_000) })
+          if (!res.ok) return null
+          const buf = Buffer.from(await res.arrayBuffer())
+          const ext = getExtFromUrl(img.imageUrl)
+          const caption = img.adminCaption?.trim() || defaultCaption
+          return { name: `${img.id}.${ext}`, buf, caption, id: img.id }
+        } catch { return null }
       }))
+
+      // Append each result to archive — archiver writes to disk and frees the buffer
+      for (const r of results) {
+        if (!r) { skipped++; continue }
+        archive.append(r.buf, { name: r.name })
+        if (r.caption) archive.append(Buffer.from(r.caption), { name: `${r.id}.txt` })
+        downloaded++
+      }
+
       const processed = downloaded + skipped
       if (processed % 200 === 0 && processed > 0) {
         await setProgress(jobId, `Downloading: ${downloaded} ok, ${skipped} skipped (${processed}/${images.length})`)
       }
     }
-    await setProgress(jobId, `Download complete: ${downloaded} ok, ${skipped} skipped (${images.length}/${images.length})`)
 
-    await setProgress(jobId, `Building ZIP (${downloaded} images)...`)
-    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' })
+    await setProgress(jobId, `Download complete: ${downloaded} ok, ${skipped} skipped — finalizing ZIP...`)
+    await archive.finalize()
+    await finished(output)
 
+    // Upload zip from disk — read once into memory for upload
+    const zipBuffer = await fs.promises.readFile(zipPath)
     const zipMB = (zipBuffer.length / 1024 / 1024).toFixed(1)
-    await setProgress(jobId, `Uploading ${zipMB}MB to FAL storage...`)
+    await setProgress(jobId, `Uploading ${zipMB}MB ZIP to FAL storage...`)
 
     const zipFile = new File([zipBuffer.buffer as ArrayBuffer], 'training.zip', { type: 'application/zip' })
     const zipUrl = await fal.storage.upload(zipFile)
 
     await setProgress(jobId, 'Submitting to FAL training queue...')
-
     const falInput = buildFalInput(job.modelId, config)
     const webhookUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://prompt-protocol.vercel.app'}/api/webhooks/fal`
     const submission = await fal.queue.submit(job.modelId, {
@@ -146,10 +166,15 @@ export async function POST(req: NextRequest) {
       data: { requestId: submission.request_id, status: 'queued', errorMsg: null },
     })
 
+    // Clean up temp file
+    fs.promises.unlink(zipPath).catch(() => {})
+
     return NextResponse.json({ ok: true, requestId: submission.request_id })
+
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[lora/prepare] job ${jobId} failed:`, msg)
+    fs.promises.unlink(zipPath).catch(() => {})
     await prisma.loraTrainingJob.update({
       where: { id: jobId },
       data: { status: 'failed', errorMsg: msg },
