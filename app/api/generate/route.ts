@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       model = 'gemini-2.5-flash-image',  // Default to Flash Scanner v2.5
       adminMode = false,  // Admin mode - no ticket deduction
       syncMode = false,   // If true: wait for FAL.ai and return imageUrl directly (used by composition canvas)
+      loraUrl,            // Optional LoRA weights URL (z-image-base/lora)
     } = body
 
     // Check if admin mode is requested and user is actually admin
@@ -224,6 +225,27 @@ export async function POST(request: Request) {
           inputParams.guidance_scale = 2.5
           inputParams.num_inference_steps = 28
           console.log(`FLUX 2: ${JSON.stringify(inputParams.image_size)}`)
+
+        } else if (model === 'z-image-base' || model === 'z-image-turbo') {
+          const zSizes: Record<string, { w: number; h: number }> = {
+            '1:1':  { w: 1024, h: 1024 },
+            '16:9': { w: 1280, h: 720  },
+            '9:16': { w: 720,  h: 1280 },
+            '4:3':  { w: 1024, h: 768  },
+            '3:4':  { w: 768,  h: 1024 },
+            '4:5':  { w: 896,  h: 1120 },
+          }
+          const mult = quality === '4k' ? 4 : quality === '2k' ? 2 : 1
+          const dims = zSizes[aspectRatio] || zSizes['1:1']
+          inputParams.image_size = { width: dims.w * mult, height: dims.h * mult }
+          inputParams.enable_safety_checker = false
+          inputParams.acceleration = 'regular'
+          inputParams.output_format = 'png'
+          inputParams.num_images = 1
+          if (loraUrl) {
+            modelEndpoint = model === 'z-image-turbo' ? 'fal-ai/z-image/turbo/lora' : 'fal-ai/z-image/base/lora'
+            inputParams.loras = [{ path: loraUrl, scale: 1.0 }]
+          }
 
         } else if (model === 'nano-banana-pro') {
           // NanoBanana Pro

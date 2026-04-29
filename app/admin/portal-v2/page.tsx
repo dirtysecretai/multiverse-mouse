@@ -57,6 +57,8 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
   { id: "pro-scanner-v3",       apiId: "gemini-3-pro-image",       name: "Pro Scanner v3",      aspectRatios: ["1:1", "2:3", "3:2", "4:5", "3:4", "4:3", "9:16", "16:9"], supportsQuality: true,  maxReferenceImages: 8,  isFal: false },
   { id: "flash-scanner-v2.5",   apiId: "gemini-2.5-flash-image",   name: "Flash Scanner v2.5",  aspectRatios: ["1:1", "4:5", "9:16", "16:9"],                            supportsQuality: false, maxReferenceImages: 4,  isFal: false },
   { id: "gpt-image-2",          apiId: "gpt-image-2",              name: "ChatGPT Images 2.0",  aspectRatios: ["1024x1024", "1024x768", "1024x1536", "1920x1080", "2560x1440", "3840x2160"], supportsQuality: true, qualityOptions: ["low", "medium", "high"], supportsOutputFormat: true, maxReferenceImages: 8, isFal: false, maxImages: 4 },
+  { id: "z-image-base",         apiId: "z-image-base",             name: "Z-Image Base",        aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "4:5"], supportsQuality: true, qualityOptions: ["1k", "2k", "4k"], maxReferenceImages: 0, isFal: true, maxImages: 4 },
+  { id: "z-image-turbo",        apiId: "z-image-turbo",            name: "Z-Image Turbo",       aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "4:5"], supportsQuality: true, qualityOptions: ["1k", "2k", "4k"], maxReferenceImages: 0, isFal: true, maxImages: 4 },
 ]
 
 // --- HELPERS ---
@@ -66,6 +68,8 @@ function calcTicketCost(modelId: string, quality: Quality, aspectRatio?: AspectR
   if (modelId === "seedream-4.5")        return quality === "4k" ? 4 : 2
   if (modelId === "seedream-5-lite")     return quality === "3k" ? 4 : 2
   if (modelId === "flux-2")             return 1
+  if (modelId === "z-image-base")        return quality === "4k" ? 15 : quality === "2k" ? 4 : 1
+  if (modelId === "z-image-turbo")       return quality === "4k" ? 8  : quality === "2k" ? 2 : 1
   if (modelId === "kling-v3-image")     return 2
   if (modelId === "kling-o3-image")     return quality === "4k" ? 4 : 2
   if (modelId === "wan-2.7-pro")        return 4
@@ -417,6 +421,8 @@ const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
   "seedance-2.0":       "$$$",
   "kling-v3":           "$$$",
   "happy-horse":        "$$",
+  "z-image-base":       "$$",
+  "z-image-turbo":      "$",
 }
 function CostBadge({ tier }: { tier: "$" | "$$" | "$$$" }) {
   const color = tier === "$"   ? "text-green-400"
@@ -2891,6 +2897,10 @@ function PromptBox({
   const [quality, setQuality] = useState<Quality>("2k")
   const [outputFormat, setOutputFormat] = useState<"png" | "jpeg" | "webp">("png")
   const [imageCount, setImageCount] = useState<number>(1)
+  const [loraJobs, setLoraJobs] = useState<Array<{ id: number; name: string; loraUrl: string }>>([])
+  const [selectedLoraUrl, setSelectedLoraUrl] = useState<string | null>(null)
+  const [loraPickerOpen, setLoraPickerOpen] = useState(false)
+  const loraPickerRef = useRef<HTMLDivElement>(null)
   // Restore saved prompt state after mount to avoid SSR/client hydration mismatch
   useEffect(() => {
     try {
@@ -3443,7 +3453,7 @@ function PromptBox({
             const res = await fetch("/api/generate", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages }),
+              body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined }),
             })
             const data = await res.json()
             if (!res.ok) { onUpdatePending(sid, { status: "failed", error: data.error || "Generation failed" }); return }
@@ -3459,7 +3469,7 @@ function PromptBox({
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages }),
+          body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined }),
         })
         const data = await res.json()
         if (!res.ok) {
@@ -3492,6 +3502,28 @@ function PromptBox({
       setImageCount(1)
     }
   }, [model])
+
+  // Fetch completed LoRA jobs when a z-image model is selected
+  const isZImageModel = model.id === "z-image-base" || model.id === "z-image-turbo"
+  useEffect(() => {
+    if (!isZImageModel) { setSelectedLoraUrl(null); setLoraJobs([]); return }
+    fetch("/api/admin/lora-training/jobs", { headers: authHeaders() })
+      .then(r => r.json())
+      .then((data: { jobs: Array<{ id: number; name: string; loraUrl: string | null; status: string; modelId: string }> }) => {
+        const completed = (data.jobs ?? []).filter(j => j.status === "completed" && j.loraUrl)
+        setLoraJobs(completed.map(j => ({ id: j.id, name: j.name, loraUrl: j.loraUrl! })))
+      })
+      .catch(() => {})
+  }, [model.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close lora picker on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (loraPickerRef.current && !loraPickerRef.current.contains(e.target as Node)) setLoraPickerOpen(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [])
 
   const [showModelPicker, setShowModelPicker] = useState(false)
   const modelPickerRef = useRef<HTMLDivElement>(null)
@@ -3608,6 +3640,45 @@ function PromptBox({
                       {q}
                     </button>
                   ))}
+                </div>
+              </>
+            )}
+
+            {/* LoRA picker — z-image-base / z-image-turbo only */}
+            {isZImageModel && loraJobs.length > 0 && (
+              <>
+                <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
+                <div ref={loraPickerRef} className="relative shrink-0">
+                  <button
+                    onClick={() => setLoraPickerOpen(v => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-all ${
+                      selectedLoraUrl
+                        ? "bg-violet-500/15 border-violet-500/40 text-violet-300"
+                        : "border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-white"
+                    }`}
+                  >
+                    <Sparkles size={11} />
+                    {selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name ?? "LoRA") : "LoRA"}
+                  </button>
+                  {loraPickerOpen && (
+                    <div className="absolute bottom-full mb-1.5 left-0 z-50 min-w-[180px] rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1">
+                      <button
+                        onClick={() => { setSelectedLoraUrl(null); setLoraPickerOpen(false) }}
+                        className={`w-full text-left px-3 py-2 text-[11px] transition-colors ${!selectedLoraUrl ? "text-violet-300 bg-violet-500/10" : "text-slate-400 hover:text-white hover:bg-white/[0.06]"}`}
+                      >
+                        No LoRA
+                      </button>
+                      {loraJobs.map(j => (
+                        <button
+                          key={j.id}
+                          onClick={() => { setSelectedLoraUrl(j.loraUrl); setLoraPickerOpen(false) }}
+                          className={`w-full text-left px-3 py-2 text-[11px] transition-colors truncate ${selectedLoraUrl === j.loraUrl ? "text-violet-300 bg-violet-500/10" : "text-slate-400 hover:text-white hover:bg-white/[0.06]"}`}
+                        >
+                          {j.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </>
             )}

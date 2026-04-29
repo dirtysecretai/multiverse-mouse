@@ -122,6 +122,34 @@ export const AI_MODELS: AIModel[] = [
     provider: 'gemini'
   },
 
+  // Z-IMAGE BASE - FAL.ai text-to-image with optional LoRA support
+  {
+    id: 'z-image-base',
+    name: 'fal-ai/z-image/base',
+    displayName: 'Z-Image Base',
+    description: 'High quality text-to-image with optional LoRA. 1/4/15 tickets (1k/2k/4k)',
+    ticketCost: 1,
+    category: 'standard',
+    rateLimit: { rpm: 0, rpd: 0 },
+    quality: 'high',
+    isAvailable: true,
+    provider: 'fal'
+  },
+
+  // Z-IMAGE TURBO - FAL.ai fast text-to-image with optional LoRA support
+  {
+    id: 'z-image-turbo',
+    name: 'fal-ai/z-image/turbo',
+    displayName: 'Z-Image Turbo',
+    description: 'Lightning fast text-to-image with optional LoRA. 1/2/8 tickets (1k/2k/4k)',
+    ticketCost: 1,
+    category: 'standard',
+    rateLimit: { rpm: 0, rpd: 0 },
+    quality: 'fast',
+    isAvailable: true,
+    provider: 'fal'
+  },
+
   // CHATGPT IMAGES 2.0 - fal-ai/gpt-image-2
   {
     id: 'gpt-image-2',
