@@ -2897,9 +2897,12 @@ function PromptBox({
   const [quality, setQuality] = useState<Quality>("2k")
   const [outputFormat, setOutputFormat] = useState<"png" | "jpeg" | "webp">("png")
   const [imageCount, setImageCount] = useState<number>(1)
-  const [loraJobs, setLoraJobs] = useState<Array<{ id: number; name: string; loraUrl: string }>>([])
+  const [loraJobs, setLoraJobs] = useState<Array<{ id: number; name: string; loraUrl: string; custom?: boolean }>>([])
   const [selectedLoraUrl, setSelectedLoraUrl] = useState<string | null>(null)
   const [loraPickerOpen, setLoraPickerOpen] = useState(false)
+  const [showAddLora, setShowAddLora] = useState(false)
+  const [newLoraName, setNewLoraName] = useState("")
+  const [newLoraUrl, setNewLoraUrl] = useState("")
   const loraPickerRef = useRef<HTMLDivElement>(null)
   // Restore saved prompt state after mount to avoid SSR/client hydration mismatch
   useEffect(() => {
@@ -3503,18 +3506,34 @@ function PromptBox({
     }
   }, [model])
 
+  const CUSTOM_LORAS_KEY = "portal-v2-custom-loras"
+
+  function loadCustomLoras(): Array<{ id: number; name: string; loraUrl: string; custom: true }> {
+    try {
+      return JSON.parse(localStorage.getItem(CUSTOM_LORAS_KEY) ?? "[]")
+    } catch { return [] }
+  }
+
+  function saveCustomLoras(loras: Array<{ id: number; name: string; loraUrl: string; custom: true }>) {
+    localStorage.setItem(CUSTOM_LORAS_KEY, JSON.stringify(loras))
+  }
+
   // Fetch completed LoRA jobs when a z-image model is selected
   const isZImageModel = model.id === "z-image-base" || model.id === "z-image-turbo"
   useEffect(() => {
     if (!isZImageModel) { setSelectedLoraUrl(null); setLoraJobs([]); return }
+    const customLoras = loadCustomLoras()
     const pass = typeof sessionStorage !== "undefined" ? (sessionStorage.getItem("admin-password") ?? "") : ""
     fetch("/api/admin/lora-training/jobs", { headers: pass ? { "x-admin-password": pass } : {} })
       .then(r => r.json())
       .then((data: { jobs: Array<{ id: number; name: string; loraUrl: string | null; status: string; modelId: string }> }) => {
         const completed = (data.jobs ?? []).filter(j => j.status === "completed" && j.loraUrl)
-        setLoraJobs(completed.map(j => ({ id: j.id, name: j.name, loraUrl: j.loraUrl! })))
+        setLoraJobs([
+          ...completed.map(j => ({ id: j.id, name: j.name, loraUrl: j.loraUrl! })),
+          ...customLoras,
+        ])
       })
-      .catch(() => {})
+      .catch(() => { setLoraJobs(customLoras) })
   }, [model.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close lora picker on outside click
@@ -3651,20 +3670,18 @@ function PromptBox({
                 <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
                 <div ref={loraPickerRef} className="relative shrink-0">
                   <button
-                    onClick={() => loraJobs.length > 0 && setLoraPickerOpen(v => !v)}
+                    onClick={() => { setLoraPickerOpen(v => !v); setShowAddLora(false) }}
                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-all ${
                       selectedLoraUrl
                         ? "bg-violet-500/15 border-violet-500/40 text-violet-300"
-                        : loraJobs.length === 0
-                        ? "border-white/[0.06] bg-white/[0.02] text-slate-600 cursor-default"
                         : "border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-white"
                     }`}
                   >
                     <Sparkles size={11} />
-                    {selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name ?? "LoRA") : loraJobs.length === 0 ? "No LoRAs" : "LoRA"}
+                    {selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name ?? "LoRA") : "LoRA"}
                   </button>
                   {loraPickerOpen && (
-                    <div className="absolute bottom-full mb-1.5 left-0 z-50 min-w-[180px] rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1">
+                    <div className="absolute bottom-full mb-1.5 left-0 z-50 min-w-[220px] rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1">
                       <button
                         onClick={() => { setSelectedLoraUrl(null); setLoraPickerOpen(false) }}
                         className={`w-full text-left px-3 py-2 text-[11px] transition-colors ${!selectedLoraUrl ? "text-violet-300 bg-violet-500/10" : "text-slate-400 hover:text-white hover:bg-white/[0.06]"}`}
@@ -3672,14 +3689,79 @@ function PromptBox({
                         No LoRA
                       </button>
                       {loraJobs.map(j => (
-                        <button
-                          key={j.id}
-                          onClick={() => { setSelectedLoraUrl(j.loraUrl); setLoraPickerOpen(false) }}
-                          className={`w-full text-left px-3 py-2 text-[11px] transition-colors truncate ${selectedLoraUrl === j.loraUrl ? "text-violet-300 bg-violet-500/10" : "text-slate-400 hover:text-white hover:bg-white/[0.06]"}`}
-                        >
-                          {j.name}
-                        </button>
+                        <div key={j.id} className="flex items-center group">
+                          <button
+                            onClick={() => { setSelectedLoraUrl(j.loraUrl); setLoraPickerOpen(false) }}
+                            className={`flex-1 text-left px-3 py-2 text-[11px] transition-colors truncate ${selectedLoraUrl === j.loraUrl ? "text-violet-300 bg-violet-500/10" : "text-slate-400 hover:text-white hover:bg-white/[0.06]"}`}
+                          >
+                            {j.name}{j.custom && <span className="ml-1 text-slate-600">·custom</span>}
+                          </button>
+                          {j.custom && (
+                            <button
+                              onClick={() => {
+                                const updated = loadCustomLoras().filter(c => c.loraUrl !== j.loraUrl)
+                                saveCustomLoras(updated)
+                                if (selectedLoraUrl === j.loraUrl) setSelectedLoraUrl(null)
+                                setLoraJobs(prev => prev.filter(p => p.loraUrl !== j.loraUrl))
+                              }}
+                              className="px-2 py-2 text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                              <X size={10} />
+                            </button>
+                          )}
+                        </div>
                       ))}
+                      <div className="border-t border-white/[0.06] mt-1 pt-1">
+                        {!showAddLora ? (
+                          <button
+                            onClick={() => { setShowAddLora(true); setNewLoraName(""); setNewLoraUrl("") }}
+                            className="w-full text-left px-3 py-2 text-[11px] text-slate-500 hover:text-violet-300 transition-colors"
+                          >
+                            + Add LoRA URL
+                          </button>
+                        ) : (
+                          <div className="px-3 py-2 space-y-1.5">
+                            <input
+                              autoFocus
+                              placeholder="Name"
+                              value={newLoraName}
+                              onChange={e => setNewLoraName(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
+                            />
+                            <input
+                              placeholder="https://... or fal://..."
+                              value={newLoraUrl}
+                              onChange={e => setNewLoraUrl(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
+                            />
+                            <div className="flex gap-1.5 pt-0.5">
+                              <button
+                                onClick={() => {
+                                  const name = newLoraName.trim()
+                                  const url = newLoraUrl.trim()
+                                  if (!name || !url) return
+                                  const existing = loadCustomLoras()
+                                  const entry = { id: Date.now(), name, loraUrl: url, custom: true as const }
+                                  saveCustomLoras([...existing, entry])
+                                  setLoraJobs(prev => [...prev, entry])
+                                  setSelectedLoraUrl(url)
+                                  setShowAddLora(false)
+                                  setLoraPickerOpen(false)
+                                }}
+                                className="flex-1 py-1 rounded bg-violet-500/20 border border-violet-500/30 text-[11px] text-violet-300 hover:bg-violet-500/30 transition-colors"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setShowAddLora(false)}
+                                className="px-2 py-1 rounded bg-white/5 border border-white/10 text-[11px] text-slate-400 hover:text-white transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
