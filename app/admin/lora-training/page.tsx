@@ -473,16 +473,14 @@ export default function LoraTrainingPage() {
 
   // ── Retry prepare for stuck jobs ──────────────────────────────────────────
   async function retryPrepare(jobId: number) {
-    try {
-      await fetch('/api/admin/lora-training/prepare', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ jobId }),
-      })
-      await loadJobs()
-    } catch (e) {
-      console.error('[lora-training] retry prepare error:', e)
-    }
+    // Fire and forget — prepare takes 2-4 min, don't block the UI
+    fetch('/api/admin/lora-training/prepare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ jobId }),
+    }).catch(console.error)
+    // Reload jobs after a short delay so UI shows updated status
+    setTimeout(() => loadJobs(), 1500)
   }
 
   // ── Check single job status ────────────────────────────────────────────────

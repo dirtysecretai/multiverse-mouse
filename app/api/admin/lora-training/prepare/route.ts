@@ -68,14 +68,21 @@ export async function POST(req: NextRequest) {
     const defaultCaption = config.default_caption ? String(config.default_caption) : ''
     const imageIds = Array.isArray(config._imageIds) ? (config._imageIds as number[]) : []
 
-    if (imageIds.length === 0) {
-      throw new Error('No image IDs stored in job config — cannot prepare zip')
-    }
+    // Fallback for jobs created before _imageIds was stored: use all marked-for-training images
+    const images = imageIds.length > 0
+      ? await prisma.generatedImage.findMany({
+          where: { id: { in: imageIds } },
+          select: { id: true, imageUrl: true, adminCaption: true },
+        })
+      : await prisma.generatedImage.findMany({
+          where: { isDeleted: false, markedForTraining: true },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, imageUrl: true, adminCaption: true },
+        })
 
-    const images = await prisma.generatedImage.findMany({
-      where: { id: { in: imageIds } },
-      select: { id: true, imageUrl: true, adminCaption: true },
-    })
+    if (images.length === 0) {
+      throw new Error('No images found — mark images for training or re-submit with a bucket')
+    }
 
     fal.config({ credentials: process.env.FAL_KEY! })
     const zip = new JSZip()
