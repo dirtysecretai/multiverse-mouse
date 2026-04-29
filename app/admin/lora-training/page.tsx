@@ -471,6 +471,20 @@ export default function LoraTrainingPage() {
     }
   }
 
+  // ── Retry prepare for stuck jobs ──────────────────────────────────────────
+  async function retryPrepare(jobId: number) {
+    try {
+      await fetch('/api/admin/lora-training/prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ jobId }),
+      })
+      await loadJobs()
+    } catch (e) {
+      console.error('[lora-training] retry prepare error:', e)
+    }
+  }
+
   // ── Check single job status ────────────────────────────────────────────────
   async function checkJobStatus(jobId: number) {
     try {
@@ -818,6 +832,7 @@ export default function LoraTrainingPage() {
                 const model = TRAINING_MODELS.find(m => m.id === job.modelId)
                 const ac = model ? (accentClasses[model.color] ?? accentClasses.cyan) : accentClasses.cyan
                 const isActive = job.status === 'queued' || job.status === 'in_progress'
+                const isPreparing = job.status === 'preparing'
                 return (
                   <div key={job.id} className="px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
                     <div className="flex items-start gap-4 flex-wrap">
@@ -852,6 +867,16 @@ export default function LoraTrainingPage() {
                       {/* Right: status + actions */}
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <StatusBadge status={job.status} />
+
+                        {isPreparing && (
+                          <button
+                            onClick={() => retryPrepare(job.id)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-[11px] text-amber-400 hover:text-amber-300 transition-all"
+                          >
+                            <Play size={11} />
+                            Retry
+                          </button>
+                        )}
 
                         {isActive && (
                           <button
