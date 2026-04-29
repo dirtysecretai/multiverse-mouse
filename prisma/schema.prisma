@@ -902,3 +902,25 @@ model GenerationQueue {
   @@index([priority])
   @@index([falRequestId])
 }
+
+// ============================================
+// LORA TRAINING JOBS
+// ============================================
+
+model LoraTrainingJob {
+  id          Int      @id @default(autoincrement())
+  requestId   String?  @unique
+  name        String
+  modelId     String
+  status      String   @default("queued") // queued, in_progress, completed, failed
+  config      Json
+  imageCount  Int      @default(0)
+  loraUrl     String?
+  configUrl   String?
+  errorMsg    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
