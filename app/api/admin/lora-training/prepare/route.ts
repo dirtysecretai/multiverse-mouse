@@ -99,29 +99,24 @@ export async function POST(req: NextRequest) {
     const zip = new JSZip()
     let downloaded = 0
 
-    // Small batches + per-fetch timeout to avoid CDN rate-limiting
-    const BATCH = 8
-    for (let i = 0; i < images.length; i += BATCH) {
-      const batch = images.slice(i, i + BATCH)
-      await Promise.all(batch.map(async (img) => {
-        try {
-          const res = await fetch(img.imageUrl, {
-            signal: AbortSignal.timeout(20_000), // 20s per image max
-          })
-          if (!res.ok) return
+    // Sequential downloads — avoids CDN rate-limiting when multiple jobs run concurrently
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i]
+      try {
+        const res = await fetch(img.imageUrl, { signal: AbortSignal.timeout(20_000) })
+        if (res.ok) {
           const buf = await res.arrayBuffer()
           zip.file(`${img.id}.${getExtFromUrl(img.imageUrl)}`, Buffer.from(buf))
           const caption = img.adminCaption?.trim() || defaultCaption
           if (caption) zip.file(`${img.id}.txt`, caption)
           downloaded++
-        } catch { /* skip timed-out or failed image */ }
-      }))
-      // Update progress every 5 batches to reduce DB round-trips
-      if ((i / BATCH) % 5 === 0) {
-        await setProgress(jobId, `Downloading images: ${Math.min(i + BATCH, images.length)}/${images.length}`)
+        }
+      } catch { /* skip timed-out or failed image */ }
+
+      // Update progress every 40 images to reduce DB round-trips
+      if (i > 0 && i % 40 === 0) {
+        await setProgress(jobId, `Downloading images: ${i}/${images.length}`)
       }
-      // Brief pause between batches to avoid CDN rate-limiting
-      await new Promise(r => setTimeout(r, 150))
     }
 
     await setProgress(jobId, `Building ZIP archive (${downloaded} images)...`)
