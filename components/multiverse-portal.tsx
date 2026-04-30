@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { AlertTriangle, ExternalLink, X, Wrench, Sparkles, Eye, Settings2, Zap, Ticket, Upload, Download, ChevronDown, Wand2, Lock } from "lucide-react"
+import { AlertTriangle, ExternalLink, X, Wrench, Sparkles, Eye, Settings2, Zap, Ticket, Upload, Download, ChevronDown, Wand2, Lock, Loader2, ChevronUp } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ModelSelector } from "@/components/ModelSelector"
@@ -10,6 +10,9 @@ import { MiniEchoChamber } from "@/components/MiniEchoChamber"
 import { NotificationBanner } from "@/components/NotificationBanner"
 import { SavedModelPicker } from "@/components/SavedModelPicker"
 import { getTicketCost } from "@/config/ai-models.config"
+
+// Models that support user LoRAs
+const LORA_MODELS = new Set(['flux-2', 'flux-1-dev', 'z-image-base', 'z-image-turbo'])
 
 // --- ICONS ---
 const InstagramIcon = () => (
@@ -129,6 +132,16 @@ export default function MultiversePortalLegacy() {
   const [greyedOutImages, setGreyedOutImages] = useState<string[]>([])
   const [isLoadingModel, setIsLoadingModel] = useState(false)
   const [selectedModel, setSelectedModel] = useState('gemini-3-pro-image')
+
+  // User LoRA state
+  interface UserLoraEntry { id: number; name: string; loraUrl: string; modelIds: string }
+  const [userLoras, setUserLoras] = useState<UserLoraEntry[]>([])
+  const [selectedLoraId, setSelectedLoraId] = useState<number | null>(null)
+  const [loraScale, setLoraScale] = useState(1.0)
+  const [loraUploading, setLoraUploading] = useState(false)
+  const [loraUploadError, setLoraUploadError] = useState<string | null>(null)
+  const [showLoraPanel, setShowLoraPanel] = useState(false)
+  const [loraAddName, setLoraAddName] = useState('')
 
   // AI Prompt Generation (Dev Tier Only)
   const [names, setNames] = useState<string[]>(['', '', ''])
@@ -551,6 +564,71 @@ export default function MultiversePortalLegacy() {
     restoreSession()
   }, [user])
 
+  // Load user LoRAs when authenticated
+  useEffect(() => {
+    if (!user) return
+    fetch('/api/user/loras')
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d.loras)) setUserLoras(d.loras) })
+      .catch(() => {})
+  }, [user])
+
+  // Clear selected LoRA when switching to a model that doesn't support it
+  useEffect(() => {
+    if (!LORA_MODELS.has(selectedModel)) {
+      setSelectedLoraId(null)
+      setShowLoraPanel(false)
+    }
+  }, [selectedModel]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Upload a LoRA .safetensors file directly to R2 and save to DB
+  const handleLoraUpload = async (file: File) => {
+    setLoraUploading(true)
+    setLoraUploadError(null)
+    try {
+      const name = loraAddName.trim() || file.name.replace(/\.[^.]+$/, '')
+      const presignRes = await fetch('/api/user/upload-lora', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, contentType: 'application/octet-stream' }),
+      })
+      if (!presignRes.ok) throw new Error('Failed to get upload URL')
+      const { uploadUrl, publicUrl } = await presignRes.json()
+
+      const putRes = await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': 'application/octet-stream' } })
+      if (!putRes.ok) throw new Error('Upload failed')
+
+      const saveRes = await fetch('/api/user/loras', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, loraUrl: publicUrl, modelIds: 'flux-2,flux-1-dev,z-image-base,z-image-turbo' }),
+      })
+      if (!saveRes.ok) {
+        const err = await saveRes.json()
+        throw new Error(err.error || 'Failed to save LoRA')
+      }
+      const { lora } = await saveRes.json()
+      setUserLoras(prev => [lora, ...prev])
+      setSelectedLoraId(lora.id)
+      setLoraAddName('')
+      setShowLoraPanel(false)
+    } catch (err: unknown) {
+      setLoraUploadError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setLoraUploading(false)
+    }
+  }
+
+  const handleLoraDelete = async (id: number) => {
+    await fetch('/api/user/loras', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    setUserLoras(prev => prev.filter(l => l.id !== id))
+    if (selectedLoraId === id) setSelectedLoraId(null)
+  }
+
   // AI Prompt Generation (Dev Tier Only)
   const handleGeneratePrompt = async () => {
     // Check cooldown for restricted models
@@ -719,12 +797,18 @@ export default function MultiversePortalLegacy() {
 
     try {
       // Prepare request body
+      const selectedLora = selectedLoraId ? userLoras.find(l => l.id === selectedLoraId) : null
       const requestBody: any = {
         prompt: coordinates,
         quality,
         aspectRatio,
         referenceImages,
         model: selectedModel,
+        ...(selectedLora ? {
+          loraUrl: selectedLora.loraUrl,
+          loraName: selectedLora.name,
+          loraScale,
+        } : {}),
       }
 
       // Add names and enhancements if dev tier and provided
@@ -1535,6 +1619,117 @@ export default function MultiversePortalLegacy() {
                   mainScanner_flashScannerV25={adminState.mainScanner_flashScannerV25}
                 />
               </div>
+
+              {/* LoRA Picker — only for LoRA-supporting models */}
+              {LORA_MODELS.has(selectedModel) && (
+                <div className="mb-4 rounded-xl border border-violet-500/20 bg-violet-500/5 overflow-hidden">
+                  {/* Header row */}
+                  <button
+                    type="button"
+                    onClick={() => setShowLoraPanel(v => !v)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={13} className="text-violet-400" />
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">LoRA</span>
+                      {selectedLoraId && (
+                        <span className="text-[11px] text-violet-300 font-mono truncate max-w-[140px]">
+                          {userLoras.find(l => l.id === selectedLoraId)?.name ?? ''}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {selectedLoraId && (
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); setSelectedLoraId(null) }}
+                          className="text-[10px] text-slate-500 hover:text-red-400 transition-colors"
+                        >remove</button>
+                      )}
+                      {showLoraPanel ? <ChevronUp size={13} className="text-slate-500" /> : <ChevronDown size={13} className="text-slate-500" />}
+                    </div>
+                  </button>
+
+                  {showLoraPanel && (
+                    <div className="px-3 pb-3 space-y-2 border-t border-violet-500/10">
+                      {/* Saved LoRAs list */}
+                      {userLoras.filter(l => l.modelIds.split(',').includes(selectedModel)).length > 0 ? (
+                        <div className="space-y-1 pt-2">
+                          {userLoras
+                            .filter(l => l.modelIds.split(',').includes(selectedModel))
+                            .map(lora => (
+                              <div
+                                key={lora.id}
+                                className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                                  selectedLoraId === lora.id
+                                    ? 'bg-violet-500/20 border border-violet-500/40'
+                                    : 'bg-slate-800/60 border border-transparent hover:border-violet-500/20'
+                                }`}
+                                onClick={() => setSelectedLoraId(selectedLoraId === lora.id ? null : lora.id)}
+                              >
+                                <span className="text-[12px] text-slate-300 font-mono truncate flex-1">{lora.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={e => { e.stopPropagation(); handleLoraDelete(lora.id) }}
+                                  className="text-slate-600 hover:text-red-400 transition-colors ml-2 shrink-0"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-600 pt-2">No LoRAs saved yet. Upload one below.</p>
+                      )}
+
+                      {/* Scale slider — shown when a LoRA is selected */}
+                      {selectedLoraId && (
+                        <div className="grid grid-cols-[3.5rem_1fr_2rem] items-center gap-3 pt-1">
+                          <span className="text-[10px] font-mono text-slate-500">Scale</span>
+                          <input
+                            type="range" min="0" max="2" step="0.05" value={loraScale}
+                            onChange={e => setLoraScale(parseFloat(e.target.value))}
+                            className="w-full accent-violet-400 cursor-pointer h-0.5"
+                          />
+                          <span className="text-[11px] font-mono text-violet-300 tabular-nums text-right">{loraScale.toFixed(2)}</span>
+                        </div>
+                      )}
+
+                      {/* Upload new LoRA */}
+                      <div className="pt-1 border-t border-violet-500/10">
+                        <p className="text-[10px] text-slate-500 mb-1.5">Upload a .safetensors LoRA</p>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="LoRA name"
+                            value={loraAddName}
+                            onChange={e => setLoraAddName(e.target.value)}
+                            className="flex-1 px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/40"
+                          />
+                          <label className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium cursor-pointer transition-colors ${loraUploading ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-violet-600 hover:bg-violet-500 text-white'}`}>
+                            {loraUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                            {loraUploading ? 'Uploading…' : 'Upload'}
+                            <input
+                              type="file"
+                              accept=".safetensors,.bin,.pt,.ckpt"
+                              className="hidden"
+                              disabled={loraUploading}
+                              onChange={e => {
+                                const file = e.target.files?.[0]
+                                if (file) handleLoraUpload(file)
+                                e.target.value = ''
+                              }}
+                            />
+                          </label>
+                        </div>
+                        {loraUploadError && (
+                          <p className="text-[11px] text-red-400 mt-1">{loraUploadError}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Scan Parameters */}
               <div className={`grid gap-3 mb-4 ${(selectedModel === 'nano-banana' || selectedModel === 'gemini-2.5-flash-image' || selectedModel === 'flux-2') ? 'grid-cols-1' : 'grid-cols-2'}`}>
