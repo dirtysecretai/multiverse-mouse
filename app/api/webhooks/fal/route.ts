@@ -132,7 +132,8 @@ export async function POST(request: Request) {
 
       // Extract images from FAL.ai payload
       // FAL.ai wraps the model output in payload.images[] for image models
-      const images: { url: string }[] = payload?.images || []
+      // Clarity upscaler returns payload.image (singular); all other models return payload.images[]
+      const images: { url: string }[] = payload?.images || (payload?.image?.url ? [payload.image] : [])
 
       if (images.length === 0) {
         console.error('Webhook payload has no images:', JSON.stringify(payload).substring(0, 300))

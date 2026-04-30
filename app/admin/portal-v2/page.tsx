@@ -45,6 +45,7 @@ interface ImageModelConfig {
   supportsOutputFormat?: boolean   // shows png/jpeg/webp picker
   isFal: boolean   // true = async FAL queue; false = sync Gemini
   maxImages?: number               // if > 1, shows image count picker
+  isUpscaler?: boolean             // special upscaler UI — takes image URL + params instead of prompt
 }
 
 const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
@@ -62,6 +63,7 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
   { id: "gpt-image-2",          apiId: "gpt-image-2",              name: "ChatGPT Images 2.0",  aspectRatios: ["1024x1024", "1024x768", "1024x1536", "1920x1080", "2560x1440", "3840x2160"], supportsQuality: true, qualityOptions: ["low", "medium", "high"], supportsOutputFormat: true, maxReferenceImages: 8, isFal: false, maxImages: 4 },
   { id: "z-image-base",         apiId: "z-image-base",             name: "Z-Image Base",        aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "4:5"], supportsQuality: true, qualityOptions: ["1k", "2k", "4k"], maxReferenceImages: 0, isFal: true, maxImages: 4 },
   { id: "z-image-turbo",        apiId: "z-image-turbo",            name: "Z-Image Turbo",       aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "4:5"], supportsQuality: true, qualityOptions: ["1k", "2k", "4k"], maxReferenceImages: 1, isFal: true, maxImages: 4 },
+  { id: "clarity-upscaler",     apiId: "clarity-upscaler",         name: "Clarity Upscaler",    aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true, isUpscaler: true },
 ]
 
 // --- HELPERS ---
@@ -81,6 +83,7 @@ function calcTicketCost(modelId: string, quality: Quality, aspectRatio?: AspectR
   }
   if (modelId === "z-image-base")        return quality === "4k" ? 15 : quality === "2k" ? 4 : 1
   if (modelId === "z-image-turbo")       return loraActive ? (quality === "4k" ? 17 : quality === "2k" ? 5 : 1) : (quality === "4k" ? 8 : quality === "2k" ? 2 : 1)
+  if (modelId === "clarity-upscaler")    return 7 // base; upscaler uses upscaleFactor-dependent cost computed separately
   if (modelId === "kling-v3-image")     return 2
   if (modelId === "kling-o3-image")     return quality === "4k" ? 4 : 2
   if (modelId === "wan-2.7-pro")        return 4
@@ -2931,6 +2934,13 @@ function PromptBox({
   const [loraUploading, setLoraUploading] = useState(false)
   const loraFileInputRef = useRef<HTMLInputElement>(null)
   const loraPickerRef = useRef<HTMLDivElement>(null)
+  // Upscaler state
+  const [upscaleSourceUrl, setUpscaleSourceUrl] = useState("")
+  const [upscaleFactor, setUpscaleFactor] = useState<2 | 4>(2)
+  const [upscaleCreativity, setUpscaleCreativity] = useState(0.35)
+  const [upscaleResemblance, setUpscaleResemblance] = useState(0.6)
+  const [upscaleGuidance, setUpscaleGuidance] = useState(4)
+  const [upscaleSteps, setUpscaleSteps] = useState(18)
   // Restore saved prompt state after mount to avoid SSR/client hydration mismatch
   useEffect(() => {
     try {
@@ -3004,12 +3014,17 @@ function PromptBox({
   }, [configOverride?.version])
 
   const supportsLora = model.id === "z-image-base" || model.id === "z-image-turbo" || model.id === "flux-2" || model.id === "flux-1-dev"
-  const ticketCost = calcTicketCost(model.id, quality, aspectRatio, supportsLora && !!selectedLoraUrl, activeRefImages.length > 0)
+  const upscaleTicketCost = upscaleFactor === 4 ? 26 : 7
+  const ticketCost = model.isUpscaler
+    ? upscaleTicketCost
+    : calcTicketCost(model.id, quality, aspectRatio, supportsLora && !!selectedLoraUrl, activeRefImages.length > 0)
   const totalCost = ticketCost * (model.maxImages ? imageCount : 1)
   const needsRefImage = !!model.requiresReferenceImage && activeRefImages.length === 0
   const slotsNeeded = (model.isFal || model.id === "nano-banana-pro-2" || model.id === "gpt-image-2") ? imageCount : 1
   const queueFull = activeJobCount + slotsNeeded > maxConcurrent
-  const canGenerate = !isGenerationMaintenance && !!userId && prompt.trim().length > 0 && !generating && !needsRefImage && !queueFull
+  const canGenerate = model.isUpscaler
+    ? !isGenerationMaintenance && !!userId && upscaleSourceUrl.trim().startsWith("http") && !generating && !queueFull
+    : !isGenerationMaintenance && !!userId && prompt.trim().length > 0 && !generating && !needsRefImage && !queueFull
 
   const handleGenerate = async () => {
     if (!canGenerate) return
@@ -3022,6 +3037,40 @@ function PromptBox({
       ? `${triggerWord} ${rawPrompt}`
       : rawPrompt
     const count = model.maxImages ? imageCount : 1
+
+    // --- Clarity Upscaler: completely different flow ---
+    if (model.isUpscaler) {
+      const upscalePrompt = prompt.trim() || "masterpiece, best quality, highres"
+      const slotId = `slot-${Date.now()}-0`
+      onAddPending({ slotId, status: "loading", prompt: `${upscaleFactor}x upscale`, modelId: model.apiId, aspectRatio: "1:1", quality: `${upscaleFactor}x` as Quality })
+      try {
+        const res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: model.apiId,
+            upscaleImageUrl: upscaleSourceUrl,
+            prompt: upscalePrompt,
+            upscaleFactor,
+            upscaleCreativity,
+            upscaleResemblance,
+            upscaleGuidance,
+            upscaleSteps,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) { onUpdatePending(slotId, { status: "failed", error: data.error || "Generation failed" }); return }
+        if (data.newBalance !== undefined) onBalanceChange(data.newBalance)
+        onUpdatePending(slotId, { queueId: data.queueId })
+        onStartPolling(slotId, data.queueId, upscalePrompt)
+      } catch (err: any) {
+        onUpdatePending(slotId, { status: "failed", error: err.message || "Network error" })
+      } finally {
+        setGenerating(false)
+      }
+      return
+    }
+
     // Create N slots upfront — one per image
     // Permanent (Vercel Blob) URLs for storing in DB — data URIs are ephemeral and excluded
     const permanentRefUrls = activeRefImages.map(r => r.url).filter(u => u.startsWith("https://"))
@@ -3639,6 +3688,32 @@ function PromptBox({
           </div>
         )}
 
+        {/* Upscaler: source image URL input */}
+        {model.isUpscaler && (
+          <div className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-md shadow-xl px-4 py-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest shrink-0">Source Image</span>
+              <input
+                type="text"
+                value={upscaleSourceUrl}
+                onChange={e => setUpscaleSourceUrl(e.target.value)}
+                placeholder="Paste image URL to upscale..."
+                className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
+              />
+              {upscaleSourceUrl.startsWith("http") && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={upscaleSourceUrl}
+                  alt="source preview"
+                  className="w-10 h-10 rounded-lg object-cover border border-white/10 shrink-0"
+                  onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
+                  onLoad={e => { (e.target as HTMLImageElement).style.display = "block" }}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Prompt card */}
         <div className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-md shadow-2xl">
           {/* Textarea */}
@@ -3706,6 +3781,50 @@ function PromptBox({
             </div>
           )}
 
+          {/* Upscaler config sliders */}
+          {model.isUpscaler && (
+            <div className="flex items-center gap-4 px-4 py-2 border-t border-cyan-500/10 flex-wrap">
+              <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider shrink-0">Enhance</span>
+
+              <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-16">Creativity</span>
+                <input type="range" min="0" max="1" step="0.05" value={upscaleCreativity}
+                  onChange={e => setUpscaleCreativity(parseFloat(e.target.value))}
+                  className="flex-1 accent-cyan-400 cursor-pointer h-0.5" />
+                <span className="text-[11px] font-mono text-cyan-300 tabular-nums w-8 text-right shrink-0">{upscaleCreativity.toFixed(2)}</span>
+              </div>
+
+              <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-16">Resemblance</span>
+                <input type="range" min="0" max="1" step="0.05" value={upscaleResemblance}
+                  onChange={e => setUpscaleResemblance(parseFloat(e.target.value))}
+                  className="flex-1 accent-cyan-400 cursor-pointer h-0.5" />
+                <span className="text-[11px] font-mono text-cyan-300 tabular-nums w-8 text-right shrink-0">{upscaleResemblance.toFixed(2)}</span>
+              </div>
+
+              <div className="flex items-center gap-2 flex-1 min-w-[120px]">
+                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-16">CFG</span>
+                <input type="range" min="1" max="10" step="0.5" value={upscaleGuidance}
+                  onChange={e => setUpscaleGuidance(parseFloat(e.target.value))}
+                  className="flex-1 accent-cyan-400 cursor-pointer h-0.5" />
+                <span className="text-[11px] font-mono text-cyan-300 tabular-nums w-6 text-right shrink-0">{upscaleGuidance.toFixed(1)}</span>
+              </div>
+
+              <div className="flex items-center gap-2 flex-1 min-w-[120px]">
+                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-16">Steps</span>
+                <input type="range" min="10" max="30" step="1" value={upscaleSteps}
+                  onChange={e => setUpscaleSteps(parseInt(e.target.value))}
+                  className="flex-1 accent-cyan-400 cursor-pointer h-0.5" />
+                <span className="text-[11px] font-mono text-cyan-300 tabular-nums w-6 text-right shrink-0">{upscaleSteps}</span>
+              </div>
+
+              <button
+                onClick={() => { setUpscaleCreativity(0.35); setUpscaleResemblance(0.6); setUpscaleGuidance(4); setUpscaleSteps(18) }}
+                className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors shrink-0"
+              >reset</button>
+            </div>
+          )}
+
           {/* Controls strip */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3 pb-3 pt-1 border-t border-white/5">
             {/* Model picker badge */}
@@ -3742,17 +3861,19 @@ function PromptBox({
               )}
             </div>
 
-            <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
+            {!model.isUpscaler && <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />}
 
-            {/* Aspect ratio picker badge */}
-            <AspectRatioPicker
-              ratios={model.aspectRatios}
-              value={aspectRatio}
-              onChange={setAspectRatio}
-            />
+            {/* Aspect ratio picker badge — hidden for upscaler */}
+            {!model.isUpscaler && (
+              <AspectRatioPicker
+                ratios={model.aspectRatios}
+                value={aspectRatio}
+                onChange={setAspectRatio}
+              />
+            )}
 
-            {/* Quality toggle */}
-            {model.supportsQuality && (
+            {/* Quality toggle — hidden for upscaler */}
+            {model.supportsQuality && !model.isUpscaler && (
               <>
                 <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
                 <div className="flex items-center rounded-md overflow-hidden border border-white/10 shrink-0">
@@ -3771,8 +3892,28 @@ function PromptBox({
               </>
             )}
 
+            {/* Upscale factor toggle — upscaler only */}
+            {model.isUpscaler && (
+              <>
+                <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
+                <div className="flex items-center rounded-md overflow-hidden border border-white/10 shrink-0">
+                  {([2, 4] as (2 | 4)[]).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setUpscaleFactor(f)}
+                      className={`px-2.5 py-1 text-[11px] font-mono transition-colors ${
+                        upscaleFactor === f ? "bg-white/15 text-white" : "text-slate-500 hover:text-slate-300"
+                      }`}
+                    >
+                      {f}x
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
             {/* LoRA picker — z-image-base / z-image-turbo only */}
-            {isZImageModel && (
+            {isZImageModel && !model.isUpscaler && (
               <>
                 <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
                 <div ref={loraPickerRef} className="relative shrink-0">

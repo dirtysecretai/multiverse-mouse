@@ -67,6 +67,13 @@ export async function POST(request: Request) {
       loraScale = 1.0,    // LoRA strength (0-2)
       loraGuidanceScale,  // Guidance / CFG scale override
       loraSteps,          // Inference steps override
+      // Clarity Upscaler params
+      upscaleImageUrl,
+      upscaleFactor = 2,
+      upscaleCreativity = 0.35,
+      upscaleResemblance = 0.6,
+      upscaleGuidance = 4,
+      upscaleSteps = 18,
     } = body
 
     // Check if admin mode is requested and user is actually admin
@@ -160,6 +167,88 @@ export async function POST(request: Request) {
       let reservationMade = false
       try {
         let modelEndpoint = selectedModel.name
+
+        // ── Clarity Upscaler ─────────────────────────────────────────────────
+        if (model === 'clarity-upscaler') {
+          if (!upscaleImageUrl) {
+            return NextResponse.json({ error: 'upscaleImageUrl is required for clarity-upscaler' }, { status: 400 })
+          }
+          const upscaleTicketCost = upscaleFactor === 4 ? 26 : 7
+          const upscalePrompt = (prompt || 'masterpiece, best quality, highres').trim()
+
+          if (!skipTickets) {
+            await prisma.ticket.update({
+              where: { userId: user.id },
+              data: { reserved: { increment: upscaleTicketCost } }
+            })
+          }
+          const updatedTicket = await prisma.ticket.findUnique({ where: { userId: user.id } })
+          const newBalance = skipTickets
+            ? (ticketRecord?.balance || 0)
+            : Math.max(0, (updatedTicket?.balance || 0) - (updatedTicket?.reserved || 0))
+
+          const { FAL_GLOBAL_ID } = await import('@/lib/fal-queue')
+          const webhookUrl = `${process.env.APP_URL || `https://${process.env.VERCEL_URL}`}/api/webhooks/fal`
+
+          const { request_id } = await fal.queue.submit('fal-ai/clarity-upscaler', {
+            input: {
+              image_url: upscaleImageUrl,
+              prompt: upscalePrompt,
+              upscale_factor: upscaleFactor,
+              negative_prompt: '(worst quality, low quality, normal quality:2)',
+              creativity: upscaleCreativity,
+              resemblance: upscaleResemblance,
+              guidance_scale: upscaleGuidance,
+              num_inference_steps: upscaleSteps,
+              enable_safety_checker: false,
+            },
+            webhookUrl,
+          })
+
+          const queueEntry = await prisma.generationQueue.create({
+            data: {
+              userId: user.id,
+              modelId: model,
+              modelType: 'image',
+              prompt: upscalePrompt,
+              parameters: {
+                source: 'main-scanner',
+                quality: `${upscaleFactor}x`,
+                aspectRatio: 'auto',
+                model,
+                adminMode: skipTickets,
+                upscaleImageUrl,
+                upscaleFactor,
+              },
+              status: 'processing',
+              ticketCost: skipTickets ? 0 : upscaleTicketCost,
+              falRequestId: request_id,
+              startedAt: new Date(),
+            }
+          })
+
+          await Promise.all([
+            prisma.modelConcurrencyLimit.updateMany({
+              where: { modelId: model },
+              data: { currentActive: { increment: 1 } },
+            }),
+            prisma.modelConcurrencyLimit.updateMany({
+              where: { modelId: FAL_GLOBAL_ID },
+              data: { currentActive: { increment: 1 } },
+            }),
+          ])
+
+          console.log(`[clarity-upscaler] ${upscaleFactor}x submitted, request_id=${request_id}`)
+          return NextResponse.json({
+            success: true,
+            queued: true,
+            queueId: queueEntry.id,
+            newBalance,
+            message: `${upscaleFactor}x upscale queued — ${upscaleTicketCost} ticket(s) reserved.`,
+            modelUsed: selectedModel.displayName,
+            ticketsUsed: skipTickets ? 0 : upscaleTicketCost,
+          })
+        }
 
         const inputParams: any = {
           prompt: prompt.trim()

@@ -164,6 +164,20 @@ export const AI_MODELS: AIModel[] = [
     provider: 'fal'
   },
 
+  // CLARITY UPSCALER - fal-ai/clarity-upscaler
+  {
+    id: 'clarity-upscaler',
+    name: 'fal-ai/clarity-upscaler',
+    displayName: 'Clarity Upscaler',
+    description: 'AI-powered upscaler — 7 tickets (2x) or 26 tickets (4x)',
+    ticketCost: 7,
+    category: 'standard',
+    rateLimit: { rpm: 0, rpd: 0 },
+    quality: 'ultra',
+    isAvailable: true,
+    provider: 'fal'
+  },
+
   // CHATGPT IMAGES 2.0 - fal-ai/gpt-image-2
   {
     id: 'gpt-image-2',
@@ -274,9 +288,14 @@ export function getModelsByCategory(category: 'standard' | 'premium' | 'ultra'):
   return AI_MODELS.filter(m => m.category === category && m.isAvailable)
 }
 
-export function getTicketCost(modelId: string, quality?: '2k' | '4k'): number {
+export function getTicketCost(modelId: string, quality?: '2k' | '4k' | string): number {
   const model = getModelById(modelId)
   if (!model) return 1
+
+  // Clarity Upscaler: 7 tickets (2x), 26 tickets (4x)
+  if (modelId === 'clarity-upscaler') {
+    return quality === '4x' ? 26 : 7
+  }
 
   // NanoBanana Pro: 7 tickets for 2K, 14 tickets for 4K
   if (modelId === 'nano-banana-pro') {
