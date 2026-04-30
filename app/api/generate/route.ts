@@ -192,9 +192,25 @@ export async function POST(request: Request) {
           const { FAL_GLOBAL_ID } = await import('@/lib/fal-queue')
           const webhookUrl = `${process.env.APP_URL || `https://${process.env.VERCEL_URL}`}/api/webhooks/fal`
 
+          // Re-upload source image to FAL storage so FAL can fetch it reliably.
+          // R2 URLs can be inaccessible from FAL's servers; FAL CDN URLs always work.
+          let falSourceUrl = upscaleImageUrl
+          try {
+            const srcRes = await fetch(upscaleImageUrl, { signal: AbortSignal.timeout(20_000) })
+            if (srcRes.ok) {
+              const contentType = srcRes.headers.get('content-type') || 'image/jpeg'
+              const srcBuffer = Buffer.from(await srcRes.arrayBuffer())
+              const srcBlob = new Blob([new Uint8Array(srcBuffer)], { type: contentType })
+              falSourceUrl = await fal.storage.upload(srcBlob)
+              console.log(`[clarity-upscaler] re-uploaded source to FAL storage: ${falSourceUrl}`)
+            }
+          } catch (uploadErr) {
+            console.warn('[clarity-upscaler] failed to re-upload to FAL storage, using original URL:', uploadErr)
+          }
+
           const { request_id } = await fal.queue.submit('fal-ai/clarity-upscaler', {
             input: {
-              image_url: upscaleImageUrl,
+              image_url: falSourceUrl,
               prompt: upscalePrompt,
               upscale_factor: upscaleFactor,
               negative_prompt: '(worst quality, low quality, normal quality:2)',
