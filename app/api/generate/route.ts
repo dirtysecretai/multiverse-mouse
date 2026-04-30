@@ -84,7 +84,8 @@ export async function POST(request: Request) {
       console.log('🔓 ADMIN MODE: Skipping ticket check/deduction for', user.email)
     }
 
-    if (!prompt || prompt.trim().length === 0) {
+    // Clarity upscaler doesn't require a prompt (defaults to quality descriptor)
+    if (model !== 'clarity-upscaler' && (!prompt || prompt.trim().length === 0)) {
       return NextResponse.json(
         { error: 'Universe coordinates required' },
         { status: 400 }
@@ -121,8 +122,10 @@ export async function POST(request: Request) {
       )
     }
 
-    // Get ticket cost for selected model (quality-dependent for NanoBanana Pro)
-    const ticketCost = getTicketCost(model, quality)
+    // Get ticket cost — clarity upscaler uses upscaleFactor to determine cost
+    const ticketCost = model === 'clarity-upscaler'
+      ? (upscaleFactor === 4 ? 26 : 7)
+      : getTicketCost(model, quality)
     console.log('Selected model:', selectedModel.displayName, '- Quality:', quality, '- Cost:', ticketCost, 'ticket(s)')
 
     // Check ticket balance (skip for admin mode)
@@ -173,13 +176,12 @@ export async function POST(request: Request) {
           if (!upscaleImageUrl) {
             return NextResponse.json({ error: 'upscaleImageUrl is required for clarity-upscaler' }, { status: 400 })
           }
-          const upscaleTicketCost = upscaleFactor === 4 ? 26 : 7
           const upscalePrompt = (prompt || 'masterpiece, best quality, highres').trim()
 
           if (!skipTickets) {
             await prisma.ticket.update({
               where: { userId: user.id },
-              data: { reserved: { increment: upscaleTicketCost } }
+              data: { reserved: { increment: ticketCost } }
             })
           }
           const updatedTicket = await prisma.ticket.findUnique({ where: { userId: user.id } })
@@ -221,7 +223,7 @@ export async function POST(request: Request) {
                 upscaleFactor,
               },
               status: 'processing',
-              ticketCost: skipTickets ? 0 : upscaleTicketCost,
+              ticketCost: skipTickets ? 0 : ticketCost,
               falRequestId: request_id,
               startedAt: new Date(),
             }
@@ -244,9 +246,9 @@ export async function POST(request: Request) {
             queued: true,
             queueId: queueEntry.id,
             newBalance,
-            message: `${upscaleFactor}x upscale queued — ${upscaleTicketCost} ticket(s) reserved.`,
+            message: `${upscaleFactor}x upscale queued — ${ticketCost} ticket(s) reserved.`,
             modelUsed: selectedModel.displayName,
-            ticketsUsed: skipTickets ? 0 : upscaleTicketCost,
+            ticketsUsed: skipTickets ? 0 : ticketCost,
           })
         }
 
