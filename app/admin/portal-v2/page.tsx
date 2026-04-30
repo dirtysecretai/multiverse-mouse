@@ -1886,7 +1886,8 @@ function ImageDetailModal({
 
   const modelName = getModelDisplayName(image.model)
   const modelConfig = IMAGE_MODEL_CONFIGS.find(m => m.apiId === image.model)
-  const showSettings = !!(image.aspectRatio || image.quality || modelConfig?.supportsQuality)
+  const isUpscalerImage = modelConfig?.isUpscaler
+  const showSettings = !!(isUpscalerImage || image.aspectRatio || image.quality || modelConfig?.supportsQuality)
   const formattedDate = image.createdAt
     ? new Date(image.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
     : null
@@ -1968,18 +1969,53 @@ function ImageDetailModal({
               <div>
                 <p className="text-[10px] font-mono text-slate-600 uppercase tracking-widest mb-1.5">Settings</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {image.aspectRatio && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
-                      {image.aspectRatio}
-                    </span>
-                  )}
-                  {image.quality && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
-                      {image.quality.toUpperCase()}
-                    </span>
-                  )}
-                  {!image.aspectRatio && !image.quality && (
-                    <span className="text-[11px] text-slate-600 font-mono">Not recorded</span>
+                  {isUpscalerImage ? (
+                    <>
+                      {image.videoMetadata?.upscaleFactor != null && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-[11px] font-mono">
+                          {image.videoMetadata.upscaleFactor}x upscale
+                        </span>
+                      )}
+                      {image.videoMetadata?.upscaleCreativity != null && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
+                          creativity {Number(image.videoMetadata.upscaleCreativity).toFixed(2)}
+                        </span>
+                      )}
+                      {image.videoMetadata?.upscaleResemblance != null && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
+                          resemblance {Number(image.videoMetadata.upscaleResemblance).toFixed(2)}
+                        </span>
+                      )}
+                      {image.videoMetadata?.upscaleGuidance != null && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
+                          CFG {Number(image.videoMetadata.upscaleGuidance).toFixed(1)}
+                        </span>
+                      )}
+                      {image.videoMetadata?.upscaleSteps != null && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
+                          {image.videoMetadata.upscaleSteps} steps
+                        </span>
+                      )}
+                      {!image.videoMetadata?.upscaleFactor && (
+                        <span className="text-[11px] text-slate-600 font-mono">Not recorded</span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {image.aspectRatio && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
+                          {image.aspectRatio}
+                        </span>
+                      )}
+                      {image.quality && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
+                          {image.quality.toUpperCase()}
+                        </span>
+                      )}
+                      {!image.aspectRatio && !image.quality && (
+                        <span className="text-[11px] text-slate-600 font-mono">Not recorded</span>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -2019,8 +2055,9 @@ function ImageDetailModal({
             <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-2">{image.prompt}</p>
             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
               <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-mono">{modelName}</span>
-              {image.aspectRatio && <span className="px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-mono">{image.aspectRatio}</span>}
-              {image.quality && <span className="px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-mono">{image.quality.toUpperCase()}</span>}
+              {isUpscalerImage && image.videoMetadata?.upscaleFactor != null && <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-[10px] font-mono">{image.videoMetadata.upscaleFactor}x upscale</span>}
+              {!isUpscalerImage && image.aspectRatio && <span className="px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-mono">{image.aspectRatio}</span>}
+              {!isUpscalerImage && image.quality && <span className="px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-mono">{image.quality.toUpperCase()}</span>}
               {image.loraUrl && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] font-mono"><Sparkles size={8} />{image.loraName || "LoRA"}</span>}
               {formattedDate && <span className="text-[10px] text-slate-600">{formattedDate}</span>}
             </div>
@@ -3738,13 +3775,30 @@ function PromptBox({
                 if (f) uploadUpscaleSource(f)
               }}
             />
+            {/* Pick from active Refs */}
+            {activeRefImages.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest shrink-0">From Refs</span>
+                {activeRefImages.map((img) => (
+                  <button
+                    key={img.id}
+                    onClick={() => { setUpscaleSourceUrl(img.url); setUpscaleUploadError(null) }}
+                    title="Use this ref as upscale source"
+                    className={`relative w-10 h-10 rounded-lg overflow-hidden border transition-all shrink-0 ${upscaleSourceUrl === img.url ? "border-cyan-400 ring-1 ring-cyan-400/50" : "border-white/10 hover:border-cyan-400/50"}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.url} alt="ref" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest shrink-0">Source</span>
               <input
                 type="text"
                 value={upscaleSourceUrl}
                 onChange={e => { setUpscaleSourceUrl(e.target.value); setUpscaleUploadError(null) }}
-                placeholder="Paste image URL to upscale..."
+                placeholder="Paste image URL to upscale…"
                 className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none min-w-0"
               />
               <button
@@ -3776,21 +3830,23 @@ function PromptBox({
 
         {/* Prompt card */}
         <div className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-md shadow-2xl">
-          {/* Textarea */}
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleGenerate() }}
-            placeholder="Describe what you want to create..."
-            rows={1}
-            onInput={(e) => {
-              const el = e.currentTarget
-              el.style.height = "auto"
-              el.style.height = Math.min(el.scrollHeight, 160) + "px"
-            }}
-            className="w-full resize-none bg-transparent px-5 pt-4 pb-3 text-sm text-white placeholder-slate-500 focus:outline-none leading-relaxed"
-          />
+          {/* Textarea — hidden for upscaler (prompt not used) */}
+          {!model.isUpscaler && (
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleGenerate() }}
+              placeholder="Describe what you want to create..."
+              rows={1}
+              onInput={(e) => {
+                const el = e.currentTarget
+                el.style.height = "auto"
+                el.style.height = Math.min(el.scrollHeight, 160) + "px"
+              }}
+              className="w-full resize-none bg-transparent px-5 pt-4 pb-3 text-sm text-white placeholder-slate-500 focus:outline-none leading-relaxed"
+            />
+          )}
 
           {/* LoRA config row — visible when a LoRA is active */}
           {isZImageModel && selectedLoraUrl && (

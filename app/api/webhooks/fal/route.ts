@@ -204,7 +204,17 @@ export async function POST(request: Request) {
               referenceImageUrls: (params?.referenceImageUrls as string[]) || [],
               quality: (params?.quality as string) || null,
               aspectRatio: (params?.aspectRatio as string) || null,
-              videoMetadata: params?.loraUrl ? { loraUrl: params.loraUrl, loraName: params.loraName ?? undefined } : undefined,
+              videoMetadata: params?.loraUrl
+                ? { loraUrl: params.loraUrl, loraName: params.loraName ?? undefined }
+                : queueItem.modelId === 'clarity-upscaler'
+                  ? {
+                      upscaleFactor: params?.upscaleFactor,
+                      upscaleCreativity: params?.upscaleCreativity,
+                      upscaleResemblance: params?.upscaleResemblance,
+                      upscaleGuidance: params?.upscaleGuidance,
+                      upscaleSteps: params?.upscaleSteps,
+                    }
+                  : undefined,
               expiresAt,
             }
           })
