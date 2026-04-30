@@ -194,12 +194,30 @@ export async function POST(request: Request) {
 
           // Re-upload source image to FAL storage so FAL can fetch it reliably.
           // R2 URLs can be inaccessible from FAL's servers; FAL CDN URLs always work.
+          // For 4x upscale: pre-shrink the image so output stays ≤4096px on the long side,
+          // since FAL clarity-upscaler rejects inputs where upscale_factor * max(w,h) > ~4096.
+          const FAL_MAX_OUTPUT_PX = 4096
           let falSourceUrl = upscaleImageUrl
           try {
             const srcRes = await fetch(upscaleImageUrl, { signal: AbortSignal.timeout(20_000) })
             if (srcRes.ok) {
               const contentType = srcRes.headers.get('content-type') || 'image/jpeg'
-              const srcBuffer = Buffer.from(await srcRes.arrayBuffer())
+              let srcBuffer = Buffer.from(await srcRes.arrayBuffer())
+
+              if (upscaleFactor > 2) {
+                const sharp = (await import('sharp')).default
+                const meta = await sharp(srcBuffer).metadata()
+                const maxDim = Math.max(meta.width ?? 0, meta.height ?? 0)
+                const maxInputPx = Math.floor(FAL_MAX_OUTPUT_PX / upscaleFactor)
+                if (maxDim > maxInputPx) {
+                  srcBuffer = await sharp(srcBuffer)
+                    .resize({ [meta.width! >= meta.height! ? 'width' : 'height']: maxInputPx, withoutEnlargement: true })
+                    .jpeg({ quality: 95 })
+                    .toBuffer()
+                  console.log(`[clarity-upscaler] pre-resized source to fit ${upscaleFactor}x limit (was ${maxDim}px, capped at ${maxInputPx}px)`)
+                }
+              }
+
               const srcBlob = new Blob([new Uint8Array(srcBuffer)], { type: contentType })
               falSourceUrl = await fal.storage.upload(srcBlob)
               console.log(`[clarity-upscaler] re-uploaded source to FAL storage: ${falSourceUrl}`)
