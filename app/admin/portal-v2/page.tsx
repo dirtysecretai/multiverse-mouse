@@ -3790,94 +3790,100 @@ function PromptBox({
 
           {/* LoRA config row — visible when a LoRA is active */}
           {isZImageModel && selectedLoraUrl && (
-            <div className="flex items-center gap-4 px-4 py-2 border-t border-violet-500/10 flex-wrap">
-              <span className="text-[10px] font-mono text-violet-400/50 uppercase tracking-wider shrink-0">LoRA</span>
+            <div className="px-4 py-3 border-t border-violet-500/10 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-mono text-violet-400/50 uppercase tracking-wider">LoRA Config</span>
+                <button
+                  onClick={() => {
+                    setLoraScale(1.0)
+                    setLoraGuidanceScale(model.id === 'flux-2' ? 2.5 : 3.5)
+                    setLoraSteps(28)
+                  }}
+                  className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors"
+                >reset</button>
+              </div>
 
               {/* Scale */}
-              <div className="flex items-center gap-2 flex-1 min-w-[140px]">
-                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-12">Scale</span>
+              <div className="grid grid-cols-[4rem_1fr_2.5rem] items-center gap-3">
+                <span className="text-[10px] font-mono text-slate-500">Scale</span>
                 <input
                   type="range" min="0" max="2" step="0.05" value={loraScale}
                   onChange={e => setLoraScale(parseFloat(e.target.value))}
-                  className="flex-1 accent-violet-400 cursor-pointer h-0.5"
+                  className="w-full accent-violet-400 cursor-pointer h-0.5"
                 />
-                <span className="text-[11px] font-mono text-violet-300 tabular-nums w-8 text-right shrink-0">{loraScale.toFixed(2)}</span>
+                <span className="text-[11px] font-mono text-violet-300 tabular-nums text-right">{loraScale.toFixed(2)}</span>
               </div>
 
-              {/* Guidance */}
-              <div className="flex items-center gap-2 flex-1 min-w-[140px]">
-                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-12">CFG</span>
+              {/* CFG */}
+              <div className="grid grid-cols-[4rem_1fr_2.5rem] items-center gap-3">
+                <span className="text-[10px] font-mono text-slate-500">CFG</span>
                 <input
                   type="range" min="1" max="15" step="0.5" value={loraGuidanceScale}
                   onChange={e => setLoraGuidanceScale(parseFloat(e.target.value))}
-                  className="flex-1 accent-violet-400 cursor-pointer h-0.5"
+                  className="w-full accent-violet-400 cursor-pointer h-0.5"
                 />
-                <span className="text-[11px] font-mono text-violet-300 tabular-nums w-8 text-right shrink-0">{loraGuidanceScale.toFixed(1)}</span>
+                <span className="text-[11px] font-mono text-violet-300 tabular-nums text-right">{loraGuidanceScale.toFixed(1)}</span>
               </div>
 
               {/* Steps */}
-              <div className="flex items-center gap-2 flex-1 min-w-[120px]">
-                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-12">Steps</span>
+              <div className="grid grid-cols-[4rem_1fr_2.5rem] items-center gap-3">
+                <span className="text-[10px] font-mono text-slate-500">Steps</span>
                 <input
                   type="range" min="10" max="60" step="1" value={loraSteps}
                   onChange={e => setLoraSteps(parseInt(e.target.value))}
-                  className="flex-1 accent-violet-400 cursor-pointer h-0.5"
+                  className="w-full accent-violet-400 cursor-pointer h-0.5"
                 />
-                <span className="text-[11px] font-mono text-violet-300 tabular-nums w-6 text-right shrink-0">{loraSteps}</span>
+                <span className="text-[11px] font-mono text-violet-300 tabular-nums text-right">{loraSteps}</span>
               </div>
-
-              <button
-                onClick={() => {
-                  setLoraScale(1.0)
-                  setLoraGuidanceScale(model.id === 'flux-2' ? 2.5 : 3.5)
-                  setLoraSteps(model.id === 'flux-2' ? 28 : 28)
-                }}
-                className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors shrink-0"
-              >reset</button>
             </div>
           )}
 
           {/* Upscaler config sliders */}
           {model.isUpscaler && (
-            <div className="flex items-center gap-4 px-4 py-2 border-t border-cyan-500/10 flex-wrap">
-              <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider shrink-0">Enhance</span>
+            <div className="px-4 py-3 border-t border-cyan-500/10 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider">Enhance Config</span>
+                <button
+                  onClick={() => { setUpscaleCreativity(0.35); setUpscaleResemblance(0.6); setUpscaleGuidance(4); setUpscaleSteps(18) }}
+                  className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors"
+                >reset</button>
+              </div>
 
-              <div className="flex items-center gap-2 flex-1 min-w-[140px]">
-                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-16">Creativity</span>
+              {/* Creativity */}
+              <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
+                <span className="text-[10px] font-mono text-slate-500">Creativity</span>
                 <input type="range" min="0" max="1" step="0.05" value={upscaleCreativity}
                   onChange={e => setUpscaleCreativity(parseFloat(e.target.value))}
-                  className="flex-1 accent-cyan-400 cursor-pointer h-0.5" />
-                <span className="text-[11px] font-mono text-cyan-300 tabular-nums w-8 text-right shrink-0">{upscaleCreativity.toFixed(2)}</span>
+                  className="w-full accent-cyan-400 cursor-pointer h-0.5" />
+                <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleCreativity.toFixed(2)}</span>
               </div>
 
-              <div className="flex items-center gap-2 flex-1 min-w-[140px]">
-                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-16">Resemblance</span>
+              {/* Resemblance */}
+              <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
+                <span className="text-[10px] font-mono text-slate-500">Resemblance</span>
                 <input type="range" min="0" max="1" step="0.05" value={upscaleResemblance}
                   onChange={e => setUpscaleResemblance(parseFloat(e.target.value))}
-                  className="flex-1 accent-cyan-400 cursor-pointer h-0.5" />
-                <span className="text-[11px] font-mono text-cyan-300 tabular-nums w-8 text-right shrink-0">{upscaleResemblance.toFixed(2)}</span>
+                  className="w-full accent-cyan-400 cursor-pointer h-0.5" />
+                <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleResemblance.toFixed(2)}</span>
               </div>
 
-              <div className="flex items-center gap-2 flex-1 min-w-[120px]">
-                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-16">CFG</span>
+              {/* CFG */}
+              <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
+                <span className="text-[10px] font-mono text-slate-500">CFG</span>
                 <input type="range" min="1" max="10" step="0.5" value={upscaleGuidance}
                   onChange={e => setUpscaleGuidance(parseFloat(e.target.value))}
-                  className="flex-1 accent-cyan-400 cursor-pointer h-0.5" />
-                <span className="text-[11px] font-mono text-cyan-300 tabular-nums w-6 text-right shrink-0">{upscaleGuidance.toFixed(1)}</span>
+                  className="w-full accent-cyan-400 cursor-pointer h-0.5" />
+                <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleGuidance.toFixed(1)}</span>
               </div>
 
-              <div className="flex items-center gap-2 flex-1 min-w-[120px]">
-                <span className="text-[10px] font-mono text-slate-500 shrink-0 w-16">Steps</span>
+              {/* Steps */}
+              <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
+                <span className="text-[10px] font-mono text-slate-500">Steps</span>
                 <input type="range" min="10" max="30" step="1" value={upscaleSteps}
                   onChange={e => setUpscaleSteps(parseInt(e.target.value))}
-                  className="flex-1 accent-cyan-400 cursor-pointer h-0.5" />
-                <span className="text-[11px] font-mono text-cyan-300 tabular-nums w-6 text-right shrink-0">{upscaleSteps}</span>
+                  className="w-full accent-cyan-400 cursor-pointer h-0.5" />
+                <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleSteps}</span>
               </div>
-
-              <button
-                onClick={() => { setUpscaleCreativity(0.35); setUpscaleResemblance(0.6); setUpscaleGuidance(4); setUpscaleSteps(18) }}
-                className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors shrink-0"
-              >reset</button>
             </div>
           )}
 
