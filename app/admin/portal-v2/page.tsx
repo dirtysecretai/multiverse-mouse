@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import Link from "next/link"
 import ChatWidget from "@/components/ChatWidget"
-import { Image, Video, Type, ChevronDown, Ticket, User, BookMarked, ImagePlus, X, Plus, Check, Copy, Download, RotateCcw, ShoppingBag, SlidersHorizontal, Bell, AlertTriangle, CheckCircle, Info, Sparkles, Music, BookOpen, Star, Trash2 } from "lucide-react"
+import { Image, Video, Type, ChevronDown, Ticket, User, BookMarked, ImagePlus, X, Plus, Check, Copy, Download, RotateCcw, ShoppingBag, SlidersHorizontal, Bell, AlertTriangle, CheckCircle, Info, Sparkles, Music, BookOpen, Star, Trash2, Loader2 } from "lucide-react"
 
 // --- TYPES ---
 interface UserData {
@@ -2936,6 +2936,9 @@ function PromptBox({
   const loraPickerRef = useRef<HTMLDivElement>(null)
   // Upscaler state
   const [upscaleSourceUrl, setUpscaleSourceUrl] = useState("")
+  const [upscaleUploading, setUpscaleUploading] = useState(false)
+  const [upscaleUploadError, setUpscaleUploadError] = useState<string | null>(null)
+  const upscaleFileInputRef = useRef<HTMLInputElement>(null)
   const [upscaleFactor, setUpscaleFactor] = useState<2 | 4>(2)
   const [upscaleCreativity, setUpscaleCreativity] = useState(0.35)
   const [upscaleResemblance, setUpscaleResemblance] = useState(0.6)
@@ -3652,6 +3655,35 @@ function PromptBox({
     return () => document.removeEventListener("mousedown", handler)
   }, [])
 
+  // Upload a local file to R2 and use the public URL as upscale source
+  async function uploadUpscaleSource(file: File) {
+    setUpscaleUploading(true)
+    setUpscaleUploadError(null)
+    try {
+      const pass = typeof sessionStorage !== "undefined" ? (sessionStorage.getItem("admin-password") ?? "") : ""
+      const presignRes = await fetch("/api/admin/upload-upscale-source", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(pass ? { "x-admin-password": pass } : {}) },
+        body: JSON.stringify({ filename: file.name, contentType: file.type || "image/jpeg" }),
+      })
+      if (!presignRes.ok) throw new Error(`Presign failed: ${presignRes.status}`)
+      const { uploadUrl, publicUrl } = await presignRes.json() as { uploadUrl: string; publicUrl: string }
+
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "image/jpeg" },
+        body: file,
+      })
+      if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`)
+
+      setUpscaleSourceUrl(publicUrl)
+    } catch (e) {
+      setUpscaleUploadError(e instanceof Error ? e.message : "Upload failed")
+    } finally {
+      setUpscaleUploading(false)
+    }
+  }
+
   const [showModelPicker, setShowModelPicker] = useState(false)
   const modelPickerRef = useRef<HTMLDivElement>(null)
 
@@ -3688,18 +3720,39 @@ function PromptBox({
           </div>
         )}
 
-        {/* Upscaler: source image URL input */}
+        {/* Upscaler: source image input */}
         {model.isUpscaler && (
           <div className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-md shadow-xl px-4 py-3 space-y-2">
+            <input
+              ref={upscaleFileInputRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={e => {
+                const f = e.target.files?.[0]
+                e.target.value = ""
+                if (f) uploadUpscaleSource(f)
+              }}
+            />
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest shrink-0">Source Image</span>
+              <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest shrink-0">Source</span>
               <input
                 type="text"
                 value={upscaleSourceUrl}
-                onChange={e => setUpscaleSourceUrl(e.target.value)}
+                onChange={e => { setUpscaleSourceUrl(e.target.value); setUpscaleUploadError(null) }}
                 placeholder="Paste image URL to upscale..."
-                className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
+                className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none min-w-0"
               />
+              <button
+                onClick={() => upscaleFileInputRef.current?.click()}
+                disabled={upscaleUploading}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-[11px] text-slate-300 hover:text-white transition-all disabled:opacity-50 shrink-0"
+              >
+                {upscaleUploading
+                  ? <><Loader2 size={11} className="animate-spin" />Uploading…</>
+                  : <><ImagePlus size={11} />Upload</>
+                }
+              </button>
               {upscaleSourceUrl.startsWith("http") && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -3711,6 +3764,9 @@ function PromptBox({
                 />
               )}
             </div>
+            {upscaleUploadError && (
+              <p className="text-[11px] text-red-400">{upscaleUploadError}</p>
+            )}
           </div>
         )}
 
