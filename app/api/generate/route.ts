@@ -202,15 +202,16 @@ export async function POST(request: Request) {
             const srcRes = await fetch(upscaleImageUrl, { signal: AbortSignal.timeout(20_000) })
             if (srcRes.ok) {
               const contentType = srcRes.headers.get('content-type') || 'image/jpeg'
-              let srcBuffer = Buffer.from(await srcRes.arrayBuffer())
+              const rawBuffer = Buffer.from(await srcRes.arrayBuffer())
+              let uploadBuffer: Buffer | Uint8Array = rawBuffer
 
               if (upscaleFactor > 2) {
                 const sharp = (await import('sharp')).default
-                const meta = await sharp(srcBuffer).metadata()
+                const meta = await sharp(rawBuffer).metadata()
                 const maxDim = Math.max(meta.width ?? 0, meta.height ?? 0)
                 const maxInputPx = Math.floor(FAL_MAX_OUTPUT_PX / upscaleFactor)
                 if (maxDim > maxInputPx) {
-                  srcBuffer = await sharp(srcBuffer)
+                  uploadBuffer = await sharp(rawBuffer)
                     .resize({ [meta.width! >= meta.height! ? 'width' : 'height']: maxInputPx, withoutEnlargement: true })
                     .jpeg({ quality: 95 })
                     .toBuffer()
@@ -218,7 +219,7 @@ export async function POST(request: Request) {
                 }
               }
 
-              const srcBlob = new Blob([new Uint8Array(srcBuffer)], { type: contentType })
+              const srcBlob = new Blob([new Uint8Array(uploadBuffer)], { type: contentType })
               falSourceUrl = await fal.storage.upload(srcBlob)
               console.log(`[clarity-upscaler] re-uploaded source to FAL storage: ${falSourceUrl}`)
             }
