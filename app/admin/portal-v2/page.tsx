@@ -7349,10 +7349,25 @@ export default function PortalV2Page() {
               prompt: j.prompt as string,
             }))
 
-            // Detect completed queue-backed slots (for recently-finished image fetching)
+            // Detect completed queue-backed slots (for recently-finished image fetching).
+            // Only treat a slot as "completed" if its queueId appears in THIS user's DB jobs —
+            // guards against cross-account bleed when two accounts share the same browser
+            // and localStorage slots from account A are restored into account B's session.
+            const allDbJobIds = new Set(allDbJobs.map((j: any) => j.id as number))
+            const staleQueueSlots = currentSlots.filter(
+              s => s.status === "loading" && s.queueId != null && !allDbJobIds.has(s.queueId)
+            )
+            if (staleQueueSlots.length > 0) {
+              // Purge stale cross-account (or very old) slots from localStorage
+              const staleIds = new Set(staleQueueSlots.map(s => s.slotId))
+              try {
+                const raw = JSON.parse(localStorage.getItem("pv2-pending-slots") || "[]") as any[]
+                localStorage.setItem("pv2-pending-slots", JSON.stringify(raw.filter((s: any) => !staleIds.has(s.slotId))))
+              } catch {}
+            }
             const completedQueueSlotIds = new Set(
               currentSlots
-                .filter(s => s.status === "loading" && s.queueId != null && !inFlightIds.has(s.queueId))
+                .filter(s => s.status === "loading" && s.queueId != null && !inFlightIds.has(s.queueId) && allDbJobIds.has(s.queueId))
                 .map(s => s.slotId)
             )
             if (completedQueueSlotIds.size > 0) {
