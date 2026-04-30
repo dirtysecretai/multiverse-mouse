@@ -418,6 +418,7 @@ const IMAGE_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
   "seedream-4.5":        "$",
   "seedream-5-lite":     "$",
   "flux-2":              "$",
+  "flux-1-dev":          "$$",
   "kling-v3-image":      "$",
   "kling-o3-image":      "$$",
   "wan-2.7-pro":         "$$",
@@ -425,6 +426,9 @@ const IMAGE_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
   "pro-scanner-v3":      "$$$",
   "nano-banana-pro":     "$$$",
   "gpt-image-2":         "$$",
+  "z-image-base":        "$$",
+  "z-image-turbo":       "$",
+  "clarity-upscaler":    "$$",
 }
 const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
   "lipsync-v3":         "$",
