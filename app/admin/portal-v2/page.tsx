@@ -3148,6 +3148,7 @@ function PromptBox({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             model: model.apiId,
+            adminMode: true,
             upscaleImageUrl: upscaleSourceUrl,
             upscaleFactor,
             ...(model.id === "clarity-upscaler"
@@ -3819,23 +3820,25 @@ function PromptBox({
           </div>
         )}
 
+        {/* Hidden file input for all upscaler models — always mounted so the ref is never null */}
+        <input
+          ref={upscaleFileInputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          onChange={e => {
+            const f = e.target.files?.[0]
+            e.target.value = ""
+            if (f) uploadUpscaleSource(f)
+          }}
+        />
+
         {/* Prompt card */}
         <div className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-md shadow-2xl">
 
           {/* Upscaler source — integrated at top of card (clarity + drct only; aura-sr/esrgan embed it in their config section) */}
           {(model.id === "clarity-upscaler" || model.id === "drct") && (
             <div className="px-4 pt-4 pb-3 space-y-2 border-b border-white/5">
-              <input
-                ref={upscaleFileInputRef}
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={e => {
-                  const f = e.target.files?.[0]
-                  e.target.value = ""
-                  if (f) uploadUpscaleSource(f)
-                }}
-              />
               {/* Pick from active Refs */}
               {activeRefImages.length > 0 && (
                 <div className="flex items-center gap-2 flex-wrap">
