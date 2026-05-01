@@ -419,7 +419,7 @@ const VIDEO_MODEL_CONFIGS: VideoModelConfig[] = [
 const VIDEO_MODELS = VIDEO_MODEL_CONFIGS.map(m => m.name)
 
 // Cost tier indicators — $ cheap · $$ mid · $$$ expensive
-const IMAGE_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
+const IMAGE_MODEL_COST: Record<string, "$" | "$$" | "$$$" | "$$$+"> = {
   "flash-scanner-v2.5": "$",
   "seedream-4.5":        "$",
   "seedream-5-lite":     "$",
@@ -439,34 +439,52 @@ const IMAGE_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
   "esrgan":              "$",
   "drct":                "$",
 }
-const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
+const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$" | "$$$+"> = {
   "lipsync-v3":         "$",
   "seedance-1.5":       "$$",
   "wan-2.5":            "$$",
   "kling-v3-motion":    "$$$",
-  "seedance-2.0-fast":  "$$$",
-  "seedance-2.0":       "$$$",
+  "seedance-2.0-fast":  "$$$+",
+  "seedance-2.0":       "$$$+",
   "kling-v3":           "$$$",
   "happy-horse":        "$$",
   "flux-1-dev":         "$$",
   "z-image-base":       "$$",
   "z-image-turbo":      "$",
 }
-function CostBadge({ tier }: { tier: "$" | "$$" | "$$$" }) {
-  const color = tier === "$"   ? "text-green-400"
-              : tier === "$$"  ? "text-amber-400"
-              :                  "text-rose-400"
+function CostBadge({ tier }: { tier: "$" | "$$" | "$$$" | "$$$+" }) {
+  const color = tier === "$"    ? "text-green-400"
+              : tier === "$$"   ? "text-amber-400"
+              : tier === "$$$+" ? "text-rose-300"
+              :                   "text-rose-400"
   return (
     <span className={`font-mono text-[10px] font-bold shrink-0 ${color}`}>{tier}</span>
   )
 }
 // Name-keyed versions for the taskbar (which works with model names, not IDs)
-const IMAGE_MODEL_COST_BY_NAME: Record<string, "$" | "$$" | "$$$"> = Object.fromEntries(
+const IMAGE_MODEL_COST_BY_NAME: Record<string, "$" | "$$" | "$$$" | "$$$+"> = Object.fromEntries(
   IMAGE_MODEL_CONFIGS.map(m => [m.name, IMAGE_MODEL_COST[m.id] ?? "$"])
 )
-const VIDEO_MODEL_COST_BY_NAME: Record<string, "$" | "$$" | "$$$"> = Object.fromEntries(
+const IMAGE_MODEL_GROUPS = [
+  { label: "Gemini",            type: "text to image",             accent: "text-blue-400",    dot: "bg-blue-400",    items: ["NanoBanana Pro", "NanoBanana Pro 2", "Flash Scanner v2.5", "Pro Scanner v3"] },
+  { label: "Kling",             type: "text to image",             accent: "text-orange-400",  dot: "bg-orange-400",  items: ["Kling V3", "Kling O3"] },
+  { label: "ByteDance",         type: "text to image",             accent: "text-emerald-400", dot: "bg-emerald-400", items: ["SeeDream 4.5", "SeeDream 5.0 Lite"] },
+  { label: "Wan",               type: "text to image",             accent: "text-violet-400",  dot: "bg-violet-400",  items: ["Wan 2.7 Pro"] },
+  { label: "Black Forest Labs", type: "text to image",             accent: "text-amber-400",   dot: "bg-amber-400",   items: ["FLUX 1 Dev", "FLUX 2"] },
+  { label: "OpenAI",            type: "text to image",             accent: "text-green-400",   dot: "bg-green-400",   items: ["ChatGPT Images 2.0"] },
+  { label: "Z-Image",           type: "text to image",             accent: "text-cyan-400",    dot: "bg-cyan-400",    items: ["Z-Image Base", "Z-Image Turbo"] },
+  { label: "Upscalers",         type: "enhance & enlarge images",  accent: "text-slate-400",   dot: "bg-slate-500",   items: ["Clarity Upscaler", "AuraSR", "ESRGAN", "DRCT"] },
+]
+const VIDEO_MODEL_COST_BY_NAME: Record<string, "$" | "$$" | "$$$" | "$$$+"> = Object.fromEntries(
   VIDEO_MODEL_CONFIGS.map(m => [m.name, VIDEO_MODEL_COST[m.id] ?? "$$"])
 )
+const VIDEO_MODEL_GROUPS = [
+  { label: "Kling",       type: "image to video",        accent: "text-orange-400",  dot: "bg-orange-400",  items: ["Kling 3.0", "Kling V3 Motion"] },
+  { label: "ByteDance",   type: "image & text to video", accent: "text-emerald-400", dot: "bg-emerald-400", items: ["SeeDance 1.5", "SeeDance 2.0", "SeeDance 2.0 Fast"] },
+  { label: "Wan",         type: "image to video",        accent: "text-violet-400",  dot: "bg-violet-400",  items: ["Wan 2.5"] },
+  { label: "Lipsync",     type: "lip sync video",        accent: "text-pink-400",    dot: "bg-pink-400",    items: ["Lipsync v3"] },
+  { label: "Alibaba",     type: "image to video",        accent: "text-yellow-400",  dot: "bg-yellow-400",  items: ["Happy Horse"] },
+]
 
 const PROMPT_MODELS = [
   { id: "gemini-3-flash",       label: "Gemini 3 Flash" },
@@ -495,7 +513,7 @@ function TaskbarDropdown({
   onToggle: () => void
   onSelect?: (item: string) => void
   activeItem?: string
-  itemCosts?: Record<string, "$" | "$$" | "$$$">
+  itemCosts?: Record<string, "$" | "$$" | "$$$" | "$$$+">
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -555,6 +573,136 @@ function TaskbarDropdown({
               </button>
             ))
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// --- GROUPED TASKBAR DROPDOWN (Image model picker — 2-column company cards) ---
+function GroupedTaskbarDropdown({
+  label,
+  icon: Icon,
+  groups,
+  open,
+  onToggle,
+  onSelect,
+  activeItem,
+  itemCosts,
+  menuTitle,
+  menuDescription,
+}: {
+  label: string
+  icon: React.ElementType
+  groups: { label: string; type: string; accent: string; dot: string; items: string[] }[]
+  open: boolean
+  onToggle: () => void
+  onSelect?: (item: string) => void
+  activeItem?: string
+  itemCosts?: Record<string, "$" | "$$" | "$$$" | "$$$+">
+  menuTitle?: string
+  menuDescription?: string
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
+
+  const activeCost = activeItem && itemCosts ? itemCosts[activeItem] : undefined
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        if (open) onToggle()
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [open, onToggle])
+
+  useEffect(() => {
+    if (open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect()
+      setMenuPos({ top: rect.bottom + 8, left: Math.min(rect.left, window.innerWidth - 444) })
+    }
+  }, [open])
+
+  return (
+    <div className="relative flex-none min-w-[90px] sm:flex-1" ref={ref}>
+      <button
+        ref={buttonRef}
+        onClick={onToggle}
+        className={`flex items-center justify-center gap-2 w-full py-2 rounded-lg text-sm font-medium transition-all ${
+          open ? "bg-white/10 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+        }`}
+      >
+        <Icon size={15} />
+        {label}
+        {activeCost && <CostBadge tier={activeCost} />}
+        <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div
+          className="fixed rounded-xl border border-white/10 bg-[#080c18] backdrop-blur-md shadow-2xl z-[9999] overflow-hidden"
+          style={{ top: menuPos.top, left: menuPos.left, width: 428 }}
+        >
+          {/* Header — tells the user exactly what this is and what to do */}
+          <div className="px-4 pt-3 pb-2.5 border-b border-white/5">
+            <p className="text-[12px] font-semibold text-white/85 leading-none">{menuTitle ?? label}</p>
+            <p className="text-[10px] text-slate-500 mt-1 leading-snug">
+              {menuDescription ?? "Select a model. Models are grouped by company."}{" "}
+              <span className="text-slate-600">Active: <span className="text-slate-400">{activeItem ?? "none"}</span></span>
+            </p>
+          </div>
+
+          {/* 2-col grid of company sections */}
+          <div
+            className="p-2.5 grid grid-cols-2 gap-x-2 gap-y-2 overflow-y-auto"
+            style={{ maxHeight: `calc(100vh - ${menuPos.top + 100}px)` }}
+          >
+            {groups.map((group) => (
+              <div key={group.label}>
+                {/* Company label + what type of model it is */}
+                <div className="flex items-center gap-1.5 px-1.5 pb-1">
+                  <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${group.dot}`} />
+                  <span className={`text-[9px] font-bold tracking-widest uppercase leading-none ${group.accent}`}>{group.label}</span>
+                  <span className="text-[8px] text-slate-600 leading-none truncate">· {group.type}</span>
+                </div>
+                {/* Model rows */}
+                <div className="rounded-lg overflow-hidden border border-white/[0.06] bg-white/[0.02]">
+                  {group.items.map((item) => (
+                    <button
+                      key={item}
+                      onClick={() => { onSelect?.(item); onToggle() }}
+                      className={`w-full text-left px-2.5 py-1.5 text-[11px] transition-colors flex items-center justify-between gap-1 border-b border-white/[0.04] last:border-0 ${
+                        activeItem === item
+                          ? "bg-white/8 text-white font-medium"
+                          : "text-slate-400 hover:text-white hover:bg-white/[0.05]"
+                      }`}
+                    >
+                      <span className="truncate leading-tight">{item}</span>
+                      <span className="shrink-0 flex items-center gap-1">
+                        {activeItem === item && <span className="w-1 h-1 rounded-full bg-cyan-400" />}
+                        {itemCosts?.[item] && <CostBadge tier={itemCosts[item]} />}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Footer — explains the cost symbols plainly */}
+          <div className="px-4 py-2 border-t border-white/5 flex items-center gap-2 flex-wrap">
+            <span className="text-[9px] text-slate-600">Ticket cost:</span>
+            <span className="text-[9px] text-slate-500"><span className="text-green-400 font-bold font-mono">$</span> budget</span>
+            <span className="text-[9px] text-slate-600">·</span>
+            <span className="text-[9px] text-slate-500"><span className="text-amber-400 font-bold font-mono">$$</span> standard</span>
+            <span className="text-[9px] text-slate-600">·</span>
+            <span className="text-[9px] text-slate-500"><span className="text-rose-400 font-bold font-mono">$$$</span> premium</span>
+            <span className="text-[9px] text-slate-600">·</span>
+            <span className="text-[9px] text-slate-500"><span className="text-rose-300 font-bold font-mono">$$$+</span> expensive</span>
+          </div>
         </div>
       )}
     </div>
@@ -7805,25 +7953,29 @@ export default function PortalV2Page() {
             <div className="w-px h-4 bg-white/8" />
           </div>
           <div className="flex items-center flex-1 min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden mr-1">
-            <TaskbarDropdown
+            <GroupedTaskbarDropdown
               label="Image"
               icon={Image}
-              items={IMAGE_MODEL_CONFIGS.map((m) => m.name)}
+              groups={IMAGE_MODEL_GROUPS}
               open={openDropdown === "image"}
               onToggle={() => toggle("image")}
               onSelect={handleSelectImageModel}
               activeItem={selectedModel.name}
               itemCosts={IMAGE_MODEL_COST_BY_NAME}
+              menuTitle="Image Generation Model"
+              menuDescription="Select which AI model generates your image. Models are grouped by company."
             />
-            <TaskbarDropdown
+            <GroupedTaskbarDropdown
               label="Video"
               icon={Video}
-              items={VIDEO_MODELS}
+              groups={VIDEO_MODEL_GROUPS}
               open={openDropdown === "video"}
               onToggle={() => toggle("video")}
               onSelect={handleSelectVideoModel}
               activeItem={selectedVideoModel.name}
               itemCosts={VIDEO_MODEL_COST_BY_NAME}
+              menuTitle="Video Generation Model"
+              menuDescription="Select which AI model generates your video. Models are grouped by company."
             />
             <TextDropdown
               open={openDropdown === "text"}
