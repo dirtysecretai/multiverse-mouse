@@ -1083,11 +1083,12 @@ interface AutoFillEvent {
 }
 
 interface FeedItem {
-  id:        number
-  value:     string
-  tags?:     string[]
-  imageUrl?: string
-  error?:    string
+  id:         number
+  value:      string
+  tags?:      string[]
+  imageUrl?:  string
+  error?:     string
+  autoSaved?: boolean
 }
 
 function cleanTagsClient(raw: string): string[] {
@@ -1098,6 +1099,7 @@ function cleanTagsClient(raw: string): string[] {
 
 const PAGE_PREFS_KEY     = 'dataset-page-prefs'
 const AUTOFILL_PREFS_KEY = 'dataset-autofill-prefs'
+const AUTOFILL_JOB_KEY   = 'dataset-autofill-job-id'
 
 function loadPrefs(key: string): Record<string, any> {
   if (typeof window === 'undefined') return {}
@@ -1107,16 +1109,17 @@ function savePrefs(key: string, data: Record<string, any>) {
   try { localStorage.setItem(key, JSON.stringify(data)) } catch {}
 }
 
-function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
-  selected:    Set<number>
+function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved, onJobChange }: {
+  selected:     Set<number>
   imageUrlById: Record<number, string>
-  onClose:     () => void
-  onItemSaved: (id: number, data: { caption?: string; tags?: string[] }) => void
+  onClose:      () => void
+  onItemSaved:  (id: number, data: { caption?: string; tags?: string[] }) => void
+  onJobChange?: (running: boolean) => void
 }) {
   const count = selected.size
 
   // Config — lazy init from localStorage
-  const [_ap] = useState(() => loadPrefs(AUTOFILL_PREFS_KEY))
+  const [_ap]        = useState(() => loadPrefs(AUTOFILL_PREFS_KEY))
   const [mode,        setMode]        = useState<AutoFillMode>(() => _ap.mode        ?? 'caption')
   const [model,       setModel]       = useState<AutoFillModel>(() => _ap.model       ?? 'flash')
   const [overwrite,   setOverwrite]   = useState<boolean>(() => _ap.overwrite   ?? false)
@@ -1125,7 +1128,6 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
   const [contextTags, setContextTags] = useState<string[]>(() => _ap.contextTags ?? [])
   const [tagInput,    setTagInput]    = useState('')
 
-  // Persist config whenever it changes
   useEffect(() => {
     savePrefs(AUTOFILL_PREFS_KEY, { mode, model, overwrite, advanced, context, contextTags })
   }, [mode, model, overwrite, advanced, context, contextTags])
@@ -1135,109 +1137,132 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
   const [progress, setProgress] = useState(0)
   const [total,    setTotal]    = useState(0)
   const [summary,  setSummary]  = useState<{ processed: number; skipped: number; failed: number } | null>(null)
-  const [currentId, setCurrentId] = useState<number | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
+
+  // Background job
+  const [activeJobId, setActiveJobIdState] = useState<string | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const seenIds = useRef<Set<number>>(new Set())
+
+  function setActiveJobId(id: string | null) {
+    setActiveJobIdState(id)
+    try { id ? localStorage.setItem(AUTOFILL_JOB_KEY, id) : localStorage.removeItem(AUTOFILL_JOB_KEY) } catch {}
+    onJobChange?.(!!id)
+  }
 
   // Feed
-  const [feedItems,  setFeedItems]  = useState<FeedItem[]>([])
-  const [savingIds,  setSavingIds]  = useState<Set<number>>(new Set())
-  const [editingId,  setEditingId]  = useState<number | null>(null)
-  const [editValue,  setEditValue]  = useState('')
+  const [feedItems, setFeedItems] = useState<FeedItem[]>([])
+  const [savingIds, setSavingIds] = useState<Set<number>>(new Set())
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editValue, setEditValue] = useState('')
   const feedRef = useRef<HTMLDivElement>(null)
 
-  // Scroll to bottom when a new result arrives so it's always visible
   useEffect(() => {
-    if (feedRef.current && feedItems.length > 0) {
-      feedRef.current.scrollTop = feedRef.current.scrollHeight
-    }
+    if (feedRef.current && feedItems.length > 0) feedRef.current.scrollTop = feedRef.current.scrollHeight
   }, [feedItems.length])
 
-  async function run(ids: number[]) {
-    setPhase('running')
-    setProgress(0)
-    setTotal(0)
-    setSummary(null)
-    setCurrentId(null)
-    abortRef.current = new AbortController()
+  // On mount: restore active job from localStorage
+  useEffect(() => {
+    const savedId = (() => { try { return localStorage.getItem(AUTOFILL_JOB_KEY) } catch { return null } })()
+    if (!savedId) return
+    fetch(`/api/admin/auto-caption/jobs/${savedId}`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then((job: any) => {
+        if (!job || (job.status !== 'running' && job.status !== 'done')) {
+          try { localStorage.removeItem(AUTOFILL_JOB_KEY) } catch {}
+          return
+        }
+        setActiveJobIdState(savedId)
+        setTotal(job.totalCount)
+        setProgress(job.nextIndex)
+        setPhase(job.status === 'done' ? 'done' : 'running')
+        onJobChange?.(job.status === 'running')
+        const results: any[] = Array.isArray(job.results) ? job.results : []
+        const newItems = results.filter((r: any) => r.type === 'result' || r.type === 'error')
+        setFeedItems(newItems.map((r: any) => ({
+          id: r.id, value: r.value ?? '', tags: r.tags,
+          imageUrl: r.imageUrl || imageUrlById[r.id], error: r.error, autoSaved: true,
+        })))
+        newItems.forEach((r: any) => seenIds.current.add(r.id))
+        if (job.status === 'done') {
+          setSummary({ processed: job.processedCount, skipped: job.skippedCount, failed: job.failedCount })
+          try { localStorage.removeItem(AUTOFILL_JOB_KEY) } catch {}
+        }
+      })
+      .catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Polling — runs while a job is active
+  useEffect(() => {
+    if (!activeJobId || phase !== 'running') {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+      return
+    }
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/admin/auto-caption/jobs/${activeJobId}`, { headers: authHeaders() })
+        if (!res.ok) return
+        const job = await res.json()
+        setProgress(job.nextIndex)
+        setTotal(job.totalCount)
+        const results: any[] = Array.isArray(job.results) ? job.results : []
+        const fresh = results.filter((r: any) => (r.type === 'result' || r.type === 'error') && !seenIds.current.has(r.id))
+        if (fresh.length > 0) {
+          setFeedItems(prev => [...prev, ...fresh.map((r: any) => ({
+            id: r.id, value: r.value ?? '', tags: r.tags,
+            imageUrl: r.imageUrl || imageUrlById[r.id], error: r.error, autoSaved: true,
+          }))])
+          fresh.forEach((r: any) => seenIds.current.add(r.id))
+        }
+        if (job.status === 'done' || job.status === 'cancelled') {
+          clearInterval(pollRef.current!); pollRef.current = null
+          setPhase('done')
+          setSummary({ processed: job.processedCount, skipped: job.skippedCount, failed: job.failedCount })
+          setActiveJobId(null)
+        }
+      } catch {}
+    }
+    pollRef.current = setInterval(poll, 2000)
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
+  }, [activeJobId, phase]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function startJob(ids: number[]) {
+    setPhase('running'); setProgress(0); setTotal(ids.length); setSummary(null)
+    seenIds.current.clear(); setFeedItems([])
     try {
-      const res = await fetch('/api/admin/auto-caption', {
-        method:  'POST',
+      const res = await fetch('/api/admin/auto-caption/jobs', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body:    JSON.stringify({
+        body: JSON.stringify({
           ids, mode, model, overwrite, advanced,
-          preview: true,
           context: context.trim() || undefined,
           contextTags: contextTags.length ? contextTags : undefined,
         }),
-        signal: abortRef.current.signal,
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
-      const reader  = res.body!.getReader()
-      const decoder = new TextDecoder()
-      let   buffer  = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const event = JSON.parse(line.slice(6)) as AutoFillEvent
-            if (event.type === 'start')       setTotal(event.total ?? 0)
-            if (event.current !== undefined)  setProgress(event.current)
-            if (event.type === 'processing')  setCurrentId(event.id ?? null)
-            if (event.type === 'result' && event.id) {
-              const item: FeedItem = {
-                id:       event.id,
-                value:    event.value ?? '',
-                tags:     event.tags,
-                imageUrl: imageUrlById[event.id],
-              }
-              setFeedItems(prev => [...prev, item])
-              setCurrentId(null)
-            }
-            if (event.type === 'error' && event.id) {
-              const item: FeedItem = {
-                id:       event.id,
-                value:    '',
-                imageUrl: imageUrlById[event.id],
-                error:    event.error ?? 'Unknown error',
-              }
-              setFeedItems(prev => [...prev, item])
-              setCurrentId(null)
-            }
-            if (event.type === 'done') {
-              setSummary({ processed: event.processed ?? 0, skipped: event.skipped ?? 0, failed: event.failed ?? 0 })
-              setCurrentId(null)
-              setPhase('done')
-            }
-          } catch {}
-        }
-      }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') setSummary(s => s ?? { processed: 0, skipped: 0, failed: 1 })
-      setPhase('done')
+      const { jobId } = await res.json()
+      setActiveJobId(jobId)
+    } catch {
+      setSummary({ processed: 0, skipped: 0, failed: 1 }); setPhase('done')
     }
   }
 
-  async function saveItem(item: FeedItem, overrideValue?: string) {
+  async function stopJob() {
+    if (activeJobId) {
+      await fetch(`/api/admin/auto-caption/jobs/${activeJobId}`, { method: 'DELETE', headers: authHeaders() }).catch(() => {})
+      setActiveJobId(null)
+    }
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+    setPhase('done'); setSummary(s => s ?? { processed: 0, skipped: 0, failed: 0 })
+  }
+
+  // Edit an already-saved result and re-save to DB
+  async function editAndSaveItem(item: FeedItem, overrideValue?: string) {
     const finalValue = overrideValue ?? item.value
     const finalTags  = mode === 'tags' ? cleanTagsClient(finalValue) : undefined
     setSavingIds(prev => new Set(prev).add(item.id))
     try {
-      const body = mode !== 'tags'
-        ? { ids: [item.id], caption: finalValue }
-        : { ids: [item.id], tags: finalTags }
-      await fetch('/api/admin/dataset', {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body:    JSON.stringify(body),
-      })
+      const body = mode !== 'tags' ? { ids: [item.id], caption: finalValue } : { ids: [item.id], tags: finalTags }
+      await fetch('/api/admin/dataset', { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(body) })
       onItemSaved(item.id, mode !== 'tags' ? { caption: finalValue } : { tags: finalTags })
       setFeedItems(prev => prev.filter(i => i.id !== item.id))
       if (editingId === item.id) setEditingId(null)
@@ -1248,7 +1273,7 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
     }
   }
 
-  function skipItem(id: number) {
+  function dismissItem(id: number) {
     setFeedItems(prev => prev.filter(i => i.id !== id))
     if (editingId === id) setEditingId(null)
   }
@@ -1271,20 +1296,23 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
           </div>
           <div>
             <p className="text-xs font-semibold text-white leading-none">Auto Fill</p>
-            <p className="text-[10px] text-slate-600 mt-0.5 leading-none">
-              {count > 0 ? `${count} selected` : 'Select images on the right'}
+            <p className="text-[10px] mt-0.5 leading-none">
+              {phase === 'running'
+                ? <span className="text-cyan-500">Running in background…</span>
+                : <span className="text-slate-600">{count > 0 ? `${count} selected` : 'Select images on the right'}</span>
+              }
             </p>
           </div>
         </div>
         <div className="flex items-center gap-1">
           {phase === 'running' && (
-            <button onClick={() => abortRef.current?.abort()}
+            <button onClick={stopJob}
               className="px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] hover:bg-red-500/15 transition-all">
               Stop
             </button>
           )}
           {phase !== 'setup' && (
-            <button onClick={() => { abortRef.current?.abort(); setPhase('setup'); setFeedItems([]); setSummary(null); setProgress(0); setTotal(0) }}
+            <button onClick={() => { setPhase('setup'); setFeedItems([]); setSummary(null); setProgress(0); setTotal(0) }}
               className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-500 hover:text-white text-[10px] transition-all">
               Reset
             </button>
@@ -1295,15 +1323,24 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
         </div>
       </div>
 
-      {/* Config — always visible, locked during run */}
+      {/* Background note — shown while running */}
+      {phase === 'running' && (
+        <div className="mx-4 mt-3 mb-1 px-3 py-2 rounded-lg bg-cyan-500/[0.06] border border-cyan-500/[0.12] shrink-0">
+          <p className="text-[10px] text-cyan-400/80 leading-relaxed">
+            Processing continues even if you close this panel or the browser tab. Results are auto-saved as they complete.
+          </p>
+        </div>
+      )}
+
+      {/* Config */}
       <div className="shrink-0 px-4 pt-3 pb-2 space-y-3 border-b border-white/[0.05]">
 
         {/* Mode row */}
         <div className="flex gap-1.5">
           {([
-            { id: 'caption', label: 'Caption',      active: 'bg-violet-500/15 border-violet-500/30 text-violet-300' },
-            { id: 'tags',    label: 'Tags',          active: 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300' },
-            { id: 'flux',    label: 'FLUX Caption',  active: 'bg-amber-500/15 border-amber-500/30 text-amber-300' },
+            { id: 'caption', label: 'Caption',     active: 'bg-violet-500/15 border-violet-500/30 text-violet-300' },
+            { id: 'tags',    label: 'Tags',         active: 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300' },
+            { id: 'flux',    label: 'FLUX Caption', active: 'bg-amber-500/15 border-amber-500/30 text-amber-300' },
           ] as const).map(m => (
             <button key={m.id} onClick={() => !isLocked && setMode(m.id)}
               className={`flex-1 py-1.5 rounded-lg border text-[10px] font-medium transition-all
@@ -1315,20 +1352,14 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
         </div>
 
         <div className="flex gap-2">
-          {([
-            { key: 'flash', label: 'Flash Lite' },
-            { key: 'pro',   label: 'Pro' },
-          ] as const).map(m => (
+          {([{ key: 'flash', label: 'Flash Lite' }, { key: 'pro', label: 'Pro' }] as const).map(m => (
             <button key={m.key} onClick={() => !isLocked && setModel(m.key)}
               className={`flex-1 py-1.5 rounded-lg border text-[11px] transition-all
                 ${model === m.key ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white'} ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
               {m.label}
             </button>
           ))}
-          {mode !== 'flux' && ([
-            { key: false, label: 'Basic' },
-            { key: true,  label: 'Advanced' },
-          ] as const).map(m => (
+          {mode !== 'flux' && ([{ key: false, label: 'Basic' }, { key: true, label: 'Advanced' }] as const).map(m => (
             <button key={String(m.key)} onClick={() => !isLocked && setAdvanced(m.key)}
               className={`flex-1 py-1.5 rounded-lg border text-[11px] transition-all
                 ${advanced === m.key ? 'bg-violet-500/15 border-violet-500/30 text-violet-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white'} ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
@@ -1337,7 +1368,6 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
           ))}
         </div>
 
-        {/* Overwrite toggle + context (collapsed during run) */}
         {phase === 'setup' && (
           <>
             <div className="flex items-center justify-between">
@@ -1348,7 +1378,6 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
               </button>
             </div>
 
-            {/* Context tags / trigger word */}
             <div>
               {mode === 'flux' && (
                 <p className="text-[10px] text-amber-400/70 mb-1.5">
@@ -1400,7 +1429,7 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
         {/* Start / progress */}
         {phase === 'setup' ? (
           <button
-            onClick={() => { if (count > 0) run(Array.from(selected)) }}
+            onClick={() => { if (count > 0) startJob(Array.from(selected)) }}
             disabled={count === 0}
             className="w-full py-2 rounded-lg bg-gradient-to-r from-cyan-500/20 to-violet-500/20 border border-cyan-500/20 text-white text-xs font-semibold hover:from-cyan-500/30 hover:to-violet-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
@@ -1412,25 +1441,25 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
               <span className="flex items-center gap-1.5">
                 {phase === 'running' && <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />}
                 {phase === 'running'
-                  ? currentId ? `Analyzing #${currentId}…` : 'Starting…'
+                  ? `Processing… ${progress} / ${total}`
                   : summary ? `Done · ${summary.processed} filled${summary.failed ? ` · ${summary.failed} failed` : ''}` : 'Complete'
                 }
               </span>
-              <span>{progress} / {total}</span>
+              {phase === 'done' && <span className="text-emerald-400">✓</span>}
             </div>
             <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
-              <div className={`h-full rounded-full transition-all duration-300 ${phase === 'done' ? 'bg-emerald-500' : 'bg-cyan-500'}`}
+              <div className={`h-full rounded-full transition-all duration-500 ${phase === 'done' ? 'bg-emerald-500' : 'bg-cyan-500'}`}
                 style={{ width: total ? `${(progress / total) * 100}%` : '0%' }} />
             </div>
           </div>
         )}
       </div>
 
-      {/* Feed */}
+      {/* Feed — auto-saved results */}
       {feedItems.length > 0 && (
         <div ref={feedRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
           <p className="text-[10px] text-slate-600 uppercase tracking-wider px-1 pb-1">
-            {feedItems.length} pending — scroll up to review earlier results
+            {feedItems.length} result{feedItems.length !== 1 ? 's' : ''} · auto-saved · edit or dismiss
           </p>
           {feedItems.map(item => {
             const isSaving  = savingIds.has(item.id)
@@ -1439,7 +1468,6 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
             const isError   = !!item.error
             return (
               <div key={item.id} className={`rounded-xl border overflow-hidden ${isError ? 'border-red-500/20 bg-red-500/[0.04]' : 'border-white/[0.08] bg-white/[0.02]'}`}>
-                {/* Image + text */}
                 <div className="flex gap-2.5 p-2.5">
                   <div className="w-16 h-16 shrink-0 rounded-lg overflow-hidden bg-white/[0.04] border border-white/[0.07]">
                     {item.imageUrl && !isVideo
@@ -1448,7 +1476,10 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
                     }
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[9px] text-slate-700 mb-1">#{item.id}</p>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <p className="text-[9px] text-slate-700">#{item.id}</p>
+                      {!isError && <span className="text-[9px] text-emerald-600">✓ saved</span>}
+                    </div>
                     {isError ? (
                       <p className="text-[11px] text-red-400 leading-relaxed">{item.error}</p>
                     ) : isEditing ? (
@@ -1471,18 +1502,17 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
                   </div>
                 </div>
 
-                {/* Actions */}
                 <div className="flex border-t border-white/[0.05]">
                   {isError ? (
-                    <button onClick={() => skipItem(item.id)}
+                    <button onClick={() => dismissItem(item.id)}
                       className="flex-1 py-1.5 text-[10px] text-slate-600 hover:bg-red-500/10 hover:text-red-400 transition-colors">
                       Dismiss
                     </button>
                   ) : isEditing ? (
                     <>
-                      <button onClick={() => saveItem(item, editValue)} disabled={isSaving}
+                      <button onClick={() => editAndSaveItem(item, editValue)} disabled={isSaving}
                         className="flex-1 py-1.5 text-[10px] text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50 font-medium">
-                        {isSaving ? 'Saving…' : 'Save edit'}
+                        {isSaving ? 'Saving…' : 'Save changes'}
                       </button>
                       <button onClick={() => setEditingId(null)}
                         className="flex-1 py-1.5 text-[10px] text-slate-500 hover:bg-white/[0.05] transition-colors border-l border-white/[0.05]">
@@ -1491,17 +1521,13 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
                     </>
                   ) : (
                     <>
-                      <button onClick={() => saveItem(item)} disabled={isSaving}
-                        className="flex-1 py-1.5 text-[10px] text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50 font-medium">
-                        {isSaving ? 'Saving…' : '✓ Save'}
-                      </button>
                       <button onClick={() => startEdit(item)}
-                        className="flex-1 py-1.5 text-[10px] text-slate-500 hover:bg-white/[0.05] hover:text-slate-300 transition-colors border-l border-white/[0.05]">
+                        className="flex-1 py-1.5 text-[10px] text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 transition-colors">
                         Edit
                       </button>
-                      <button onClick={() => skipItem(item.id)}
-                        className="flex-1 py-1.5 text-[10px] text-slate-600 hover:bg-red-500/10 hover:text-red-400 transition-colors border-l border-white/[0.05]">
-                        Skip
+                      <button onClick={() => dismissItem(item.id)}
+                        className="flex-1 py-1.5 text-[10px] text-slate-600 hover:bg-white/[0.05] hover:text-slate-400 transition-colors border-l border-white/[0.05]">
+                        Dismiss
                       </button>
                     </>
                   )}
@@ -1512,11 +1538,13 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved }: {
         </div>
       )}
 
-      {/* Empty feed state during/after run */}
       {phase !== 'setup' && feedItems.length === 0 && (
         <div className="flex-1 flex items-center justify-center text-center p-6">
           {phase === 'running'
-            ? <p className="text-[11px] text-slate-600">Results will appear here as they complete…</p>
+            ? <div className="space-y-1.5">
+                <p className="text-[11px] text-slate-500">Processing in background…</p>
+                <p className="text-[10px] text-slate-700">You can safely close this panel or the browser tab.</p>
+              </div>
             : <p className="text-[11px] text-slate-600">All results reviewed.</p>
           }
         </div>
@@ -1856,6 +1884,7 @@ export default function DatasetPage() {
   const [bulkMode,   setBulkMode]   = useState<"tags" | "caption" | null>(null)
   const [autoFillOpen,    setAutoFillOpen]    = useState<boolean>(() => _p.autoFillOpen ?? false)
   const [addToBucketOpen, setAddToBucketOpen] = useState(false)
+  const [hasRunningJob,   setHasRunningJob]   = useState(false)
 
   // Buckets
   const [buckets,          setBuckets]          = useState<Bucket[]>([])
@@ -2296,6 +2325,7 @@ export default function DatasetPage() {
               selected={selected}
               imageUrlById={autoFillImageUrlById}
               onClose={() => setAutoFillOpen(false)}
+              onJobChange={setHasRunningJob}
               onItemSaved={(id, data) => {
                 setImages(prev => prev.map(img => {
                   if (img.id !== id) return img
@@ -2403,9 +2433,12 @@ export default function DatasetPage() {
             <SlidersHorizontal size={11} /> Filters{hasActiveFilters ? " •" : ""}
           </button>
           <button onClick={() => setAutoFillOpen(v => !v)}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
-              ${autoFillOpen ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white'}`}>
+            className={`relative flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all
+              ${autoFillOpen || hasRunningJob ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white'}`}>
             <Sparkles size={11} /> Auto Fill
+            {hasRunningJob && !autoFillOpen && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+            )}
           </button>
           {uploadsBucketId && (
             <button onClick={() => { setUploadModalOpen(true); setBucketFilter(String(uploadsBucketId)) }}

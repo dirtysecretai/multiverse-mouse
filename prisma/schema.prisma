@@ -944,3 +944,30 @@ model UserLora {
 
   @@index([userId])
 }
+
+// ============================================
+// AUTO-FILL BACKGROUND JOBS
+// ============================================
+
+model AutoFillJob {
+  id             String   @id @default(cuid())
+  status         String   @default("running") // 'running' | 'done' | 'cancelled'
+  mode           String   // 'caption' | 'tags' | 'flux'
+  modelKey       String   // 'pro' | 'flash'
+  overwrite      Boolean  @default(false)
+  advanced       Boolean  @default(false)
+  curatorContext String?  @db.Text
+  triggerWord    String?
+  imageIds       Int[]
+  nextIndex      Int      @default(0)
+  processedCount Int      @default(0)
+  skippedCount   Int      @default(0)
+  failedCount    Int      @default(0)
+  totalCount     Int
+  results        Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
