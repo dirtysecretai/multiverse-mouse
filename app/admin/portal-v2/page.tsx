@@ -64,6 +64,9 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
   { id: "z-image-base",         apiId: "z-image-base",             name: "Z-Image Base",        aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "4:5"], supportsQuality: true, qualityOptions: ["1k", "2k", "4k"], maxReferenceImages: 0, isFal: true, maxImages: 4 },
   { id: "z-image-turbo",        apiId: "z-image-turbo",            name: "Z-Image Turbo",       aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "4:5"], supportsQuality: true, qualityOptions: ["1k", "2k", "4k"], maxReferenceImages: 1, isFal: true, maxImages: 4 },
   { id: "clarity-upscaler",     apiId: "clarity-upscaler",         name: "Clarity Upscaler",    aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true, isUpscaler: true },
+  { id: "aura-sr",              apiId: "aura-sr",                  name: "AuraSR",              aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true, isUpscaler: true },
+  { id: "esrgan",               apiId: "esrgan",                   name: "ESRGAN",              aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true, isUpscaler: true },
+  { id: "drct",                 apiId: "drct",                     name: "DRCT",                aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true, isUpscaler: true },
 ]
 
 // --- HELPERS ---
@@ -84,6 +87,9 @@ function calcTicketCost(modelId: string, quality: Quality, aspectRatio?: AspectR
   if (modelId === "z-image-base")        return quality === "4k" ? 15 : quality === "2k" ? 4 : 1
   if (modelId === "z-image-turbo")       return loraActive ? (quality === "4k" ? 17 : quality === "2k" ? 5 : 1) : (quality === "4k" ? 8 : quality === "2k" ? 2 : 1)
   if (modelId === "clarity-upscaler")    return 7 // base; upscaler uses upscaleFactor-dependent cost computed separately
+  if (modelId === "aura-sr")             return 1
+  if (modelId === "esrgan")              return 1
+  if (modelId === "drct")               return 1 // minimum; actual cost computed server-side from output MP
   if (modelId === "kling-v3-image")     return 2
   if (modelId === "kling-o3-image")     return quality === "4k" ? 4 : 2
   if (modelId === "wan-2.7-pro")        return 4
@@ -429,6 +435,9 @@ const IMAGE_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
   "z-image-base":        "$$",
   "z-image-turbo":       "$",
   "clarity-upscaler":    "$$",
+  "aura-sr":             "$",
+  "esrgan":              "$",
+  "drct":                "$",
 }
 const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$"> = {
   "lipsync-v3":         "$",
@@ -1976,6 +1985,7 @@ function ImageDetailModal({
                           {image.videoMetadata.upscaleFactor}x upscale
                         </span>
                       )}
+                      {/* Clarity-specific */}
                       {image.videoMetadata?.upscaleCreativity != null && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
                           creativity {Number(image.videoMetadata.upscaleCreativity).toFixed(2)}
@@ -1994,6 +2004,34 @@ function ImageDetailModal({
                       {image.videoMetadata?.upscaleSteps != null && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
                           {image.videoMetadata.upscaleSteps} steps
+                        </span>
+                      )}
+                      {/* AuraSR-specific */}
+                      {image.videoMetadata?.auraSrCheckpoint != null && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
+                          {image.videoMetadata.auraSrCheckpoint}
+                        </span>
+                      )}
+                      {image.videoMetadata?.auraSrOverlappingTiles != null && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
+                          tiles {image.videoMetadata.auraSrOverlappingTiles ? "overlap" : "no overlap"}
+                        </span>
+                      )}
+                      {/* DRCT-specific */}
+                      {image.model === "drct" && image.videoMetadata?.drctTicketCost != null && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
+                          {image.videoMetadata.drctTicketCost} ticket{image.videoMetadata.drctTicketCost !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                      {/* ESRGAN-specific */}
+                      {image.videoMetadata?.esrganModel && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
+                          {String(image.videoMetadata.esrganModel).replace("RealESRGAN_", "")}
+                        </span>
+                      )}
+                      {image.videoMetadata?.esrganFace && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[11px] font-mono">
+                          face mode
                         </span>
                       )}
                       {!image.videoMetadata?.upscaleFactor && (
@@ -2985,6 +3023,22 @@ function PromptBox({
   const [upscaleResemblance, setUpscaleResemblance] = useState(0.6)
   const [upscaleGuidance, setUpscaleGuidance] = useState(4)
   const [upscaleSteps, setUpscaleSteps] = useState(18)
+  // AuraSR-specific state
+  const [auraSrCheckpoint, setAuraSrCheckpoint] = useState<"v1" | "v2">("v2")
+  const [auraSrOverlappingTiles, setAuraSrOverlappingTiles] = useState(false)
+  // ESRGAN-specific state
+  type EsrganModel = "RealESRGAN_x4plus" | "RealESRGAN_x2plus" | "RealESRGAN_x4plus_anime_6B" | "RealESRGAN_x4_v3" | "RealESRGAN_x4_wdn_v3" | "RealESRGAN_x4_anime_v3"
+  const ESRGAN_MODELS: { id: EsrganModel; label: string; desc: string }[] = [
+    { id: "RealESRGAN_x4plus",          label: "x4plus",      desc: "General purpose 4x" },
+    { id: "RealESRGAN_x2plus",          label: "x2plus",      desc: "General purpose 2x" },
+    { id: "RealESRGAN_x4plus_anime_6B", label: "Anime 6B",    desc: "Anime / illustration" },
+    { id: "RealESRGAN_x4_v3",           label: "x4 v3",       desc: "General v3" },
+    { id: "RealESRGAN_x4_wdn_v3",       label: "WDN v3",      desc: "v3 + denoising" },
+    { id: "RealESRGAN_x4_anime_v3",     label: "Anime v3",    desc: "Anime v3" },
+  ]
+  const [esrganModel, setEsrganModel] = useState<EsrganModel>("RealESRGAN_x4plus")
+  const [esrganFace, setEsrganFace] = useState(false)
+  const [esrganOutputFormat, setEsrganOutputFormat] = useState<"png" | "jpeg">("png")
   // Restore saved prompt state after mount to avoid SSR/client hydration mismatch
   useEffect(() => {
     try {
@@ -3058,7 +3112,7 @@ function PromptBox({
   }, [configOverride?.version])
 
   const supportsLora = model.id === "z-image-base" || model.id === "z-image-turbo" || model.id === "flux-2" || model.id === "flux-1-dev"
-  const upscaleTicketCost = upscaleFactor === 4 ? 26 : 7
+  const upscaleTicketCost = (model.id === "aura-sr" || model.id === "esrgan" || model.id === "drct") ? 1 : (upscaleFactor === 4 ? 26 : 7)
   const ticketCost = model.isUpscaler
     ? upscaleTicketCost
     : calcTicketCost(model.id, quality, aspectRatio, supportsLora && !!selectedLoraUrl, activeRefImages.length > 0)
@@ -3082,11 +3136,12 @@ function PromptBox({
       : rawPrompt
     const count = model.maxImages ? imageCount : 1
 
-    // --- Clarity Upscaler: completely different flow ---
+    // --- Upscaler models: completely different flow ---
     if (model.isUpscaler) {
       const upscalePrompt = prompt.trim() || "masterpiece, best quality, highres"
       const slotId = `slot-${Date.now()}-0`
-      onAddPending({ slotId, status: "loading", prompt: `${upscaleFactor}x upscale`, modelId: model.apiId, aspectRatio: "1:1", quality: `${upscaleFactor}x` as Quality })
+      const pendingLabel = model.id === "aura-sr" ? `${upscaleFactor}x AuraSR` : model.id === "esrgan" ? `${upscaleFactor}x ESRGAN` : model.id === "drct" ? `${upscaleFactor}x DRCT` : `${upscaleFactor}x upscale`
+      onAddPending({ slotId, status: "loading", prompt: pendingLabel, modelId: model.apiId, aspectRatio: "1:1", quality: `${upscaleFactor}x` as Quality })
       try {
         const res = await fetch("/api/generate", {
           method: "POST",
@@ -3094,12 +3149,15 @@ function PromptBox({
           body: JSON.stringify({
             model: model.apiId,
             upscaleImageUrl: upscaleSourceUrl,
-            prompt: upscalePrompt,
             upscaleFactor,
-            upscaleCreativity,
-            upscaleResemblance,
-            upscaleGuidance,
-            upscaleSteps,
+            ...(model.id === "clarity-upscaler"
+              ? { prompt: upscalePrompt, upscaleCreativity, upscaleResemblance, upscaleGuidance, upscaleSteps }
+              : model.id === "aura-sr"
+                ? { auraSrCheckpoint, auraSrOverlappingTiles }
+                : model.id === "esrgan"
+                  ? { esrganModel, esrganFace, esrganOutputFormat }
+                  : {} // drct: no extra params
+            ),
           }),
         })
         const data = await res.json()
@@ -3761,75 +3819,76 @@ function PromptBox({
           </div>
         )}
 
-        {/* Upscaler: source image input */}
-        {model.isUpscaler && (
-          <div className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-md shadow-xl px-4 py-3 space-y-2">
-            <input
-              ref={upscaleFileInputRef}
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={e => {
-                const f = e.target.files?.[0]
-                e.target.value = ""
-                if (f) uploadUpscaleSource(f)
-              }}
-            />
-            {/* Pick from active Refs */}
-            {activeRefImages.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest shrink-0">From Refs</span>
-                {activeRefImages.map((img) => (
-                  <button
-                    key={img.id}
-                    onClick={() => { setUpscaleSourceUrl(img.url); setUpscaleUploadError(null) }}
-                    title="Use this ref as upscale source"
-                    className={`relative w-10 h-10 rounded-lg overflow-hidden border transition-all shrink-0 ${upscaleSourceUrl === img.url ? "border-cyan-400 ring-1 ring-cyan-400/50" : "border-white/10 hover:border-cyan-400/50"}`}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={img.url} alt="ref" className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest shrink-0">Source</span>
-              <input
-                type="text"
-                value={upscaleSourceUrl}
-                onChange={e => { setUpscaleSourceUrl(e.target.value); setUpscaleUploadError(null) }}
-                placeholder="Paste image URL to upscale…"
-                className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none min-w-0"
-              />
-              <button
-                onClick={() => upscaleFileInputRef.current?.click()}
-                disabled={upscaleUploading}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-[11px] text-slate-300 hover:text-white transition-all disabled:opacity-50 shrink-0"
-              >
-                {upscaleUploading
-                  ? <><Loader2 size={11} className="animate-spin" />Uploading…</>
-                  : <><ImagePlus size={11} />Upload</>
-                }
-              </button>
-              {upscaleSourceUrl.startsWith("http") && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={upscaleSourceUrl}
-                  alt="source preview"
-                  className="w-10 h-10 rounded-lg object-cover border border-white/10 shrink-0"
-                  onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
-                  onLoad={e => { (e.target as HTMLImageElement).style.display = "block" }}
-                />
-              )}
-            </div>
-            {upscaleUploadError && (
-              <p className="text-[11px] text-red-400">{upscaleUploadError}</p>
-            )}
-          </div>
-        )}
-
         {/* Prompt card */}
         <div className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-md shadow-2xl">
+
+          {/* Upscaler source — integrated at top of card (clarity + drct only; aura-sr/esrgan embed it in their config section) */}
+          {(model.id === "clarity-upscaler" || model.id === "drct") && (
+            <div className="px-4 pt-4 pb-3 space-y-2 border-b border-white/5">
+              <input
+                ref={upscaleFileInputRef}
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  e.target.value = ""
+                  if (f) uploadUpscaleSource(f)
+                }}
+              />
+              {/* Pick from active Refs */}
+              {activeRefImages.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest shrink-0">From Refs</span>
+                  {activeRefImages.map((img) => (
+                    <button
+                      key={img.id}
+                      onClick={() => { setUpscaleSourceUrl(img.url); setUpscaleUploadError(null) }}
+                      title="Use this ref as upscale source"
+                      className={`relative w-9 h-9 rounded-lg overflow-hidden border transition-all shrink-0 ${upscaleSourceUrl === img.url ? "border-cyan-400 ring-1 ring-cyan-400/50" : "border-white/10 hover:border-cyan-400/50"}`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img.url} alt="ref" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest shrink-0">Source</span>
+                <input
+                  type="text"
+                  value={upscaleSourceUrl}
+                  onChange={e => { setUpscaleSourceUrl(e.target.value); setUpscaleUploadError(null) }}
+                  placeholder="Paste image URL or upload…"
+                  className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none min-w-0"
+                />
+                {upscaleSourceUrl.startsWith("http") && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={upscaleSourceUrl}
+                    alt="source preview"
+                    className="w-9 h-9 rounded-lg object-cover border border-white/10 shrink-0"
+                    onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
+                    onLoad={e => { (e.target as HTMLImageElement).style.display = "block" }}
+                  />
+                )}
+                <button
+                  onClick={() => upscaleFileInputRef.current?.click()}
+                  disabled={upscaleUploading}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-[11px] text-slate-300 hover:text-white transition-all disabled:opacity-50 shrink-0"
+                >
+                  {upscaleUploading
+                    ? <><Loader2 size={11} className="animate-spin" />Uploading…</>
+                    : <><ImagePlus size={11} />Upload</>
+                  }
+                </button>
+              </div>
+              {upscaleUploadError && (
+                <p className="text-[11px] text-red-400">{upscaleUploadError}</p>
+              )}
+            </div>
+          )}
+
           {/* Textarea — hidden for upscaler (prompt not used) */}
           {!model.isUpscaler && (
             <textarea
@@ -3898,8 +3957,167 @@ function PromptBox({
             </div>
           )}
 
-          {/* Upscaler config sliders */}
-          {model.isUpscaler && (
+          {/* AuraSR config — checkpoint + overlapping tiles */}
+          {model.id === "aura-sr" && (
+            <div className="px-4 py-3 border-t border-cyan-500/10 space-y-2.5">
+              {/* Header row: label left, source input right */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider shrink-0">AuraSR</span>
+                <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                  <input
+                    type="text"
+                    value={upscaleSourceUrl}
+                    onChange={e => { setUpscaleSourceUrl(e.target.value); setUpscaleUploadError(null) }}
+                    placeholder="Paste URL or upload…"
+                    className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-md px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/30 min-w-0"
+                  />
+                  {upscaleSourceUrl.startsWith("http") && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={upscaleSourceUrl} alt="" className="w-6 h-6 rounded object-cover border border-white/10 shrink-0"
+                      onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
+                      onLoad={e => { (e.target as HTMLImageElement).style.display = "block" }}
+                    />
+                  )}
+                  {activeRefImages.map(img => (
+                    <button key={img.id} onClick={() => { setUpscaleSourceUrl(img.url); setUpscaleUploadError(null) }}
+                      title="Use this ref as source"
+                      className={`relative w-6 h-6 rounded overflow-hidden border shrink-0 transition-all ${upscaleSourceUrl === img.url ? "border-cyan-400" : "border-white/10 hover:border-cyan-400/50"}`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img.url} alt="ref" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                  <button onClick={() => upscaleFileInputRef.current?.click()} disabled={upscaleUploading}
+                    className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-[11px] text-slate-300 hover:text-white transition-all disabled:opacity-50 shrink-0">
+                    {upscaleUploading ? <><Loader2 size={10} className="animate-spin" />…</> : <><ImagePlus size={10} />Upload</>}
+                  </button>
+                </div>
+              </div>
+              {upscaleUploadError && <p className="text-[11px] text-red-400">{upscaleUploadError}</p>}
+              {/* Checkpoint */}
+              <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
+                <span className="text-[10px] font-mono text-slate-500">Checkpoint</span>
+                <div className="flex rounded-md overflow-hidden border border-white/10 w-fit">
+                  {(["v1", "v2"] as const).map(v => (
+                    <button key={v} onClick={() => setAuraSrCheckpoint(v)}
+                      className={`px-3 py-1 text-[11px] font-mono transition-colors ${auraSrCheckpoint === v ? "bg-cyan-500/20 text-cyan-300" : "text-slate-500 hover:text-slate-300"}`}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Overlapping tiles */}
+              <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
+                <span className="text-[10px] font-mono text-slate-500">Overlap Tiles</span>
+                <button
+                  onClick={() => setAuraSrOverlappingTiles(v => !v)}
+                  className={`flex items-center gap-1.5 w-fit px-3 py-1 rounded-md border text-[11px] font-mono transition-all ${
+                    auraSrOverlappingTiles
+                      ? "bg-cyan-500/20 border-cyan-500/30 text-cyan-300"
+                      : "border-white/10 text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  {auraSrOverlappingTiles ? "On · 2× slower" : "Off"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* DRCT info — no config params, just pricing note */}
+          {model.id === "drct" && (
+            <div className="px-4 py-3 border-t border-cyan-500/10 flex items-start gap-2">
+              <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider shrink-0 mt-0.5">DRCT</span>
+              <p className="text-[11px] text-slate-500 leading-relaxed">Transformer upscaler — no extra settings. Tickets scale with output size: 1 ticket per 2 MP (1 ticket at 1024², up to 9 at 4096²).</p>
+            </div>
+          )}
+
+          {/* ESRGAN config — model picker, face toggle, output format */}
+          {model.id === "esrgan" && (
+            <div className="px-4 py-3 border-t border-cyan-500/10 space-y-2.5">
+              {/* Header row: label left, source input right */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider shrink-0">ESRGAN</span>
+                <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                  <input
+                    type="text"
+                    value={upscaleSourceUrl}
+                    onChange={e => { setUpscaleSourceUrl(e.target.value); setUpscaleUploadError(null) }}
+                    placeholder="Paste URL or upload…"
+                    className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-md px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/30 min-w-0"
+                  />
+                  {upscaleSourceUrl.startsWith("http") && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={upscaleSourceUrl} alt="" className="w-6 h-6 rounded object-cover border border-white/10 shrink-0"
+                      onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
+                      onLoad={e => { (e.target as HTMLImageElement).style.display = "block" }}
+                    />
+                  )}
+                  {activeRefImages.map(img => (
+                    <button key={img.id} onClick={() => { setUpscaleSourceUrl(img.url); setUpscaleUploadError(null) }}
+                      title="Use this ref as source"
+                      className={`relative w-6 h-6 rounded overflow-hidden border shrink-0 transition-all ${upscaleSourceUrl === img.url ? "border-cyan-400" : "border-white/10 hover:border-cyan-400/50"}`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img.url} alt="ref" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                  <button onClick={() => upscaleFileInputRef.current?.click()} disabled={upscaleUploading}
+                    className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-[11px] text-slate-300 hover:text-white transition-all disabled:opacity-50 shrink-0">
+                    {upscaleUploading ? <><Loader2 size={10} className="animate-spin" />…</> : <><ImagePlus size={10} />Upload</>}
+                  </button>
+                </div>
+              </div>
+              {upscaleUploadError && <p className="text-[11px] text-red-400">{upscaleUploadError}</p>}
+              {/* Model picker */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-mono text-slate-500">Model</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {ESRGAN_MODELS.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => setEsrganModel(m.id)}
+                      title={m.desc}
+                      className={`px-2.5 py-1 rounded-md border text-[11px] font-mono transition-all ${
+                        esrganModel === m.id
+                          ? "bg-cyan-500/20 border-cyan-500/30 text-cyan-300"
+                          : "border-white/10 text-slate-500 hover:text-slate-300 hover:border-white/20"
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Face + format row */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
+                  <span className="text-[10px] font-mono text-slate-500">Face Mode</span>
+                  <button
+                    onClick={() => setEsrganFace(v => !v)}
+                    className={`flex items-center gap-1.5 w-fit px-3 py-1 rounded-md border text-[11px] font-mono transition-all ${
+                      esrganFace
+                        ? "bg-cyan-500/20 border-cyan-500/30 text-cyan-300"
+                        : "border-white/10 text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    {esrganFace ? "On" : "Off"}
+                  </button>
+                </div>
+                <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
+                  <span className="text-[10px] font-mono text-slate-500">Format</span>
+                  <div className="flex rounded-md overflow-hidden border border-white/10 w-fit">
+                    {(["png", "jpeg"] as const).map(f => (
+                      <button key={f} onClick={() => setEsrganOutputFormat(f)}
+                        className={`px-3 py-1 text-[11px] font-mono transition-colors ${esrganOutputFormat === f ? "bg-cyan-500/20 text-cyan-300" : "text-slate-500 hover:text-slate-300"}`}>
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Clarity Upscaler config sliders */}
+          {model.id === "clarity-upscaler" && (
             <div className="px-4 py-3 border-t border-cyan-500/10 space-y-2">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider">Enhance Config</span>

@@ -214,7 +214,25 @@ export async function POST(request: Request) {
                       upscaleGuidance: params?.upscaleGuidance,
                       upscaleSteps: params?.upscaleSteps,
                     }
-                  : undefined,
+                  : queueItem.modelId === 'aura-sr'
+                    ? {
+                        upscaleFactor: params?.upscaleFactor,
+                        auraSrCheckpoint: params?.auraSrCheckpoint,
+                        auraSrOverlappingTiles: params?.auraSrOverlappingTiles,
+                      }
+                    : queueItem.modelId === 'esrgan'
+                      ? {
+                          upscaleFactor: params?.upscaleFactor,
+                          esrganModel: params?.esrganModel,
+                          esrganFace: params?.esrganFace,
+                          esrganOutputFormat: params?.esrganOutputFormat,
+                        }
+                      : queueItem.modelId === 'drct'
+                        ? {
+                            upscaleFactor: params?.upscaleFactor,
+                            drctTicketCost: params?.drctTicketCost,
+                          }
+                        : undefined,
               expiresAt,
             }
           })

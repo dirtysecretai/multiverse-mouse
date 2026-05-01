@@ -74,6 +74,13 @@ export async function POST(request: Request) {
       upscaleResemblance = 0.6,
       upscaleGuidance = 4,
       upscaleSteps = 18,
+      // AuraSR params
+      auraSrCheckpoint = 'v2',
+      auraSrOverlappingTiles = false,
+      // ESRGAN params
+      esrganModel = 'RealESRGAN_x4plus',
+      esrganFace = false,
+      esrganOutputFormat = 'png',
     } = body
 
     // Check if admin mode is requested and user is actually admin
@@ -84,8 +91,8 @@ export async function POST(request: Request) {
       console.log('🔓 ADMIN MODE: Skipping ticket check/deduction for', user.email)
     }
 
-    // Clarity upscaler doesn't require a prompt (defaults to quality descriptor)
-    if (model !== 'clarity-upscaler' && (!prompt || prompt.trim().length === 0)) {
+    // Upscaler models don't require a prompt
+    if (model !== 'clarity-upscaler' && model !== 'aura-sr' && model !== 'esrgan' && model !== 'drct' && (!prompt || prompt.trim().length === 0)) {
       return NextResponse.json(
         { error: 'Universe coordinates required' },
         { status: 400 }
@@ -122,10 +129,14 @@ export async function POST(request: Request) {
       )
     }
 
-    // Get ticket cost — clarity upscaler uses upscaleFactor to determine cost
+    // Get ticket cost
     const ticketCost = model === 'clarity-upscaler'
       ? (upscaleFactor === 4 ? 26 : 7)
-      : getTicketCost(model, quality)
+      : model === 'aura-sr' || model === 'esrgan'
+        ? 1
+        : model === 'drct'
+          ? 1 // minimum; actual cost computed server-side after fetching image dimensions
+          : getTicketCost(model, quality)
     console.log('Selected model:', selectedModel.displayName, '- Quality:', quality, '- Cost:', ticketCost, 'ticket(s)')
 
     // Check ticket balance (skip for admin mode)
@@ -288,6 +299,272 @@ export async function POST(request: Request) {
             message: `${upscaleFactor}x upscale queued — ${ticketCost} ticket(s) reserved.`,
             modelUsed: selectedModel.displayName,
             ticketsUsed: skipTickets ? 0 : ticketCost,
+          })
+        }
+
+        // ── AuraSR ──────────────────────────────────────────────────────────────
+        if (model === 'aura-sr') {
+          if (!upscaleImageUrl) {
+            return NextResponse.json({ error: 'upscaleImageUrl is required for aura-sr' }, { status: 400 })
+          }
+
+          if (!skipTickets) {
+            await prisma.ticket.update({ where: { userId: user.id }, data: { reserved: { increment: 1 } } })
+          }
+          const updatedTicket = await prisma.ticket.findUnique({ where: { userId: user.id } })
+          const newBalance = skipTickets
+            ? (ticketRecord?.balance || 0)
+            : Math.max(0, (updatedTicket?.balance || 0) - (updatedTicket?.reserved || 0))
+
+          const { FAL_GLOBAL_ID } = await import('@/lib/fal-queue')
+          const webhookUrl = `${process.env.APP_URL || `https://${process.env.VERCEL_URL}`}/api/webhooks/fal`
+
+          // Re-upload source to FAL storage for reliable cross-origin access
+          let falSourceUrl = upscaleImageUrl
+          try {
+            const srcRes = await fetch(upscaleImageUrl, { signal: AbortSignal.timeout(20_000) })
+            if (srcRes.ok) {
+              const contentType = srcRes.headers.get('content-type') || 'image/jpeg'
+              const rawBuffer = Buffer.from(await srcRes.arrayBuffer())
+              const srcBlob = new Blob([new Uint8Array(rawBuffer)], { type: contentType })
+              falSourceUrl = await fal.storage.upload(srcBlob)
+              console.log(`[aura-sr] re-uploaded source to FAL storage: ${falSourceUrl}`)
+            }
+          } catch (uploadErr) {
+            console.warn('[aura-sr] failed to re-upload to FAL storage, using original URL:', uploadErr)
+          }
+
+          const { request_id } = await fal.queue.submit('fal-ai/aura-sr', {
+            input: {
+              image_url: falSourceUrl,
+              upscaling_factor: upscaleFactor,
+              overlapping_tiles: auraSrOverlappingTiles,
+              checkpoint: auraSrCheckpoint,
+            } as any,
+            webhookUrl,
+          })
+
+          const queueEntry = await prisma.generationQueue.create({
+            data: {
+              userId: user.id,
+              modelId: model,
+              modelType: 'image',
+              prompt: `${upscaleFactor}x AuraSR`,
+              parameters: {
+                source: 'main-scanner',
+                quality: `${upscaleFactor}x`,
+                aspectRatio: 'auto',
+                model,
+                adminMode: skipTickets,
+                upscaleImageUrl,
+                upscaleFactor,
+                auraSrCheckpoint,
+                auraSrOverlappingTiles,
+              },
+              status: 'processing',
+              ticketCost: skipTickets ? 0 : 1,
+              falRequestId: request_id,
+              startedAt: new Date(),
+            }
+          })
+
+          await Promise.all([
+            prisma.modelConcurrencyLimit.updateMany({ where: { modelId: model }, data: { currentActive: { increment: 1 } } }),
+            prisma.modelConcurrencyLimit.updateMany({ where: { modelId: FAL_GLOBAL_ID }, data: { currentActive: { increment: 1 } } }),
+          ])
+
+          console.log(`[aura-sr] ${upscaleFactor}x checkpoint=${auraSrCheckpoint} submitted, request_id=${request_id}`)
+          return NextResponse.json({
+            success: true,
+            queued: true,
+            queueId: queueEntry.id,
+            newBalance,
+            message: `${upscaleFactor}x AuraSR queued — 1 ticket reserved.`,
+            modelUsed: 'AuraSR',
+            ticketsUsed: skipTickets ? 0 : 1,
+          })
+        }
+
+        // ── ESRGAN ──────────────────────────────────────────────────────────────
+        if (model === 'esrgan') {
+          if (!upscaleImageUrl) {
+            return NextResponse.json({ error: 'upscaleImageUrl is required for esrgan' }, { status: 400 })
+          }
+
+          if (!skipTickets) {
+            await prisma.ticket.update({ where: { userId: user.id }, data: { reserved: { increment: 1 } } })
+          }
+          const updatedTicket = await prisma.ticket.findUnique({ where: { userId: user.id } })
+          const newBalance = skipTickets
+            ? (ticketRecord?.balance || 0)
+            : Math.max(0, (updatedTicket?.balance || 0) - (updatedTicket?.reserved || 0))
+
+          const { FAL_GLOBAL_ID } = await import('@/lib/fal-queue')
+          const webhookUrl = `${process.env.APP_URL || `https://${process.env.VERCEL_URL}`}/api/webhooks/fal`
+
+          // Re-upload source to FAL storage for reliable cross-origin access
+          let falSourceUrl = upscaleImageUrl
+          try {
+            const srcRes = await fetch(upscaleImageUrl, { signal: AbortSignal.timeout(20_000) })
+            if (srcRes.ok) {
+              const contentType = srcRes.headers.get('content-type') || 'image/jpeg'
+              const rawBuffer = Buffer.from(await srcRes.arrayBuffer())
+              const srcBlob = new Blob([new Uint8Array(rawBuffer)], { type: contentType })
+              falSourceUrl = await fal.storage.upload(srcBlob)
+              console.log(`[esrgan] re-uploaded source to FAL storage: ${falSourceUrl}`)
+            }
+          } catch (uploadErr) {
+            console.warn('[esrgan] failed to re-upload to FAL storage, using original URL:', uploadErr)
+          }
+
+          const { request_id } = await fal.queue.submit('fal-ai/esrgan', {
+            input: {
+              image_url: falSourceUrl,
+              scale: upscaleFactor,
+              model: esrganModel,
+              face: esrganFace,
+              output_format: esrganOutputFormat,
+            },
+            webhookUrl,
+          })
+
+          const queueEntry = await prisma.generationQueue.create({
+            data: {
+              userId: user.id,
+              modelId: model,
+              modelType: 'image',
+              prompt: `${upscaleFactor}x ESRGAN (${esrganModel})`,
+              parameters: {
+                source: 'main-scanner',
+                quality: `${upscaleFactor}x`,
+                aspectRatio: 'auto',
+                model,
+                adminMode: skipTickets,
+                upscaleImageUrl,
+                upscaleFactor,
+                esrganModel,
+                esrganFace,
+                esrganOutputFormat,
+              },
+              status: 'processing',
+              ticketCost: skipTickets ? 0 : 1,
+              falRequestId: request_id,
+              startedAt: new Date(),
+            }
+          })
+
+          await Promise.all([
+            prisma.modelConcurrencyLimit.updateMany({ where: { modelId: model }, data: { currentActive: { increment: 1 } } }),
+            prisma.modelConcurrencyLimit.updateMany({ where: { modelId: FAL_GLOBAL_ID }, data: { currentActive: { increment: 1 } } }),
+          ])
+
+          console.log(`[esrgan] ${upscaleFactor}x model=${esrganModel} submitted, request_id=${request_id}`)
+          return NextResponse.json({
+            success: true,
+            queued: true,
+            queueId: queueEntry.id,
+            newBalance,
+            message: `${upscaleFactor}x ESRGAN queued — 1 ticket reserved.`,
+            modelUsed: 'ESRGAN',
+            ticketsUsed: skipTickets ? 0 : 1,
+          })
+        }
+
+        // ── DRCT Super-Resolution ───────────────────────────────────────────────
+        if (model === 'drct') {
+          if (!upscaleImageUrl) {
+            return NextResponse.json({ error: 'upscaleImageUrl is required for drct' }, { status: 400 })
+          }
+
+          const { FAL_GLOBAL_ID } = await import('@/lib/fal-queue')
+          const webhookUrl = `${process.env.APP_URL || `https://${process.env.VERCEL_URL}`}/api/webhooks/fal`
+
+          // Fetch image, get dimensions for accurate MP-based pricing, then re-upload to FAL storage.
+          let falSourceUrl = upscaleImageUrl
+          let drctTicketCost = 1
+          try {
+            const srcRes = await fetch(upscaleImageUrl, { signal: AbortSignal.timeout(20_000) })
+            if (srcRes.ok) {
+              const contentType = srcRes.headers.get('content-type') || 'image/jpeg'
+              const rawBuffer = Buffer.from(await srcRes.arrayBuffer())
+              const sharp = (await import('sharp')).default
+              const meta = await sharp(rawBuffer).metadata()
+              if (meta.width && meta.height) {
+                const outW = meta.width * upscaleFactor
+                const outH = meta.height * upscaleFactor
+                drctTicketCost = Math.max(1, Math.ceil((outW * outH) / 1_000_000 * 0.5))
+                console.log(`[drct] output ${outW}x${outH} = ${((outW * outH) / 1_000_000).toFixed(2)} MP → ${drctTicketCost} ticket(s)`)
+              }
+              const srcBlob = new Blob([new Uint8Array(rawBuffer)], { type: contentType })
+              falSourceUrl = await fal.storage.upload(srcBlob)
+              console.log(`[drct] re-uploaded source to FAL storage: ${falSourceUrl}`)
+            }
+          } catch (uploadErr) {
+            console.warn('[drct] failed to fetch/re-upload source, using original URL:', uploadErr)
+          }
+
+          // Check actual ticket cost against balance
+          const effectiveDrctBalance = (ticketRecord?.balance || 0) - (ticketRecord?.reserved || 0)
+          if (!skipTickets && effectiveDrctBalance < drctTicketCost) {
+            return NextResponse.json(
+              { error: `Insufficient tickets. Need ${drctTicketCost} ticket(s) for this output size, but you have ${effectiveDrctBalance}.` },
+              { status: 402 }
+            )
+          }
+
+          if (!skipTickets) {
+            await prisma.ticket.update({ where: { userId: user.id }, data: { reserved: { increment: drctTicketCost } } })
+          }
+          const updatedTicket = await prisma.ticket.findUnique({ where: { userId: user.id } })
+          const newBalance = skipTickets
+            ? (ticketRecord?.balance || 0)
+            : Math.max(0, (updatedTicket?.balance || 0) - (updatedTicket?.reserved || 0))
+
+          const { request_id } = await fal.queue.submit('fal-ai/drct-super-resolution', {
+            input: {
+              image_url: falSourceUrl,
+              upscale_factor: upscaleFactor,
+            },
+            webhookUrl,
+          })
+
+          const queueEntry = await prisma.generationQueue.create({
+            data: {
+              userId: user.id,
+              modelId: model,
+              modelType: 'image',
+              prompt: `${upscaleFactor}x DRCT`,
+              parameters: {
+                source: 'main-scanner',
+                quality: `${upscaleFactor}x`,
+                aspectRatio: 'auto',
+                model,
+                adminMode: skipTickets,
+                upscaleImageUrl,
+                upscaleFactor,
+                drctTicketCost,
+              },
+              status: 'processing',
+              ticketCost: skipTickets ? 0 : drctTicketCost,
+              falRequestId: request_id,
+              startedAt: new Date(),
+            }
+          })
+
+          await Promise.all([
+            prisma.modelConcurrencyLimit.updateMany({ where: { modelId: model }, data: { currentActive: { increment: 1 } } }),
+            prisma.modelConcurrencyLimit.updateMany({ where: { modelId: FAL_GLOBAL_ID }, data: { currentActive: { increment: 1 } } }),
+          ])
+
+          console.log(`[drct] ${upscaleFactor}x submitted (${drctTicketCost} tickets), request_id=${request_id}`)
+          return NextResponse.json({
+            success: true,
+            queued: true,
+            queueId: queueEntry.id,
+            newBalance,
+            message: `${upscaleFactor}x DRCT queued — ${drctTicketCost} ticket(s) reserved.`,
+            modelUsed: 'DRCT Super-Resolution',
+            ticketsUsed: skipTickets ? 0 : drctTicketCost,
           })
         }
 

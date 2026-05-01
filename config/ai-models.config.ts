@@ -178,6 +178,48 @@ export const AI_MODELS: AIModel[] = [
     provider: 'fal'
   },
 
+  // DRCT Super-Resolution - fal-ai/drct-super-resolution
+  {
+    id: 'drct',
+    name: 'fal-ai/drct-super-resolution',
+    displayName: 'DRCT Super-Resolution',
+    description: 'Transformer upscaler — 1 ticket per 2 MP of output',
+    ticketCost: 1,
+    category: 'standard',
+    rateLimit: { rpm: 0, rpd: 0 },
+    quality: 'fast',
+    isAvailable: true,
+    provider: 'fal'
+  },
+
+  // ESRGAN - fal-ai/esrgan
+  {
+    id: 'esrgan',
+    name: 'fal-ai/esrgan',
+    displayName: 'ESRGAN',
+    description: 'Real-ESRGAN upscaler — 6 model variants, 1 ticket flat',
+    ticketCost: 1,
+    category: 'standard',
+    rateLimit: { rpm: 0, rpd: 0 },
+    quality: 'fast',
+    isAvailable: true,
+    provider: 'fal'
+  },
+
+  // AURASR - fal-ai/aura-sr
+  {
+    id: 'aura-sr',
+    name: 'fal-ai/aura-sr',
+    displayName: 'AuraSR',
+    description: 'Fast GAN upscaler optimized for FLUX outputs — 1 ticket flat',
+    ticketCost: 1,
+    category: 'standard',
+    rateLimit: { rpm: 0, rpd: 0 },
+    quality: 'fast',
+    isAvailable: true,
+    provider: 'fal'
+  },
+
   // CHATGPT IMAGES 2.0 - fal-ai/gpt-image-2
   {
     id: 'gpt-image-2',
