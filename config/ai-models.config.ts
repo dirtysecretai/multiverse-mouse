@@ -206,6 +206,19 @@ export const AI_MODELS: AIModel[] = [
     provider: 'fal'
   },
 
+  // SUPIR - Replicate zust-ai/supir
+  {
+    id: 'supir',
+    name: 'zust-ai/supir',
+    displayName: 'SUPIR',
+    description: 'LLaVA-guided diffusion upscaler — 8 tickets flat',
+    ticketCost: 8,
+    category: 'standard',
+    rateLimit: { rpm: 0, rpd: 0 },
+    quality: 'high',
+    isAvailable: true,
+  },
+
   // AURASR - fal-ai/aura-sr
   {
     id: 'aura-sr',

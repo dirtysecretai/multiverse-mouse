@@ -63,10 +63,11 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
   { id: "gpt-image-2",          apiId: "gpt-image-2",              name: "ChatGPT Images 2.0",  aspectRatios: ["1024x1024", "1024x768", "1024x1536", "1920x1080", "2560x1440", "3840x2160"], supportsQuality: true, qualityOptions: ["low", "medium", "high"], supportsOutputFormat: true, maxReferenceImages: 8, isFal: false, maxImages: 4 },
   { id: "z-image-base",         apiId: "z-image-base",             name: "Z-Image Base",        aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "4:5"], supportsQuality: true, qualityOptions: ["1k", "2k", "4k"], maxReferenceImages: 0, isFal: true, maxImages: 4 },
   { id: "z-image-turbo",        apiId: "z-image-turbo",            name: "Z-Image Turbo",       aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "4:5"], supportsQuality: true, qualityOptions: ["1k", "2k", "4k"], maxReferenceImages: 1, isFal: true, maxImages: 4 },
-  { id: "clarity-upscaler",     apiId: "clarity-upscaler",         name: "Clarity Upscaler",    aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true, isUpscaler: true },
-  { id: "aura-sr",              apiId: "aura-sr",                  name: "AuraSR",              aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true, isUpscaler: true },
-  { id: "esrgan",               apiId: "esrgan",                   name: "ESRGAN",              aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true, isUpscaler: true },
-  { id: "drct",                 apiId: "drct",                     name: "DRCT",                aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true, isUpscaler: true },
+  { id: "clarity-upscaler",     apiId: "clarity-upscaler",         name: "Clarity Upscaler",    aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true,  isUpscaler: true },
+  { id: "aura-sr",              apiId: "aura-sr",                  name: "AuraSR",              aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true,  isUpscaler: true },
+  { id: "esrgan",               apiId: "esrgan",                   name: "ESRGAN",              aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true,  isUpscaler: true },
+  { id: "drct",                 apiId: "drct",                     name: "DRCT",                aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true,  isUpscaler: true },
+  { id: "supir",                apiId: "supir",                    name: "SUPIR",               aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: false, isUpscaler: true },
 ]
 
 // --- HELPERS ---
@@ -90,6 +91,7 @@ function calcTicketCost(modelId: string, quality: Quality, aspectRatio?: AspectR
   if (modelId === "aura-sr")             return 1
   if (modelId === "esrgan")              return 1
   if (modelId === "drct")               return 1 // minimum; actual cost computed server-side from output MP
+  if (modelId === "supir")              return 8
   if (modelId === "kling-v3-image")     return 2
   if (modelId === "kling-o3-image")     return quality === "4k" ? 4 : 2
   if (modelId === "wan-2.7-pro")        return 4
@@ -438,6 +440,7 @@ const IMAGE_MODEL_COST: Record<string, "$" | "$$" | "$$$" | "$$$+"> = {
   "aura-sr":             "$",
   "esrgan":              "$",
   "drct":                "$",
+  "supir":               "$$",
 }
 const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$" | "$$$+"> = {
   "lipsync-v3":         "$",
@@ -473,7 +476,7 @@ const IMAGE_MODEL_GROUPS = [
   { label: "Black Forest Labs", type: "text to image",             accent: "text-amber-400",   dot: "bg-amber-400",   items: ["FLUX 1 Dev", "FLUX 2"] },
   { label: "OpenAI",            type: "text to image",             accent: "text-green-400",   dot: "bg-green-400",   items: ["ChatGPT Images 2.0"] },
   { label: "Z-Image",           type: "text to image",             accent: "text-cyan-400",    dot: "bg-cyan-400",    items: ["Z-Image Base", "Z-Image Turbo"] },
-  { label: "Upscalers",         type: "enhance & enlarge images",  accent: "text-slate-400",   dot: "bg-slate-500",   items: ["Clarity Upscaler", "AuraSR", "ESRGAN", "DRCT"] },
+  { label: "Upscalers",         type: "enhance & enlarge images",  accent: "text-slate-400",   dot: "bg-slate-500",   items: ["Clarity Upscaler", "AuraSR", "ESRGAN", "DRCT", "SUPIR"] },
 ]
 const VIDEO_MODEL_COST_BY_NAME: Record<string, "$" | "$$" | "$$$" | "$$$+"> = Object.fromEntries(
   VIDEO_MODEL_CONFIGS.map(m => [m.name, VIDEO_MODEL_COST[m.id] ?? "$$"])
@@ -1332,7 +1335,7 @@ function TextDropdown({
   const [copiedGen, setCopiedGen] = useState(false)
 
   // Saved prompts
-  const [savedPrompts, setSavedPrompts] = useState<string[]>(Array(10).fill(""))
+  const [savedPrompts, setSavedPrompts] = useState<string[]>(Array(16).fill(""))
   const [copiedSavedIdx, setCopiedSavedIdx] = useState<number | null>(null)
   const savedPromptsInitialized = useRef(false)
   const savedPromptsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1364,7 +1367,7 @@ function TextDropdown({
       try {
         const arr = JSON.parse(localStorage.getItem(SAVED_PROMPTS_KEY) || "[]")
         if (Array.isArray(arr) && arr.length > 0) {
-          setSavedPrompts([...arr.slice(0, 10), ...Array(Math.max(0, 10 - arr.length)).fill("")])
+          setSavedPrompts([...arr.slice(0, 16), ...Array(Math.max(0, 16 - arr.length)).fill("")])
         }
       } catch {}
       // Then sync from DB in background (overwrites localStorage if DB has data)
@@ -1374,7 +1377,7 @@ function TextDropdown({
           .then(({ preferences }) => {
             if (Array.isArray(preferences?.savedPrompts) && preferences.savedPrompts.some((p: string) => p)) {
               const arr = preferences.savedPrompts as string[]
-              setSavedPrompts([...arr.slice(0, 10), ...Array(Math.max(0, 10 - arr.length)).fill("")])
+              setSavedPrompts([...arr.slice(0, 16), ...Array(Math.max(0, 16 - arr.length)).fill("")])
             }
           })
           .catch(() => {})
@@ -1420,7 +1423,7 @@ function TextDropdown({
   useEffect(() => {
     if (open && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect()
-      const panelW = Math.min(660, window.innerWidth - 8)
+      const panelW = Math.min(1080, window.innerWidth - 8)
       setMenuPos({ top: rect.bottom + 8, left: Math.max(4, Math.min(rect.left, window.innerWidth - panelW - 4)) })
     }
   }, [open])
@@ -1491,12 +1494,20 @@ function TextDropdown({
       </button>
 
       {open && (
-        <div className="fixed rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-md shadow-2xl z-[9999]" style={{ top: menuPos.top, left: menuPos.left, width: Math.min(660, window.innerWidth - 8) }}>
-          <div className="grid grid-cols-2 divide-x divide-white/5">
+        <div className="fixed rounded-xl border border-white/10 bg-[#080c18] backdrop-blur-md shadow-2xl z-[9999] overflow-hidden" style={{ top: menuPos.top, left: menuPos.left, width: Math.min(1080, window.innerWidth - 8) }}>
+          {/* Header */}
+          <div className="px-4 pt-3 pb-2.5 border-b border-white/5">
+            <p className="text-[12px] font-semibold text-white/85 leading-none">Text Tools</p>
+            <p className="text-[10px] text-slate-500 mt-1 leading-snug">Generate a prompt with AI, or load from 16 saved slots.</p>
+          </div>
+          <div className="grid grid-cols-[2fr_3fr] divide-x divide-white/5">
 
             {/* LEFT: AI Prompting */}
             <div className="p-4 space-y-3 max-h-[520px] overflow-y-auto">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">AI Prompting</p>
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                <p className="text-[10px] font-bold text-cyan-400/70 uppercase tracking-widest font-mono">AI Prompting</p>
+              </div>
 
               {!hasDevAccess ? (
                 <div className="py-8 text-center space-y-2">
@@ -1618,15 +1629,19 @@ function TextDropdown({
 
             {/* RIGHT: Saved Prompts */}
             <div className="p-4 max-h-[520px] overflow-y-auto">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-3">Saved Prompts</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex items-center gap-1.5 mb-3">
+                <div className="w-1.5 h-1.5 rounded-full bg-fuchsia-400 shrink-0" />
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">Saved Prompts</p>
+                <span className="text-[9px] text-slate-600 font-mono">· 16 slots</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
                 {savedPrompts.map((p, i) => (
                   <div key={i} className="flex flex-col gap-1">
                     <textarea
                       value={p}
                       onChange={(e) => setSavedPrompts((prev) => prev.map((sp, idx) => idx === i ? e.target.value : sp))}
                       placeholder={`Prompt ${i + 1}`}
-                      rows={4}
+                      rows={3}
                       className="w-full px-2 py-1.5 rounded-md bg-slate-800 border border-white/10 text-[11px] text-slate-200 placeholder-slate-700 focus:outline-none focus:border-white/20 resize-none leading-relaxed"
                     />
                     <div className="flex gap-1">
@@ -3106,6 +3121,7 @@ function PromptBox({
   onPrependImage,
   onBalanceChange,
   activeRefImages,
+  refLibrary,
   onDeactivateRef,
   onLoadPreset,
   onUploadRef,
@@ -3129,6 +3145,7 @@ function PromptBox({
   onPrependImage: (img: ImageItem) => void
   onBalanceChange: (balance: number) => void
   activeRefImages: RefImage[]
+  refLibrary: RefImage[]
   onDeactivateRef: (id: string) => void
   onLoadPreset: (urls: string[]) => void
   onUploadRef: (items: RefImage[]) => void
@@ -3165,12 +3182,14 @@ function PromptBox({
   const [upscaleSourceUrl, setUpscaleSourceUrl] = useState("")
   const [upscaleUploading, setUpscaleUploading] = useState(false)
   const [upscaleUploadError, setUpscaleUploadError] = useState<string | null>(null)
+  const [selectedRefId, setSelectedRefId] = useState<string | null>(null)
   const upscaleFileInputRef = useRef<HTMLInputElement>(null)
   const [upscaleFactor, setUpscaleFactor] = useState<2 | 4>(2)
   const [upscaleCreativity, setUpscaleCreativity] = useState(0.35)
   const [upscaleResemblance, setUpscaleResemblance] = useState(0.6)
   const [upscaleGuidance, setUpscaleGuidance] = useState(4)
   const [upscaleSteps, setUpscaleSteps] = useState(18)
+  const [clarityConfigOpen, setClarityConfigOpen] = useState(false)
   // AuraSR-specific state
   const [auraSrCheckpoint, setAuraSrCheckpoint] = useState<"v1" | "v2">("v2")
   const [auraSrOverlappingTiles, setAuraSrOverlappingTiles] = useState(false)
@@ -3187,6 +3206,13 @@ function PromptBox({
   const [esrganModel, setEsrganModel] = useState<EsrganModel>("RealESRGAN_x4plus")
   const [esrganFace, setEsrganFace] = useState(false)
   const [esrganOutputFormat, setEsrganOutputFormat] = useState<"png" | "jpeg">("png")
+  const [supirModelName, setSupirModelName] = useState<"SUPIR-v0F" | "SUPIR-v0Q">("SUPIR-v0F")
+  const [supirSteps, setSupirSteps] = useState(20)
+  const [supirUseLlava, setSupirUseLlava] = useState(false)
+  const [supirCfg, setSupirCfg] = useState(4.0)
+  const [supirColorFix, setSupirColorFix] = useState<"Wavelet" | "AdaIn" | "None">("Wavelet")
+  const [supirNegPrompt, setSupirNegPrompt] = useState("blurry, noisy, low quality, oversmoothed, jpeg artifacts, deformed")
+  const [supirConfigOpen, setSupirConfigOpen] = useState(false)
   // Restore saved prompt state after mount to avoid SSR/client hydration mismatch
   useEffect(() => {
     try {
@@ -3288,7 +3314,7 @@ function PromptBox({
     if (model.isUpscaler) {
       const upscalePrompt = prompt.trim() || "masterpiece, best quality, highres"
       const slotId = `slot-${Date.now()}-0`
-      const pendingLabel = model.id === "aura-sr" ? `${upscaleFactor}x AuraSR` : model.id === "esrgan" ? `${upscaleFactor}x ESRGAN` : model.id === "drct" ? `${upscaleFactor}x DRCT` : `${upscaleFactor}x upscale`
+      const pendingLabel = model.id === "aura-sr" ? `${upscaleFactor}x AuraSR` : model.id === "esrgan" ? `${upscaleFactor}x ESRGAN` : model.id === "drct" ? `${upscaleFactor}x DRCT` : model.id === "supir" ? `${upscaleFactor}x SUPIR` : `${upscaleFactor}x upscale`
       onAddPending({ slotId, status: "loading", prompt: pendingLabel, modelId: model.apiId, aspectRatio: "1:1", quality: `${upscaleFactor}x` as Quality })
       try {
         const res = await fetch("/api/generate", {
@@ -3305,7 +3331,9 @@ function PromptBox({
                 ? { auraSrCheckpoint, auraSrOverlappingTiles }
                 : model.id === "esrgan"
                   ? { esrganModel, esrganFace, esrganOutputFormat }
-                  : {} // drct: no extra params
+                  : model.id === "supir"
+                    ? { supirModelName, supirSteps, supirUseLlava, supirCfg, supirColorFix, supirNegPrompt }
+                    : {} // drct: no extra params
             ),
           }),
         })
@@ -3903,32 +3931,48 @@ function PromptBox({
     return () => document.removeEventListener("mousedown", handler)
   }, [])
 
-  // Upload a local file to R2 and use the public URL as upscale source
+  // Upload a local file through our server to R2 (avoids browser CORS on direct PUT)
   async function uploadUpscaleSource(file: File) {
     setUpscaleUploading(true)
     setUpscaleUploadError(null)
     try {
       const pass = typeof sessionStorage !== "undefined" ? (sessionStorage.getItem("admin-password") ?? "") : ""
-      const presignRes = await fetch("/api/admin/upload-upscale-source", {
+      const form = new FormData()
+      form.append("file", file)
+      const res = await fetch("/api/admin/upload-upscale-source", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(pass ? { "x-admin-password": pass } : {}) },
-        body: JSON.stringify({ filename: file.name, contentType: file.type || "image/jpeg" }),
+        headers: { ...(pass ? { "x-admin-password": pass } : {}) },
+        body: form,
       })
-      if (!presignRes.ok) throw new Error(`Presign failed: ${presignRes.status}`)
-      const { uploadUrl, publicUrl } = await presignRes.json() as { uploadUrl: string; publicUrl: string }
-
-      const putRes = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type || "image/jpeg" },
-        body: file,
-      })
-      if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`)
-
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || `Upload failed: ${res.status}`)
+      }
+      const { publicUrl } = await res.json() as { publicUrl: string }
       setUpscaleSourceUrl(publicUrl)
     } catch (e) {
       setUpscaleUploadError(e instanceof Error ? e.message : "Upload failed")
     } finally {
       setUpscaleUploading(false)
+    }
+  }
+
+  async function selectRefAsUpscaleSource(img: RefImage) {
+    setUpscaleUploadError(null)
+    setSelectedRefId(img.id)
+    if (img.url.startsWith("http")) {
+      setUpscaleSourceUrl(img.url)
+    } else {
+      // data URL → convert to blob → upload to R2
+      try {
+        const res = await fetch(img.url)
+        const blob = await res.blob()
+        const file = new File([blob], "ref.jpg", { type: blob.type || "image/jpeg" })
+        await uploadUpscaleSource(file)
+      } catch {
+        setUpscaleUploadError("Failed to use this image — try again")
+        setSelectedRefId(null)
+      }
     }
   }
 
@@ -3968,7 +4012,7 @@ function PromptBox({
           </div>
         )}
 
-        {/* Hidden file input for all upscaler models — always mounted so the ref is never null */}
+        {/* Hidden file input for upscaler upload */}
         <input
           ref={upscaleFileInputRef}
           type="file"
@@ -3977,66 +4021,92 @@ function PromptBox({
           onChange={e => {
             const f = e.target.files?.[0]
             e.target.value = ""
-            if (f) uploadUpscaleSource(f)
+            if (f) { setSelectedRefId(null); uploadUpscaleSource(f) }
           }}
         />
 
         {/* Prompt card */}
         <div className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-md shadow-2xl">
 
-          {/* Upscaler source — integrated at top of card (clarity + drct only; aura-sr/esrgan embed it in their config section) */}
-          {(model.id === "clarity-upscaler" || model.id === "drct") && (
-            <div className="px-4 pt-4 pb-3 space-y-2 border-b border-white/5">
-              {/* Pick from active Refs */}
-              {activeRefImages.length > 0 && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest shrink-0">From Refs</span>
-                  {activeRefImages.map((img) => (
-                    <button
-                      key={img.id}
-                      onClick={() => { setUpscaleSourceUrl(img.url); setUpscaleUploadError(null) }}
-                      title="Use this ref as upscale source"
-                      className={`relative w-9 h-9 rounded-lg overflow-hidden border transition-all shrink-0 ${upscaleSourceUrl === img.url ? "border-cyan-400 ring-1 ring-cyan-400/50" : "border-white/10 hover:border-cyan-400/50"}`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={img.url} alt="ref" className="w-full h-full object-cover" />
-                    </button>
-                  ))}
+          {/* Upscaler source picker — unified for all 5 upscaler models */}
+          {model.isUpscaler && (
+            <div className="px-4 pt-4 pb-3 space-y-2.5 border-b border-white/5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">Source Image</span>
+                {upscaleSourceUrl && (
+                  <button
+                    onClick={() => { setUpscaleSourceUrl(""); setSelectedRefId(null) }}
+                    className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors"
+                  >clear</button>
+                )}
+              </div>
+
+              {refLibrary.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {refLibrary.map(img => {
+                    const isSelected = selectedRefId === img.id || (img.url.startsWith("http") && upscaleSourceUrl === img.url)
+                    const isUploading = upscaleUploading && selectedRefId === img.id
+                    return (
+                      <button
+                        key={img.id}
+                        onClick={() => selectRefAsUpscaleSource(img)}
+                        disabled={upscaleUploading}
+                        title="Use as upscale source"
+                        className={`relative w-12 h-12 rounded-lg overflow-hidden border shrink-0 transition-all disabled:opacity-50 ${
+                          isSelected ? "border-cyan-400 ring-1 ring-cyan-400/40" : "border-white/10 hover:border-cyan-400/50"
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={img.url} alt="" className="w-full h-full object-cover" />
+                        {isUploading && (
+                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                            <Loader2 size={14} className="animate-spin text-cyan-400" />
+                          </div>
+                        )}
+                        {isSelected && !isUploading && (
+                          <div className="absolute inset-0 bg-cyan-500/10 flex items-center justify-center">
+                            <Check size={14} className="text-cyan-400" />
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
+              ) : (
+                <p className="text-[11px] text-slate-500">No images in your Refs library yet — add some via the <span className="text-slate-400">Refs</span> section above.</p>
               )}
+
+              {/* URL paste + upload */}
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest shrink-0">Source</span>
-                <input
-                  type="text"
-                  value={upscaleSourceUrl}
-                  onChange={e => { setUpscaleSourceUrl(e.target.value); setUpscaleUploadError(null) }}
-                  placeholder="Paste image URL or upload…"
-                  className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none min-w-0"
-                />
-                {upscaleSourceUrl.startsWith("http") && (
+                {upscaleSourceUrl.startsWith("http") && !upscaleUploading && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={upscaleSourceUrl}
                     alt="source preview"
-                    className="w-9 h-9 rounded-lg object-cover border border-white/10 shrink-0"
+                    className="w-8 h-8 rounded-md object-cover border border-white/10 shrink-0"
                     onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
                     onLoad={e => { (e.target as HTMLImageElement).style.display = "block" }}
                   />
                 )}
+                <input
+                  type="text"
+                  value={upscaleSourceUrl}
+                  onChange={e => { setUpscaleSourceUrl(e.target.value); setUpscaleUploadError(null); setSelectedRefId(null) }}
+                  placeholder="Or paste an image URL…"
+                  className="flex-1 bg-transparent text-sm text-white placeholder-slate-600 focus:outline-none min-w-0"
+                />
                 <button
                   onClick={() => upscaleFileInputRef.current?.click()}
                   disabled={upscaleUploading}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-[11px] text-slate-300 hover:text-white transition-all disabled:opacity-50 shrink-0"
                 >
-                  {upscaleUploading
+                  {upscaleUploading && !selectedRefId
                     ? <><Loader2 size={11} className="animate-spin" />Uploading…</>
                     : <><ImagePlus size={11} />Upload</>
                   }
                 </button>
               </div>
-              {upscaleUploadError && (
-                <p className="text-[11px] text-red-400">{upscaleUploadError}</p>
-              )}
+              {upscaleUploadError && <p className="text-[11px] text-red-400">{upscaleUploadError}</p>}
             </div>
           )}
 
@@ -4111,39 +4181,7 @@ function PromptBox({
           {/* AuraSR config — checkpoint + overlapping tiles */}
           {model.id === "aura-sr" && (
             <div className="px-4 py-3 border-t border-cyan-500/10 space-y-2.5">
-              {/* Header row: label left, source input right */}
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider shrink-0">AuraSR</span>
-                <div className="flex-1 flex items-center gap-1.5 min-w-0">
-                  <input
-                    type="text"
-                    value={upscaleSourceUrl}
-                    onChange={e => { setUpscaleSourceUrl(e.target.value); setUpscaleUploadError(null) }}
-                    placeholder="Paste URL or upload…"
-                    className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-md px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/30 min-w-0"
-                  />
-                  {upscaleSourceUrl.startsWith("http") && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={upscaleSourceUrl} alt="" className="w-6 h-6 rounded object-cover border border-white/10 shrink-0"
-                      onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
-                      onLoad={e => { (e.target as HTMLImageElement).style.display = "block" }}
-                    />
-                  )}
-                  {activeRefImages.map(img => (
-                    <button key={img.id} onClick={() => { setUpscaleSourceUrl(img.url); setUpscaleUploadError(null) }}
-                      title="Use this ref as source"
-                      className={`relative w-6 h-6 rounded overflow-hidden border shrink-0 transition-all ${upscaleSourceUrl === img.url ? "border-cyan-400" : "border-white/10 hover:border-cyan-400/50"}`}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={img.url} alt="ref" className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                  <button onClick={() => upscaleFileInputRef.current?.click()} disabled={upscaleUploading}
-                    className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-[11px] text-slate-300 hover:text-white transition-all disabled:opacity-50 shrink-0">
-                    {upscaleUploading ? <><Loader2 size={10} className="animate-spin" />…</> : <><ImagePlus size={10} />Upload</>}
-                  </button>
-                </div>
-              </div>
-              {upscaleUploadError && <p className="text-[11px] text-red-400">{upscaleUploadError}</p>}
+              <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider">AuraSR</span>
               {/* Checkpoint */}
               <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
                 <span className="text-[10px] font-mono text-slate-500">Checkpoint</span>
@@ -4184,39 +4222,7 @@ function PromptBox({
           {/* ESRGAN config — model picker, face toggle, output format */}
           {model.id === "esrgan" && (
             <div className="px-4 py-3 border-t border-cyan-500/10 space-y-2.5">
-              {/* Header row: label left, source input right */}
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider shrink-0">ESRGAN</span>
-                <div className="flex-1 flex items-center gap-1.5 min-w-0">
-                  <input
-                    type="text"
-                    value={upscaleSourceUrl}
-                    onChange={e => { setUpscaleSourceUrl(e.target.value); setUpscaleUploadError(null) }}
-                    placeholder="Paste URL or upload…"
-                    className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-md px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/30 min-w-0"
-                  />
-                  {upscaleSourceUrl.startsWith("http") && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={upscaleSourceUrl} alt="" className="w-6 h-6 rounded object-cover border border-white/10 shrink-0"
-                      onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
-                      onLoad={e => { (e.target as HTMLImageElement).style.display = "block" }}
-                    />
-                  )}
-                  {activeRefImages.map(img => (
-                    <button key={img.id} onClick={() => { setUpscaleSourceUrl(img.url); setUpscaleUploadError(null) }}
-                      title="Use this ref as source"
-                      className={`relative w-6 h-6 rounded overflow-hidden border shrink-0 transition-all ${upscaleSourceUrl === img.url ? "border-cyan-400" : "border-white/10 hover:border-cyan-400/50"}`}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={img.url} alt="ref" className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                  <button onClick={() => upscaleFileInputRef.current?.click()} disabled={upscaleUploading}
-                    className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-[11px] text-slate-300 hover:text-white transition-all disabled:opacity-50 shrink-0">
-                    {upscaleUploading ? <><Loader2 size={10} className="animate-spin" />…</> : <><ImagePlus size={10} />Upload</>}
-                  </button>
-                </div>
-              </div>
-              {upscaleUploadError && <p className="text-[11px] text-red-400">{upscaleUploadError}</p>}
+              <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider">ESRGAN</span>
               {/* Model picker */}
               <div className="space-y-1.5">
                 <span className="text-[10px] font-mono text-slate-500">Model</span>
@@ -4267,52 +4273,157 @@ function PromptBox({
             </div>
           )}
 
-          {/* Clarity Upscaler config sliders */}
+          {/* SUPIR config — collapsible settings */}
+          {model.id === "supir" && (
+            <div className="border-t border-cyan-500/10">
+              {/* Always-visible row: label + config toggle */}
+              <div className="px-4 py-2.5 flex items-center justify-between">
+                <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider">SUPIR</span>
+                <button onClick={() => setSupirConfigOpen(v => !v)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md border border-white/[0.08] text-[10px] font-mono text-slate-500 hover:text-white hover:border-white/20 transition-all">
+                  <SlidersHorizontal size={9} />
+                  <span>{supirModelName === "SUPIR-v0F" ? "v0F" : "v0Q"} · {supirSteps}s</span>
+                  <ChevronDown size={9} className={`transition-transform ${supirConfigOpen ? "rotate-180" : ""}`} />
+                </button>
+              </div>
+
+              {/* Collapsible settings panel */}
+              {supirConfigOpen && (
+                <div className="px-4 pb-3 space-y-2.5 border-t border-white/[0.04]">
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider">Config</span>
+                    <button onClick={() => { setSupirModelName("SUPIR-v0F"); setSupirSteps(20); setSupirUseLlava(false); setSupirCfg(4.0); setSupirColorFix("Wavelet"); setSupirNegPrompt("blurry, noisy, low quality, oversmoothed, jpeg artifacts, deformed") }}
+                      className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors">reset</button>
+                  </div>
+                  {/* Variant */}
+                  <div className="grid grid-cols-[5rem_1fr] items-start gap-3">
+                    <span className="text-[10px] font-mono text-slate-500 mt-1">Variant</span>
+                    <div className="flex gap-1">
+                      {([
+                        { id: "SUPIR-v0F" as const, label: "v0F", desc: "General" },
+                        { id: "SUPIR-v0Q" as const, label: "v0Q", desc: "Faithful" },
+                      ]).map(v => (
+                        <button key={v.id} onClick={() => setSupirModelName(v.id)}
+                          className={`flex-1 flex flex-col items-center px-2 py-1.5 rounded-md border text-center transition-all ${
+                            supirModelName === v.id
+                              ? "bg-cyan-500/15 border-cyan-500/30"
+                              : "border-white/[0.06] hover:border-white/20"
+                          }`}>
+                          <span className={`text-[11px] font-mono font-bold ${supirModelName === v.id ? "text-cyan-300" : "text-slate-400"}`}>{v.label}</span>
+                          <span className="text-[9px] text-slate-600">{v.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Steps */}
+                  <div className="grid grid-cols-[5rem_1fr_2rem] items-center gap-3">
+                    <span className="text-[10px] font-mono text-slate-500">Steps</span>
+                    <input type="range" min={10} max={50} step={5} value={supirSteps}
+                      onChange={e => setSupirSteps(parseInt(e.target.value))}
+                      className="w-full accent-cyan-400 cursor-pointer h-0.5" />
+                    <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{supirSteps}</span>
+                  </div>
+                  {/* Guidance */}
+                  <div className="grid grid-cols-[5rem_1fr_2.5rem] items-center gap-3">
+                    <span className="text-[10px] font-mono text-slate-500">Guidance</span>
+                    <input type="range" min={1} max={12} step={0.5} value={supirCfg}
+                      onChange={e => setSupirCfg(parseFloat(e.target.value))}
+                      className="w-full accent-cyan-400 cursor-pointer h-0.5" />
+                    <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{supirCfg.toFixed(1)}</span>
+                  </div>
+                  {/* Color fix */}
+                  <div className="grid grid-cols-[5rem_1fr] items-center gap-3">
+                    <span className="text-[10px] font-mono text-slate-500">Color fix</span>
+                    <div className="flex gap-1">
+                      {(["Wavelet", "AdaIn", "None"] as const).map(opt => (
+                        <button key={opt} onClick={() => setSupirColorFix(opt)}
+                          className={`flex-1 px-2 py-1 rounded-md border text-[10px] font-mono transition-all ${
+                            supirColorFix === opt
+                              ? "bg-cyan-500/15 border-cyan-500/30 text-cyan-300"
+                              : "border-white/[0.06] text-slate-500 hover:text-white hover:border-white/20"
+                          }`}>
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Caption */}
+                  <div className="grid grid-cols-[5rem_1fr] items-center gap-3">
+                    <span className="text-[10px] font-mono text-slate-500">Caption</span>
+                    <button onClick={() => setSupirUseLlava(v => !v)}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-left transition-all ${
+                        supirUseLlava ? "bg-cyan-500/15 border-cyan-500/30" : "border-white/[0.06] hover:border-white/20"
+                      }`}>
+                      <span className={`text-[11px] font-mono font-bold ${supirUseLlava ? "text-cyan-300" : "text-slate-500"}`}>
+                        {supirUseLlava ? "LLaVA ON" : "LLaVA OFF"}
+                      </span>
+                      {supirUseLlava && <span className="text-[9px] text-amber-400/70">may OOM on 4x</span>}
+                    </button>
+                  </div>
+                  {/* Negative prompt */}
+                  <div className="grid grid-cols-[5rem_1fr] items-start gap-3">
+                    <span className="text-[10px] font-mono text-slate-500 mt-1.5">Negative</span>
+                    <textarea value={supirNegPrompt} onChange={e => setSupirNegPrompt(e.target.value)} rows={2}
+                      placeholder="What to suppress…"
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-md px-2 py-1.5 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/30 resize-none leading-relaxed" />
+                  </div>
+                  <p className="text-[10px] text-slate-600">
+                    {upscaleFactor === 4 ? "4x: keep steps ≤ 20, caption OFF." : "2x: any step count works."} 8 tickets flat.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Clarity Upscaler config — collapsible */}
           {model.id === "clarity-upscaler" && (
-            <div className="px-4 py-3 border-t border-cyan-500/10 space-y-2">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider">Enhance Config</span>
-                <button
-                  onClick={() => { setUpscaleCreativity(0.35); setUpscaleResemblance(0.6); setUpscaleGuidance(4); setUpscaleSteps(18) }}
-                  className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors"
-                >reset</button>
+            <div className="border-t border-cyan-500/10">
+              <div className="px-4 py-2 flex items-center justify-between">
+                <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider">Enhance</span>
+                <button onClick={() => setClarityConfigOpen(v => !v)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md border border-white/[0.08] text-[10px] font-mono text-slate-500 hover:text-white hover:border-white/20 transition-all">
+                  <SlidersHorizontal size={9} />
+                  <span>cr:{upscaleCreativity.toFixed(2)} · re:{upscaleResemblance.toFixed(2)} · {upscaleSteps}s</span>
+                  <ChevronDown size={9} className={`transition-transform ${clarityConfigOpen ? "rotate-180" : ""}`} />
+                </button>
               </div>
-
-              {/* Creativity */}
-              <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
-                <span className="text-[10px] font-mono text-slate-500">Creativity</span>
-                <input type="range" min="0" max="1" step="0.05" value={upscaleCreativity}
-                  onChange={e => setUpscaleCreativity(parseFloat(e.target.value))}
-                  className="w-full accent-cyan-400 cursor-pointer h-0.5" />
-                <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleCreativity.toFixed(2)}</span>
-              </div>
-
-              {/* Resemblance */}
-              <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
-                <span className="text-[10px] font-mono text-slate-500">Resemblance</span>
-                <input type="range" min="0" max="1" step="0.05" value={upscaleResemblance}
-                  onChange={e => setUpscaleResemblance(parseFloat(e.target.value))}
-                  className="w-full accent-cyan-400 cursor-pointer h-0.5" />
-                <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleResemblance.toFixed(2)}</span>
-              </div>
-
-              {/* CFG */}
-              <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
-                <span className="text-[10px] font-mono text-slate-500">CFG</span>
-                <input type="range" min="1" max="10" step="0.5" value={upscaleGuidance}
-                  onChange={e => setUpscaleGuidance(parseFloat(e.target.value))}
-                  className="w-full accent-cyan-400 cursor-pointer h-0.5" />
-                <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleGuidance.toFixed(1)}</span>
-              </div>
-
-              {/* Steps */}
-              <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
-                <span className="text-[10px] font-mono text-slate-500">Steps</span>
-                <input type="range" min="10" max="30" step="1" value={upscaleSteps}
-                  onChange={e => setUpscaleSteps(parseInt(e.target.value))}
-                  className="w-full accent-cyan-400 cursor-pointer h-0.5" />
-                <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleSteps}</span>
-              </div>
+              {clarityConfigOpen && (
+                <div className="px-4 pb-3 space-y-2 border-t border-white/[0.04]">
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-[10px] font-mono text-cyan-400/50 uppercase tracking-wider">Config</span>
+                    <button onClick={() => { setUpscaleCreativity(0.35); setUpscaleResemblance(0.6); setUpscaleGuidance(4); setUpscaleSteps(18) }}
+                      className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors">reset</button>
+                  </div>
+                  <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
+                    <span className="text-[10px] font-mono text-slate-500">Creativity</span>
+                    <input type="range" min="0" max="1" step="0.05" value={upscaleCreativity}
+                      onChange={e => setUpscaleCreativity(parseFloat(e.target.value))}
+                      className="w-full accent-cyan-400 cursor-pointer h-0.5" />
+                    <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleCreativity.toFixed(2)}</span>
+                  </div>
+                  <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
+                    <span className="text-[10px] font-mono text-slate-500">Resemblance</span>
+                    <input type="range" min="0" max="1" step="0.05" value={upscaleResemblance}
+                      onChange={e => setUpscaleResemblance(parseFloat(e.target.value))}
+                      className="w-full accent-cyan-400 cursor-pointer h-0.5" />
+                    <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleResemblance.toFixed(2)}</span>
+                  </div>
+                  <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
+                    <span className="text-[10px] font-mono text-slate-500">CFG</span>
+                    <input type="range" min="1" max="10" step="0.5" value={upscaleGuidance}
+                      onChange={e => setUpscaleGuidance(parseFloat(e.target.value))}
+                      className="w-full accent-cyan-400 cursor-pointer h-0.5" />
+                    <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleGuidance.toFixed(1)}</span>
+                  </div>
+                  <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-3">
+                    <span className="text-[10px] font-mono text-slate-500">Steps</span>
+                    <input type="range" min="10" max="30" step="1" value={upscaleSteps}
+                      onChange={e => setUpscaleSteps(parseInt(e.target.value))}
+                      className="w-full accent-cyan-400 cursor-pointer h-0.5" />
+                    <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{upscaleSteps}</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -4333,21 +4444,63 @@ function PromptBox({
               </button>
 
               {showModelPicker && (
-                <div className="absolute bottom-full left-0 mb-2 w-52 rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-md shadow-2xl overflow-hidden z-50">
-                  {IMAGE_MODEL_CONFIGS.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => { onModelChange(m); setShowModelPicker(false) }}
-                      className={`w-full text-left px-3 py-2 text-[12px] transition-colors flex items-center justify-between gap-2 ${
-                        m.id === model.id
-                          ? "text-white bg-white/8"
-                          : "text-slate-400 hover:text-white hover:bg-white/5"
-                      }`}
-                    >
-                      <span>{m.name}</span>
-                      {IMAGE_MODEL_COST[m.id] && <CostBadge tier={IMAGE_MODEL_COST[m.id]} />}
-                    </button>
-                  ))}
+                <div className="absolute bottom-full left-0 mb-2 w-[428px] rounded-xl border border-white/10 bg-[#080c18] backdrop-blur-md shadow-2xl overflow-hidden z-50">
+                  {/* Header */}
+                  <div className="px-4 pt-3 pb-2.5 border-b border-white/5">
+                    <p className="text-[12px] font-semibold text-white/85 leading-none">Image Generation Model</p>
+                    <p className="text-[10px] text-slate-500 mt-1 leading-snug">
+                      Models are grouped by company.{" "}
+                      <span className="text-slate-600">Active: <span className="text-slate-400">{model.name}</span></span>
+                    </p>
+                  </div>
+
+                  {/* 2-col grid of company sections */}
+                  <div className="p-2.5 grid grid-cols-2 gap-x-2 gap-y-2 overflow-y-auto max-h-[360px]">
+                    {IMAGE_MODEL_GROUPS.map((group) => (
+                      <div key={group.label}>
+                        <div className="flex items-center gap-1.5 px-1.5 pb-1">
+                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${group.dot}`} />
+                          <span className={`text-[9px] font-bold tracking-widest uppercase leading-none ${group.accent}`}>{group.label}</span>
+                          <span className="text-[8px] text-slate-600 leading-none truncate">· {group.type}</span>
+                        </div>
+                        <div className="rounded-lg overflow-hidden border border-white/[0.06] bg-white/[0.02]">
+                          {group.items.map((item) => {
+                            const cfg = IMAGE_MODEL_CONFIGS.find((m) => m.name === item)
+                            const isActive = model.name === item
+                            return (
+                              <button
+                                key={item}
+                                onClick={() => { if (cfg) { onModelChange(cfg); setShowModelPicker(false) } }}
+                                className={`w-full text-left px-2.5 py-1.5 text-[11px] transition-colors flex items-center justify-between gap-1 border-b border-white/[0.04] last:border-0 ${
+                                  isActive
+                                    ? "bg-white/8 text-white font-medium"
+                                    : "text-slate-400 hover:text-white hover:bg-white/[0.05]"
+                                }`}
+                              >
+                                <span className="truncate leading-tight">{item}</span>
+                                <span className="shrink-0 flex items-center gap-1">
+                                  {isActive && <span className="w-1 h-1 rounded-full bg-cyan-400" />}
+                                  {IMAGE_MODEL_COST_BY_NAME[item] && <CostBadge tier={IMAGE_MODEL_COST_BY_NAME[item]} />}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="px-4 py-2 border-t border-white/5 flex items-center gap-2 flex-wrap">
+                    <span className="text-[9px] text-slate-600">Ticket cost:</span>
+                    <span className="text-[9px] text-slate-500"><span className="text-green-400 font-bold font-mono">$</span> budget</span>
+                    <span className="text-[9px] text-slate-600">·</span>
+                    <span className="text-[9px] text-slate-500"><span className="text-amber-400 font-bold font-mono">$$</span> standard</span>
+                    <span className="text-[9px] text-slate-600">·</span>
+                    <span className="text-[9px] text-slate-500"><span className="text-rose-400 font-bold font-mono">$$$</span> premium</span>
+                    <span className="text-[9px] text-slate-600">·</span>
+                    <span className="text-[9px] text-slate-500"><span className="text-rose-300 font-bold font-mono">$$$+</span> expensive</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -8073,6 +8226,7 @@ export default function PortalV2Page() {
             onPrependImage={handlePrependImage}
             onBalanceChange={handleBalanceChange}
             activeRefImages={activeRefImages}
+            refLibrary={refLibrary}
             onDeactivateRef={handleDeactivateRef}
             onLoadPreset={handleLoadPreset}
             onUploadRef={handleUploadRef}

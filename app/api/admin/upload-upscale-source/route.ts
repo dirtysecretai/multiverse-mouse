@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { presignPutUrl } from '@/lib/r2'
+import { uploadToR2 } from '@/lib/r2'
 import { getUserFromSession } from '@/lib/auth'
 
 const ADMIN_EMAILS = new Set(['dirtysecretai@gmail.com', 'promptandprotocol@gmail.com'])
@@ -19,17 +19,20 @@ async function authOk(req: NextRequest): Promise<boolean> {
 export async function POST(req: NextRequest) {
   if (!await authOk(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let filename: string, contentType: string
+  let file: File | null = null
   try {
-    const body = await req.json() as { filename?: string; contentType?: string }
-    filename = body.filename?.trim() || 'source.jpg'
-    contentType = body.contentType || 'image/jpeg'
+    const form = await req.formData()
+    file = form.get('file') as File | null
   } catch {
-    return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid form data' }, { status: 400 })
   }
 
-  const key = `upscale-sources/${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-  const { uploadUrl, publicUrl } = await presignPutUrl(key, contentType, 3600)
+  if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
 
-  return NextResponse.json({ uploadUrl, publicUrl })
+  const buf = Buffer.from(await file.arrayBuffer())
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+  const key = `upscale-sources/${Date.now()}.${ext}`
+  const publicUrl = await uploadToR2(key, buf, file.type || 'image/jpeg')
+
+  return NextResponse.json({ publicUrl })
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { after } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { getUserFromSession } from '@/lib/auth'
 import { cookies } from 'next/headers'
@@ -81,6 +82,13 @@ export async function POST(request: Request) {
       esrganModel = 'RealESRGAN_x4plus',
       esrganFace = false,
       esrganOutputFormat = 'png',
+      // SUPIR params
+      supirModelName = 'SUPIR-v0F',
+      supirSteps = 20,
+      supirUseLlava = false,
+      supirCfg = 4.0,
+      supirColorFix = 'Wavelet',
+      supirNegPrompt = 'blurry, noisy, low quality, oversmoothed, jpeg artifacts, deformed',
     } = body
 
     // Check if admin mode is requested and user is actually admin
@@ -92,7 +100,7 @@ export async function POST(request: Request) {
     }
 
     // Upscaler models don't require a prompt
-    if (model !== 'clarity-upscaler' && model !== 'aura-sr' && model !== 'esrgan' && model !== 'drct' && (!prompt || prompt.trim().length === 0)) {
+    if (model !== 'clarity-upscaler' && model !== 'aura-sr' && model !== 'esrgan' && model !== 'drct' && model !== 'supir' && (!prompt || prompt.trim().length === 0)) {
       return NextResponse.json(
         { error: 'Universe coordinates required' },
         { status: 400 }
@@ -171,7 +179,7 @@ export async function POST(request: Request) {
     let imageBuffers: Buffer[] = []  // For multi-image models (Gemini only now)
 
     // Route to correct provider based on model
-    if (selectedModel.provider === 'fal') {
+    if (selectedModel.provider === 'fal' || model === 'supir') {
       // ============================================
       // FAL.AI PROVIDER — ASYNC via fal.queue.submit
       // Images arrive via webhook at /api/webhooks/fal
@@ -565,6 +573,150 @@ export async function POST(request: Request) {
             message: `${upscaleFactor}x DRCT queued — ${drctTicketCost} ticket(s) reserved.`,
             modelUsed: 'DRCT Super-Resolution',
             ticketsUsed: skipTickets ? 0 : drctTicketCost,
+          })
+        }
+
+        // ── SUPIR (Replicate) ──────────────────────────────────────────────────
+        if (model === 'supir') {
+          if (!upscaleImageUrl) {
+            return NextResponse.json({ error: 'upscaleImageUrl is required for supir' }, { status: 400 })
+          }
+
+          const supirCost = 8
+          const effectiveBalance = (ticketRecord?.balance || 0) - (ticketRecord?.reserved || 0)
+          if (!skipTickets && effectiveBalance < supirCost) {
+            return NextResponse.json(
+              { error: `Insufficient tickets. Need ${supirCost}, have ${effectiveBalance}.` },
+              { status: 402 }
+            )
+          }
+          if (!skipTickets) {
+            await prisma.ticket.update({ where: { userId: user.id }, data: { reserved: { increment: supirCost } } })
+          }
+          const updatedTicket = await prisma.ticket.findUnique({ where: { userId: user.id } })
+          const newBalance = skipTickets
+            ? (ticketRecord?.balance || 0)
+            : Math.max(0, (updatedTicket?.balance || 0) - (updatedTicket?.reserved || 0))
+
+          // Submit to Replicate
+          const predRes = await fetch('https://api.replicate.com/v1/predictions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${process.env.REPLICATE_API_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              version: '9daf6d19556db0fd6e347a7a5cae7d4a68cf25486266ca3e6dc82618f0a2e0b9',
+              input: {
+                image: upscaleImageUrl,
+                upscale: upscaleFactor,
+                SUPIR_sign: supirModelName.slice(-1),  // "SUPIR-v0F" → "F", "SUPIR-v0Q" → "Q"
+                use_llava: supirUseLlava,
+                a_prompt: 'masterpiece, best quality, highres, sharp details',
+                n_prompt: supirNegPrompt,
+                edm_steps: supirSteps,
+                s_cfg: supirCfg,
+                linear_cfg: false,
+                color_fix_type: supirColorFix,
+              },
+            }),
+          })
+          if (!predRes.ok) {
+            const errText = await predRes.text()
+            if (!skipTickets) await prisma.ticket.update({ where: { userId: user.id }, data: { reserved: { decrement: supirCost } } })
+            if (predRes.status === 429) {
+              return NextResponse.json({ error: 'SUPIR is rate limited — only 1 prediction at a time on your Replicate plan. Add credit to your Replicate account to increase the limit.' }, { status: 429 })
+            }
+            return NextResponse.json({ error: `SUPIR error: ${errText.slice(0, 120)}` }, { status: 500 })
+          }
+          const prediction = await predRes.json()
+
+          const queueEntry = await prisma.generationQueue.create({
+            data: {
+              userId: user.id,
+              modelId: 'supir',
+              modelType: 'image',
+              prompt: `${upscaleFactor}x SUPIR`,
+              parameters: { source: 'main-scanner', quality: `${upscaleFactor}x`, aspectRatio: 'auto', model: 'supir', adminMode: skipTickets, upscaleImageUrl, upscaleFactor },
+              status: 'processing',
+              ticketCost: skipTickets ? 0 : supirCost,
+              falRequestId: prediction.id,
+              startedAt: new Date(),
+            },
+          })
+
+          // Background: poll Replicate → save result → settle tickets → mark done
+          after(async () => {
+            const prismaAfter = new PrismaClient()
+            try {
+              const pollUrl = `https://api.replicate.com/v1/predictions/${prediction.id}`
+              const headers = { 'Authorization': `Bearer ${process.env.REPLICATE_API_TOKEN}` }
+              const maxAttempts = 72  // 72 × 5s = 6 minutes max
+              let attempt = 0
+              while (attempt < maxAttempts) {
+                attempt++
+                await new Promise(r => setTimeout(r, 5000))
+                const poll = await fetch(pollUrl, { headers })
+                if (!poll.ok) continue
+                const pred = await poll.json()
+                if (pred.status === 'succeeded' && pred.output) {
+                  const outputUrl: string = Array.isArray(pred.output) ? pred.output[0] : pred.output
+                  let hostedUrl = outputUrl
+                  try {
+                    const imgRes = await fetch(outputUrl)
+                    if (imgRes.ok) {
+                      const buf = Buffer.from(await imgRes.arrayBuffer())
+                      hostedUrl = await uploadToR2(`supir-${Date.now()}.png`, buf, 'image/png')
+                    }
+                  } catch {}
+                  await prismaAfter.generatedImage.create({
+                    data: {
+                      userId: user.id,
+                      prompt: `${upscaleFactor}x SUPIR`,
+                      imageUrl: hostedUrl,
+                      model: 'supir',
+                      ticketCost: skipTickets ? 0 : supirCost,
+                      quality: `${upscaleFactor}x`,
+                      aspectRatio: 'auto',
+                      expiresAt: new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000),
+                      falRequestId: prediction.id,
+                    },
+                  })
+                  await prismaAfter.generationQueue.update({ where: { id: queueEntry.id }, data: { status: 'completed' } })
+                  if (!skipTickets) {
+                    await prismaAfter.ticket.update({ where: { userId: user.id }, data: { balance: { decrement: supirCost }, reserved: { decrement: supirCost } } })
+                  }
+                  break
+                } else if (pred.status === 'failed' || pred.status === 'canceled') {
+                  const rawErr: string = pred.error || 'Replicate prediction failed'
+                  const friendlyErr = rawErr.includes('CUDA out of memory') || rawErr.includes('out of memory')
+                    ? 'GPU out of memory — try a smaller image or lower upscale factor'
+                    : rawErr.slice(0, 120)
+                  await prismaAfter.generationQueue.update({ where: { id: queueEntry.id }, data: { status: 'failed', errorMessage: friendlyErr } })
+                  if (!skipTickets) await prismaAfter.ticket.update({ where: { userId: user.id }, data: { reserved: { decrement: supirCost } } })
+                  break
+                }
+              }
+              if (attempt >= maxAttempts) {
+                await prismaAfter.generationQueue.update({ where: { id: queueEntry.id }, data: { status: 'failed', errorMessage: 'SUPIR timed out' } })
+                if (!skipTickets) await prismaAfter.ticket.update({ where: { userId: user.id }, data: { reserved: { decrement: supirCost } } })
+              }
+            } catch (err) {
+              console.error('[supir] background worker error:', err)
+            } finally {
+              await prismaAfter.$disconnect()
+            }
+          })
+
+          console.log(`[supir] ${upscaleFactor}x prediction=${prediction.id} queued`)
+          return NextResponse.json({
+            success: true,
+            queued: true,
+            queueId: queueEntry.id,
+            newBalance,
+            message: `${upscaleFactor}x SUPIR queued — ${supirCost} tickets reserved.`,
+            modelUsed: 'SUPIR',
+            ticketsUsed: skipTickets ? 0 : supirCost,
           })
         }
 
