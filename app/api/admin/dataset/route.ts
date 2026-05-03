@@ -111,6 +111,19 @@ export async function GET(req: Request) {
     })
   }
 
+  // ── Bucket stats-only (separate non-blocking request from client) ──────────
+  if (searchParams.get('statsOnly') === 'true' && bucketId) {
+    const bid = parseInt(bucketId)
+    const bw = { isDeleted: false, bucketImages: { some: { bucketId: bid } } }
+    const [marked, tagged, captioned, total] = await Promise.all([
+      prisma.generatedImage.count({ where: { ...bw, markedForTraining: true } }),
+      prisma.generatedImage.count({ where: { ...bw, adminTags: { isEmpty: false } } }),
+      prisma.generatedImage.count({ where: { ...bw, adminCaption: { not: null } } }),
+      prisma.generatedImage.count({ where: bw }),
+    ])
+    return NextResponse.json({ bucketStats: { marked, tagged, captioned, total } }, { headers: { 'Cache-Control': 'no-store' } })
+  }
+
   // ── IDs-only (for select-all across all pages) ─────────────────────────────
   if (searchParams.get('idsOnly') === 'true') {
     const rows = await prisma.generatedImage.findMany({
@@ -141,11 +154,14 @@ export async function GET(req: Request) {
     }),
   ])
 
-  // Facet dropdowns — cheap, unfiltered
-  const [models, aspects, qualities] = await Promise.all([
+  // Facet dropdowns + overall stats — bucket stats are fetched separately by the client
+  const [models, aspects, qualities, overallMarked, overallTagged, overallCaptioned] = await Promise.all([
     prisma.generatedImage.groupBy({ by: ['model'],       where: { isDeleted: false }, _count: true }),
     prisma.generatedImage.groupBy({ by: ['aspectRatio'], where: { isDeleted: false }, _count: true }),
     prisma.generatedImage.groupBy({ by: ['quality'],     where: { isDeleted: false }, _count: true }),
+    prisma.generatedImage.count({ where: { isDeleted: false, markedForTraining: true } }),
+    prisma.generatedImage.count({ where: { isDeleted: false, adminTags: { isEmpty: false } } }),
+    prisma.generatedImage.count({ where: { isDeleted: false, adminCaption: { not: null } } }),
   ])
 
   // Top tags via raw SQL (unnest the array)
@@ -186,6 +202,7 @@ export async function GET(req: Request) {
       tags:      topTags.map(t => ({ value: t.tag, count: Number(t.count) })),
       users,
     },
+    overallStats: { marked: overallMarked, tagged: overallTagged, captioned: overallCaptioned },
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
 

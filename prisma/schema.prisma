@@ -820,17 +820,34 @@ model AdminAccount {
 // DATASET BUCKETS (Admin training data collections)
 // ============================================
 
+model DatasetBucketFolder {
+  id        Int             @id @default(autoincrement())
+  name      String
+  parentId  Int?
+  parent    DatasetBucketFolder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  DatasetBucketFolder[] @relation("FolderTree")
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  buckets   DatasetBucket[]
+
+  @@index([createdAt])
+  @@index([parentId])
+}
+
 model DatasetBucket {
   id          Int      @id @default(autoincrement())
   name        String
   description String?  @db.Text
-  color       String?  // hex or tailwind color token for UI
+  color       String?
+  folderId    Int?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  folder DatasetBucketFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
   images DatasetBucketImage[]
 
   @@index([createdAt])
+  @@index([folderId])
 }
 
 model DatasetBucketImage {

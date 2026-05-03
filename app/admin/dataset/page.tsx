@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect, useCallback, useRef, useMemo, memo, useDeferredValue } from "react"
 import {
@@ -193,7 +193,8 @@ interface ImageRecord {
   } | null
 }
 
-interface Bucket { id: number; name: string; description: string | null; color: string | null; count: number; createdAt: string }
+interface Bucket { id: number; name: string; description: string | null; color: string | null; folderId: number | null; count: number; createdAt: string }
+interface BucketFolder { id: number; name: string; parentId?: number | null; createdAt: string }
 
 interface Pagination { page: number; limit: number; total: number; totalPages: number }
 interface Facets {
@@ -1082,24 +1083,25 @@ interface AutoFillEvent {
   modelId?:   string
 }
 
-interface FeedItem {
-  id:         number
-  value:      string
-  tags?:      string[]
-  imageUrl?:  string
-  error?:     string
-  autoSaved?: boolean
-}
-
-function cleanTagsClient(raw: string): string[] {
-  return raw.split(',').map(t => t.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')).filter(t => t.length > 0 && t.length <= 40)
+interface RunEntry {
+  jobId:          string
+  status:         'running' | 'queued' | 'paused' | 'done' | 'cancelled'
+  mode:           AutoFillMode
+  modelKey:       AutoFillModel
+  totalCount:     number
+  nextIndex:      number
+  processedCount: number
+  skippedCount:   number
+  failedCount:    number
+  updatedAt:      string | null
+  label:          string
 }
 
 // ─── Persistence helpers (used by AutoFillPanel + DatasetPage) ────────────────
 
 const PAGE_PREFS_KEY     = 'dataset-page-prefs'
 const AUTOFILL_PREFS_KEY = 'dataset-autofill-prefs'
-const AUTOFILL_JOB_KEY   = 'dataset-autofill-job-id'
+const AUTOFILL_JOBS_KEY  = 'dataset-autofill-jobs'
 
 function loadPrefs(key: string): Record<string, any> {
   if (typeof window === 'undefined') return {}
@@ -1132,423 +1134,622 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved, onJobChan
     savePrefs(AUTOFILL_PREFS_KEY, { mode, model, overwrite, advanced, context, contextTags })
   }, [mode, model, overwrite, advanced, context, contextTags])
 
-  // Run state
-  const [phase,    setPhase]    = useState<'setup' | 'running' | 'done'>('setup')
-  const [progress, setProgress] = useState(0)
-  const [total,    setTotal]    = useState(0)
-  const [summary,  setSummary]  = useState<{ processed: number; skipped: number; failed: number } | null>(null)
+  // Queue of runs
+  const [runs, setRuns] = useState<RunEntry[]>([])
+  const runsRef         = useRef<RunEntry[]>([])
+  const seenResultIds    = useRef(new Map<string, Set<number>>())
+  const isInitialized    = useRef(false)
+  const [selectedRunId,  setSelectedRunId]  = useState<string | null>(null)
+  const selectedRunIdRef = useRef<string | null>(null)
+  const [detailResults,  setDetailResults]  = useState<any[]>([])
+  const [editingId,      setEditingId]      = useState<number | null>(null)
+  const [editValue,      setEditValue]      = useState('')
+  const [savingIds,      setSavingIds]      = useState(new Set<number>())
 
-  // Background job
-  const [activeJobId, setActiveJobIdState] = useState<string | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const seenIds = useRef<Set<number>>(new Set())
-
-  function setActiveJobId(id: string | null) {
-    setActiveJobIdState(id)
-    try { id ? localStorage.setItem(AUTOFILL_JOB_KEY, id) : localStorage.removeItem(AUTOFILL_JOB_KEY) } catch {}
-    onJobChange?.(!!id)
-  }
-
-  // Feed
-  const [feedItems, setFeedItems] = useState<FeedItem[]>([])
-  const [savingIds, setSavingIds] = useState<Set<number>>(new Set())
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [editValue, setEditValue] = useState('')
-  const feedRef = useRef<HTMLDivElement>(null)
-
+  // Keep ref in sync + notify parent + persist active job IDs (guard on isInitialized to avoid overwriting localStorage before restore)
   useEffect(() => {
-    if (feedRef.current && feedItems.length > 0) feedRef.current.scrollTop = feedRef.current.scrollHeight
-  }, [feedItems.length])
+    runsRef.current = runs
+    onJobChange?.(runs.some(r => r.status === 'running' || r.status === 'paused' || r.status === 'queued'))
+    if (!isInitialized.current) return
+    const activeIds = runs.filter(r => r.status !== 'done' && r.status !== 'cancelled').map(r => r.jobId)
+    try { localStorage.setItem(AUTOFILL_JOBS_KEY, JSON.stringify(activeIds)) } catch {}
+  }, [runs]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On mount: restore active job from localStorage
+  // Mount: restore active jobs from localStorage
   useEffect(() => {
-    const savedId = (() => { try { return localStorage.getItem(AUTOFILL_JOB_KEY) } catch { return null } })()
-    if (!savedId) return
-    fetch(`/api/admin/auto-caption/jobs/${savedId}`, { headers: authHeaders() })
-      .then(r => r.ok ? r.json() : null)
-      .then((job: any) => {
-        if (!job || (job.status !== 'running' && job.status !== 'done')) {
-          try { localStorage.removeItem(AUTOFILL_JOB_KEY) } catch {}
-          return
-        }
-        setActiveJobIdState(savedId)
-        setTotal(job.totalCount)
-        setProgress(job.nextIndex)
-        setPhase(job.status === 'done' ? 'done' : 'running')
-        onJobChange?.(job.status === 'running')
-        const results: any[] = Array.isArray(job.results) ? job.results : []
-        const newItems = results.filter((r: any) => r.type === 'result' || r.type === 'error')
-        setFeedItems(newItems.map((r: any) => ({
-          id: r.id, value: r.value ?? '', tags: r.tags,
-          imageUrl: r.imageUrl || imageUrlById[r.id], error: r.error, autoSaved: true,
-        })))
-        newItems.forEach((r: any) => seenIds.current.add(r.id))
-        if (job.status === 'done') {
-          setSummary({ processed: job.processedCount, skipped: job.skippedCount, failed: job.failedCount })
-          try { localStorage.removeItem(AUTOFILL_JOB_KEY) } catch {}
-        }
-      })
-      .catch(() => {})
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Polling — runs while a job is active
-  useEffect(() => {
-    if (!activeJobId || phase !== 'running') {
-      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+    const storedIds = (() => {
+      try { return JSON.parse(localStorage.getItem(AUTOFILL_JOBS_KEY) ?? '[]') as string[] } catch { return [] as string[] }
+    })()
+    if (!storedIds.length) {
+      isInitialized.current = true
       return
     }
-    const poll = async () => {
+    Promise.all(storedIds.map(async (jobId: string) => {
       try {
-        const res = await fetch(`/api/admin/auto-caption/jobs/${activeJobId}`, { headers: authHeaders() })
-        if (!res.ok) return
+        const res = await fetch(`/api/admin/auto-caption/jobs/${jobId}`, { headers: authHeaders() })
+        if (!res.ok) return null
         const job = await res.json()
-        setProgress(job.nextIndex)
-        setTotal(job.totalCount)
-        const results: any[] = Array.isArray(job.results) ? job.results : []
-        const fresh = results.filter((r: any) => (r.type === 'result' || r.type === 'error') && !seenIds.current.has(r.id))
-        if (fresh.length > 0) {
-          setFeedItems(prev => [...prev, ...fresh.map((r: any) => ({
-            id: r.id, value: r.value ?? '', tags: r.tags,
-            imageUrl: r.imageUrl || imageUrlById[r.id], error: r.error, autoSaved: true,
-          }))])
-          fresh.forEach((r: any) => seenIds.current.add(r.id))
-        }
-        if (job.status === 'done' || job.status === 'cancelled') {
-          clearInterval(pollRef.current!); pollRef.current = null
-          setPhase('done')
-          setSummary({ processed: job.processedCount, skipped: job.skippedCount, failed: job.failedCount })
-          setActiveJobId(null)
-        }
-      } catch {}
-    }
-    pollRef.current = setInterval(poll, 2000)
-    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
-  }, [activeJobId, phase]) // eslint-disable-line react-hooks/exhaustive-deps
+        if (job.status === 'done' || job.status === 'cancelled') return null
+        const modeLabel = job.mode === 'flux' ? 'FLUX' : job.mode === 'caption' ? 'Caption' : 'Tags'
+        return {
+          jobId, status: job.status as RunEntry['status'],
+          mode: job.mode as AutoFillMode, modelKey: job.modelKey as AutoFillModel,
+          totalCount: job.totalCount, nextIndex: job.nextIndex,
+          processedCount: job.processedCount, skippedCount: job.skippedCount, failedCount: job.failedCount,
+          updatedAt: job.updatedAt ?? null, label: `${modeLabel} · restored`,
+        } as RunEntry
+      } catch { return null }
+    })).then(results => {
+      const valid = results.filter((r): r is RunEntry => r !== null)
+      if (valid.length) setRuns(valid)
+    }).finally(() => {
+      isInitialized.current = true
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function startJob(ids: number[]) {
-    setPhase('running'); setProgress(0); setTotal(ids.length); setSummary(null)
-    seenIds.current.clear(); setFeedItems([])
+  // Polling — single interval reads from ref to avoid stale closures; also polls selected job for detail view
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      // Poll running + queued + paused so we detect backend status transitions (e.g. queued→running)
+      const active     = runsRef.current.filter(r => r.status === 'running' || r.status === 'queued' || r.status === 'paused')
+      const selectedId = selectedRunIdRef.current
+      const jobIds     = [...new Set([...active.map(r => r.jobId), ...(selectedId ? [selectedId] : [])])]
+      if (!jobIds.length) return
+      await Promise.all(jobIds.map(async (jobId) => {
+        try {
+          const res = await fetch(`/api/admin/auto-caption/jobs/${jobId}`, { headers: authHeaders() })
+          if (!res.ok) return
+          const job = await res.json()
+
+          // Update detail results if this is the selected job
+          if (jobId === selectedRunIdRef.current && Array.isArray(job.results)) {
+            setDetailResults(job.results)
+          }
+
+          // Surface new results to parent grid (running jobs only)
+          const run = runsRef.current.find(r => r.jobId === jobId)
+          if (run?.status === 'running') {
+            const seen = seenResultIds.current.get(jobId) ?? new Set<number>()
+            const results: any[] = Array.isArray(job.results) ? job.results : []
+            results.filter((item: any) => item.type === 'result' && !seen.has(item.id)).forEach((item: any) => {
+              seen.add(item.id)
+              const isTagMode = run.mode === 'tags'
+              onItemSaved(item.id, isTagMode ? { tags: item.tags } : { caption: item.value })
+            })
+            seenResultIds.current.set(jobId, seen)
+          }
+
+          setRuns(prev => prev.map(r => r.jobId === jobId ? {
+            ...r,
+            status:         job.status,
+            nextIndex:      job.nextIndex,
+            totalCount:     job.totalCount,
+            processedCount: job.processedCount,
+            skippedCount:   job.skippedCount,
+            failedCount:    job.failedCount,
+            updatedAt:      job.updatedAt ?? r.updatedAt,
+          } : r))
+        } catch {}
+      }))
+    }, 3000)
+    return () => clearInterval(interval)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep selectedRunIdRef in sync with state
+  useEffect(() => { selectedRunIdRef.current = selectedRunId }, [selectedRunId])
+
+  // Fetch detail results immediately when a run is selected
+  useEffect(() => {
+    if (!selectedRunId) { setDetailResults([]); return }
+    fetch(`/api/admin/auto-caption/jobs/${selectedRunId}`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(job => { if (Array.isArray(job.results)) setDetailResults(job.results) })
+      .catch(() => {})
+  }, [selectedRunId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Actions ──────────────────────────────────────────────────────────────────
+
+  function cleanTagsClient(raw: string): string[] {
+    return raw.split(',').map(t => t.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')).filter(t => t.length > 0 && t.length <= 40)
+  }
+
+  async function addToQueue() {
+    if (count === 0) return
+    const ids = Array.from(selected)
+    const modeLabel    = mode === 'flux' ? 'FLUX' : mode === 'caption' ? 'Caption' : 'Tags'
+    const triggerLabel = contextTags.length ? contextTags[0] : ''
+    const label        = triggerLabel ? `${modeLabel} · ${triggerLabel}` : `${modeLabel} · ${ids.length} images`
+
     try {
       const res = await fetch('/api/admin/auto-caption/jobs', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({
+        body:    JSON.stringify({
           ids, mode, model, overwrite, advanced,
-          context: context.trim() || undefined,
+          context:     context.trim() || undefined,
           contextTags: contextTags.length ? contextTags : undefined,
         }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const { jobId } = await res.json()
-      setActiveJobId(jobId)
-    } catch {
-      setSummary({ processed: 0, skipped: 0, failed: 1 }); setPhase('done')
+      const { jobId, status: jobStatus } = await res.json()
+      const newRun: RunEntry = {
+        jobId, status: jobStatus as RunEntry['status'],
+        mode, modelKey: model, totalCount: ids.length, nextIndex: 0,
+        processedCount: 0, skippedCount: 0, failedCount: 0,
+        updatedAt: new Date().toISOString(), label,
+      }
+      setRuns(prev => [...prev, newRun])
+    } catch (err: unknown) {
+      alert(`Failed to queue: ${(err as Error).message}`)
     }
   }
 
-  async function stopJob() {
-    if (activeJobId) {
-      await fetch(`/api/admin/auto-caption/jobs/${activeJobId}`, { method: 'DELETE', headers: authHeaders() }).catch(() => {})
-      setActiveJobId(null)
-    }
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
-    setPhase('done'); setSummary(s => s ?? { processed: 0, skipped: 0, failed: 0 })
+  async function pauseRun(jobId: string) {
+    await fetch(`/api/admin/auto-caption/jobs/${jobId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ status: 'paused' }),
+    }).catch(() => {})
+    setRuns(prev => prev.map(r => r.jobId === jobId ? { ...r, status: 'paused' } : r))
   }
 
-  // Edit an already-saved result and re-save to DB
-  async function editAndSaveItem(item: FeedItem, overrideValue?: string) {
-    const finalValue = overrideValue ?? item.value
-    const finalTags  = mode === 'tags' ? cleanTagsClient(finalValue) : undefined
-    setSavingIds(prev => new Set(prev).add(item.id))
+  async function resumeRun(jobId: string) {
+    await fetch(`/api/admin/auto-caption/jobs/${jobId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ status: 'running' }),
+    }).catch(() => {})
+    await fetch(`/api/admin/auto-caption/jobs/${jobId}/continue`, {
+      method: 'POST', headers: authHeaders(),
+    }).catch(() => {})
+    setRuns(prev => prev.map(r => r.jobId === jobId ? { ...r, status: 'running', updatedAt: new Date().toISOString() } : r))
+  }
+
+  async function cancelRun(jobId: string) {
+    await fetch(`/api/admin/auto-caption/jobs/${jobId}`, {
+      method: 'DELETE', headers: authHeaders(),
+    }).catch(() => {})
+    setRuns(prev => prev.map(r => r.jobId === jobId ? { ...r, status: 'cancelled' } : r))
+  }
+
+  async function resumeStuck(jobId: string) {
+    await fetch(`/api/admin/auto-caption/jobs/${jobId}/continue`, {
+      method: 'POST', headers: authHeaders(),
+    }).catch(() => {})
+    setRuns(prev => prev.map(r => r.jobId === jobId ? { ...r, updatedAt: new Date().toISOString() } : r))
+  }
+
+  function dismissRun(jobId: string) {
+    setRuns(prev => prev.filter(r => r.jobId !== jobId))
+  }
+
+  async function continueRun(jobId: string) {
     try {
-      const body = mode !== 'tags' ? { ids: [item.id], caption: finalValue } : { ids: [item.id], tags: finalTags }
-      await fetch('/api/admin/dataset', { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(body) })
-      onItemSaved(item.id, mode !== 'tags' ? { caption: finalValue } : { tags: finalTags })
-      setFeedItems(prev => prev.filter(i => i.id !== item.id))
-      if (editingId === item.id) setEditingId(null)
-    } catch (e: any) {
-      alert(`Save failed: ${e.message}`)
-    } finally {
-      setSavingIds(prev => { const n = new Set(prev); n.delete(item.id); return n })
+      const res = await fetch(`/api/admin/auto-caption/jobs/${jobId}/resume`, {
+        method: 'POST', headers: authHeaders(),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const { status: newStatus, nextIndex, totalCount } = await res.json()
+      setRuns(prev => prev.map(r => r.jobId === jobId ? {
+        ...r, status: newStatus as RunEntry['status'],
+        nextIndex, totalCount, updatedAt: new Date().toISOString(),
+      } : r))
+    } catch (err: unknown) {
+      alert(`Failed to continue: ${(err as Error).message}`)
     }
   }
 
-  function dismissItem(id: number) {
-    setFeedItems(prev => prev.filter(i => i.id !== id))
-    if (editingId === id) setEditingId(null)
+  async function saveDetailEdit(itemId: number, isTagMode: boolean) {
+    const newVal = editValue.trim()
+    if (!newVal) return
+    setSavingIds(prev => new Set([...prev, itemId]))
+    try {
+      const updatedTags  = isTagMode ? cleanTagsClient(newVal) : undefined
+      const updatedValue = isTagMode ? updatedTags!.join(', ') : newVal
+      await fetch('/api/admin/dataset', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(isTagMode ? { ids: [itemId], tags: updatedTags } : { ids: [itemId], caption: newVal }),
+      })
+      setDetailResults(prev => prev.map((r: any) =>
+        r.id === itemId ? { ...r, value: updatedValue, ...(updatedTags ? { tags: updatedTags } : {}) } : r
+      ))
+      onItemSaved(itemId, isTagMode ? { tags: updatedTags! } : { caption: newVal })
+      setEditingId(null)
+      setEditValue('')
+    } catch (err: unknown) {
+      alert(`Failed: ${(err as Error).message}`)
+    } finally {
+      setSavingIds(prev => { const n = new Set(prev); n.delete(itemId); return n })
+    }
   }
 
-  function startEdit(item: FeedItem) {
-    setEditingId(item.id)
-    setEditValue(mode === 'tags' ? (item.tags ?? []).join(', ') : item.value)
-  }
+  // ── Render ───────────────────────────────────────────────────────────────────
 
-  const isLocked = phase === 'running'
+  const selectedRun  = runs.find(r => r.jobId === selectedRunId) ?? null
+  const activeCount  = runs.filter(r => r.status === 'running' || r.status === 'paused').length
+  const queuedCount  = runs.filter(r => r.status === 'queued').length
 
   return (
     <div className="flex flex-col h-full">
 
-      {/* Panel header */}
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-cyan-500/15 flex items-center justify-center">
-            <Sparkles size={12} className="text-cyan-400" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-white leading-none">Auto Fill</p>
-            <p className="text-[10px] mt-0.5 leading-none">
-              {phase === 'running'
-                ? <span className="text-cyan-500">Running in background…</span>
-                : <span className="text-slate-600">{count > 0 ? `${count} selected` : 'Select images on the right'}</span>
-              }
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          {phase === 'running' && (
-            <button onClick={stopJob}
-              className="px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] hover:bg-red-500/15 transition-all">
-              Stop
+        {selectedRunId ? (
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <button onClick={() => { setSelectedRunId(null); setEditingId(null); setEditValue('') }}
+              className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition-colors shrink-0">
+              <ArrowLeft size={13} />
             </button>
-          )}
-          {phase !== 'setup' && (
-            <button onClick={() => { setPhase('setup'); setFeedItems([]); setSummary(null); setProgress(0); setTotal(0) }}
-              className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-500 hover:text-white text-[10px] transition-all">
-              Reset
-            </button>
-          )}
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-600 hover:text-slate-300 transition-colors">
-            <X size={14} />
-          </button>
-        </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-white truncate leading-none">{selectedRun?.label ?? 'Job Detail'}</p>
+              <p className="text-[10px] mt-0.5 leading-none text-slate-600">
+                {detailResults.filter((r: any) => r.type === 'result').length} results
+                {selectedRun && selectedRun.totalCount > 0 ? ` · ${selectedRun.nextIndex}/${selectedRun.totalCount}` : ''}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-cyan-500/15 flex items-center justify-center">
+              <Sparkles size={12} className="text-cyan-400" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-white leading-none">Auto Fill</p>
+              <p className="text-[10px] mt-0.5 leading-none">
+                {activeCount > 0 || queuedCount > 0
+                  ? <span className="text-cyan-500">
+                      {activeCount > 0 ? `${activeCount} active` : ''}
+                      {activeCount > 0 && queuedCount > 0 ? ' · ' : ''}
+                      {queuedCount > 0 ? `${queuedCount} queued` : ''}
+                    </span>
+                  : <span className="text-slate-600">{count > 0 ? `${count} selected` : 'Select images on the right'}</span>
+                }
+              </p>
+            </div>
+          </div>
+        )}
+        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-600 hover:text-slate-300 transition-colors">
+          <X size={14} />
+        </button>
       </div>
 
-      {/* Background note — shown while running */}
-      {phase === 'running' && (
-        <div className="mx-4 mt-3 mb-1 px-3 py-2 rounded-lg bg-cyan-500/[0.06] border border-cyan-500/[0.12] shrink-0">
-          <p className="text-[10px] text-cyan-400/80 leading-relaxed">
-            Processing continues even if you close this panel or the browser tab. Results are auto-saved as they complete.
-          </p>
-        </div>
-      )}
+      {/* ── Scrollable body ─────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto min-h-0">
 
-      {/* Config */}
-      <div className="shrink-0 px-4 pt-3 pb-2 space-y-3 border-b border-white/[0.05]">
-
-        {/* Mode row */}
-        <div className="flex gap-1.5">
-          {([
-            { id: 'caption', label: 'Caption',     active: 'bg-violet-500/15 border-violet-500/30 text-violet-300' },
-            { id: 'tags',    label: 'Tags',         active: 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300' },
-            { id: 'flux',    label: 'FLUX Caption', active: 'bg-amber-500/15 border-amber-500/30 text-amber-300' },
-          ] as const).map(m => (
-            <button key={m.id} onClick={() => !isLocked && setMode(m.id)}
-              className={`flex-1 py-1.5 rounded-lg border text-[10px] font-medium transition-all
-                ${mode === m.id ? m.active : 'bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white'}
-                ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
-              {m.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex gap-2">
-          {([{ key: 'flash', label: 'Flash Lite' }, { key: 'pro', label: 'Pro' }] as const).map(m => (
-            <button key={m.key} onClick={() => !isLocked && setModel(m.key)}
-              className={`flex-1 py-1.5 rounded-lg border text-[11px] transition-all
-                ${model === m.key ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white'} ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
-              {m.label}
-            </button>
-          ))}
-          {mode !== 'flux' && ([{ key: false, label: 'Basic' }, { key: true, label: 'Advanced' }] as const).map(m => (
-            <button key={String(m.key)} onClick={() => !isLocked && setAdvanced(m.key)}
-              className={`flex-1 py-1.5 rounded-lg border text-[11px] transition-all
-                ${advanced === m.key ? 'bg-violet-500/15 border-violet-500/30 text-violet-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white'} ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
-              {m.label}
-            </button>
-          ))}
-        </div>
-
-        {phase === 'setup' && (
-          <>
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] text-slate-500">Overwrite existing</p>
-              <button onClick={() => setOverwrite(v => !v)}
-                className={`w-8 h-4 rounded-full transition-colors relative ${overwrite ? 'bg-cyan-500' : 'bg-white/[0.1]'}`}>
-                <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${overwrite ? 'translate-x-4' : 'translate-x-0'}`} />
-              </button>
-            </div>
-
-            <div>
-              {mode === 'flux' && (
-                <p className="text-[10px] text-amber-400/70 mb-1.5">
-                  First tag = trigger word (e.g. <span className="font-mono text-amber-300">DARTHVADER</span>). Additional tags = context.
+        {/* ── Detail view ──────────────────────────────────────────────────── */}
+        {selectedRunId && selectedRun && (
+          <div className="p-3 space-y-3">
+            {/* Progress summary */}
+            {selectedRun.status !== 'queued' && (
+              <div>
+                <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden mb-1.5">
+                  <div className={`h-full rounded-full transition-all duration-500 ${
+                    selectedRun.status === 'done'      ? 'bg-emerald-500' :
+                    selectedRun.status === 'paused'    ? 'bg-amber-500' :
+                    selectedRun.status === 'cancelled' ? 'bg-red-500/60' : 'bg-cyan-500'
+                  }`} style={{ width: `${selectedRun.totalCount > 0 ? (selectedRun.nextIndex / selectedRun.totalCount) * 100 : 0}%` }} />
+                </div>
+                <p className="text-[10px] text-slate-600 leading-none">
+                  {selectedRun.processedCount > 0 && <span className="text-emerald-600">{selectedRun.processedCount} filled </span>}
+                  {selectedRun.skippedCount > 0 && <span>{selectedRun.skippedCount} skipped </span>}
+                  {selectedRun.failedCount > 0 && <span className="text-red-500">{selectedRun.failedCount} failed</span>}
+                  {selectedRun.status === 'running' && selectedRun.processedCount === 0 && selectedRun.skippedCount === 0 && <span className="text-slate-700">Starting…</span>}
                 </p>
-              )}
-              <div className={`flex flex-wrap gap-1 min-h-[24px] rounded-lg border px-2 py-1.5 ${mode === 'flux' ? 'border-amber-500/25 bg-amber-500/[0.03]' : 'border-white/[0.07] bg-white/[0.02]'}`}>
-                {contextTags.map((tag, i) => (
-                  <span key={tag} className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border
-                    ${mode === 'flux' && i === 0
-                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
-                      : 'bg-violet-500/10 border-violet-500/20 text-violet-300'}`}>
-                    {mode === 'flux' && i === 0 && <span className="text-[8px] mr-0.5 opacity-60">⚡</span>}
-                    {tag}
-                    <button onClick={() => setContextTags(prev => prev.filter(t => t !== tag))} className="text-current opacity-50 hover:opacity-100 ml-0.5">×</button>
-                  </span>
-                ))}
-                <input
-                  value={tagInput}
-                  onChange={e => setTagInput(e.target.value)}
-                  onKeyDown={e => {
-                    if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) {
-                      e.preventDefault()
-                      const val = tagInput.trim().replace(/,$/, '')
-                      if (val && !contextTags.includes(val)) setContextTags(prev => [...prev, val])
-                      setTagInput('')
-                    }
-                    if (e.key === 'Backspace' && !tagInput && contextTags.length) setContextTags(prev => prev.slice(0, -1))
-                  }}
-                  placeholder={
-                    mode === 'flux'
-                      ? contextTags.length === 0 ? '⚡ Trigger word (Enter)…' : 'Add context tag…'
-                      : contextTags.length ? 'Add subject…' : 'Subject / context tags (Enter)'
-                  }
-                  className="flex-1 min-w-[80px] bg-transparent text-[11px] text-white placeholder-slate-600 outline-none"
-                />
               </div>
-              {mode !== 'flux' && (context || contextTags.length === 0) ? (
-                <textarea value={context} onChange={e => setContext(e.target.value)}
-                  placeholder="Optional: full context sentence…"
-                  rows={1}
-                  className="mt-1 w-full rounded-lg border border-white/[0.07] bg-white/[0.02] px-2 py-1.5 text-[11px] text-slate-300 placeholder-slate-700 outline-none resize-none"
-                />
-              ) : null}
-            </div>
-          </>
+            )}
+            {/* Results list */}
+            {detailResults.length === 0 ? (
+              <p className="text-[11px] text-slate-700 text-center py-8">
+                {selectedRun.status === 'queued' ? 'Job is queued — results will appear once it starts.' : 'No results yet…'}
+              </p>
+            ) : (
+              [...detailResults].reverse().map((item: any) => (
+                <div key={`${item.id}-${item.type}`} className={`rounded-xl border overflow-hidden ${
+                  item.type === 'error' ? 'border-red-500/15 bg-red-500/[0.03]' :
+                  item.type === 'skip'  ? 'border-white/[0.04] bg-transparent' :
+                                          'border-white/[0.07] bg-white/[0.02]'
+                }`}>
+                  <div className="flex gap-2.5 p-2.5">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.imageUrl} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 bg-white/[0.03]" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className={`text-[8px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
+                          item.type === 'result' ? 'bg-emerald-500/15 text-emerald-400' :
+                          item.type === 'skip'   ? 'bg-slate-700/40 text-slate-500' :
+                                                   'bg-red-500/15 text-red-400'
+                        }`}>
+                          {item.type === 'result' ? (selectedRun.mode === 'tags' ? 'tagged' : 'captioned') : item.type}
+                        </span>
+                      </div>
+                      {item.type === 'result' ? (
+                        editingId === item.id ? (
+                          <div className="space-y-1">
+                            <textarea
+                              value={editValue}
+                              onChange={e => setEditValue(e.target.value)}
+                              className="w-full rounded-lg border border-cyan-500/30 bg-white/[0.03] px-2 py-1.5 text-[10px] text-slate-200 placeholder-slate-700 outline-none resize-none"
+                              rows={selectedRun.mode === 'tags' ? 2 : 3}
+                              autoFocus
+                            />
+                            <div className="flex gap-1">
+                              <button onClick={() => saveDetailEdit(item.id, selectedRun.mode === 'tags')}
+                                disabled={savingIds.has(item.id)}
+                                className="px-2 py-0.5 rounded-lg bg-cyan-500/15 border border-cyan-500/25 text-cyan-400 text-[9px] hover:bg-cyan-500/20 disabled:opacity-50 transition-all">
+                                {savingIds.has(item.id) ? 'Saving…' : 'Save'}
+                              </button>
+                              <button onClick={() => { setEditingId(null); setEditValue('') }}
+                                className="px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-500 text-[9px] hover:text-slate-300 transition-all">
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            {selectedRun.mode === 'tags' ? (
+                              <div className="flex flex-wrap gap-0.5 mb-1">
+                                {(item.tags ?? []).slice(0, 10).map((tag: string) => (
+                                  <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/15 text-cyan-400/70">{tag}</span>
+                                ))}
+                                {(item.tags ?? []).length > 10 && <span className="text-[9px] text-slate-600">+{(item.tags as string[]).length - 10}</span>}
+                                {(!item.tags || (item.tags as string[]).length === 0) && <span className="text-[10px] text-slate-700 italic">no tags</span>}
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-slate-400 leading-relaxed mb-1 line-clamp-3">{item.value}</p>
+                            )}
+                            <button onClick={() => { setEditingId(item.id); setEditValue(selectedRun.mode === 'tags' ? (item.tags ?? []).join(', ') : (item.value ?? '')) }}
+                              className="text-[9px] text-slate-600 hover:text-cyan-400 transition-colors">
+                              Edit ✎
+                            </button>
+                          </div>
+                        )
+                      ) : item.type === 'error' ? (
+                        <p className="text-[10px] text-red-400/70 italic leading-relaxed">{item.error ?? 'Unknown error'}</p>
+                      ) : (
+                        <p className="text-[10px] text-slate-600 italic">{item.error ? `Skipped: ${item.error}` : 'Skipped'}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         )}
 
-        {/* Start / progress */}
-        {phase === 'setup' ? (
+        {/* Config + Queue — hidden when detail view is active */}
+        <div className={selectedRunId ? 'hidden' : ''}>
+
+        {/* Config section */}
+        <div className="px-4 pt-3 pb-3 space-y-2.5 border-b border-white/[0.05]">
+
+          {/* Mode */}
+          <div className="flex gap-1.5">
+            {([
+              { id: 'caption', label: 'Caption',     active: 'bg-violet-500/15 border-violet-500/30 text-violet-300' },
+              { id: 'tags',    label: 'Tags',         active: 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300' },
+              { id: 'flux',    label: 'FLUX Caption', active: 'bg-amber-500/15 border-amber-500/30 text-amber-300' },
+            ] as const).map(m => (
+              <button key={m.id} onClick={() => setMode(m.id)}
+                className={`flex-1 py-1.5 rounded-lg border text-[10px] font-medium transition-all
+                  ${mode === m.id ? m.active : 'bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white'}`}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Model + advanced */}
+          <div className="flex gap-1.5">
+            {([{ key: 'flash', label: 'Flash Lite' }, { key: 'pro', label: 'Pro' }] as const).map(m => (
+              <button key={m.key} onClick={() => setModel(m.key)}
+                className={`flex-1 py-1.5 rounded-lg border text-[11px] transition-all
+                  ${model === m.key ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white'}`}>
+                {m.label}
+              </button>
+            ))}
+            {mode !== 'flux' && ([{ key: false, label: 'Basic' }, { key: true, label: 'Advanced' }] as const).map(m => (
+              <button key={String(m.key)} onClick={() => setAdvanced(m.key)}
+                className={`flex-1 py-1.5 rounded-lg border text-[11px] transition-all
+                  ${advanced === m.key ? 'bg-violet-500/15 border-violet-500/30 text-violet-300' : 'bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white'}`}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Context tags */}
+          {mode === 'flux' && (
+            <p className="text-[10px] text-amber-400/70">
+              First tag = trigger word (e.g. <span className="font-mono text-amber-300">DARTHVADER</span>). Additional tags = context.
+            </p>
+          )}
+          <div className={`flex flex-wrap gap-1 min-h-[26px] rounded-lg border px-2 py-1.5 ${mode === 'flux' ? 'border-amber-500/25 bg-amber-500/[0.03]' : 'border-white/[0.07] bg-white/[0.02]'}`}>
+            {contextTags.map((tag, i) => (
+              <span key={tag} className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border
+                ${mode === 'flux' && i === 0
+                  ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                  : 'bg-violet-500/10 border-violet-500/20 text-violet-300'}`}>
+                {mode === 'flux' && i === 0 && <span className="text-[8px] mr-0.5 opacity-60">⚡</span>}
+                {tag}
+                <button onClick={() => setContextTags(prev => prev.filter(t => t !== tag))} className="text-current opacity-50 hover:opacity-100 ml-0.5">×</button>
+              </span>
+            ))}
+            <input
+              value={tagInput}
+              onChange={e => setTagInput(e.target.value)}
+              onKeyDown={e => {
+                if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) {
+                  e.preventDefault()
+                  const val = tagInput.trim().replace(/,$/, '')
+                  if (val && !contextTags.includes(val)) setContextTags(prev => [...prev, val])
+                  setTagInput('')
+                }
+                if (e.key === 'Backspace' && !tagInput && contextTags.length) setContextTags(prev => prev.slice(0, -1))
+              }}
+              placeholder={
+                mode === 'flux'
+                  ? contextTags.length === 0 ? '⚡ Trigger word (Enter)…' : 'Add context tag…'
+                  : contextTags.length ? 'Add subject…' : 'Subject / context tags (Enter)'
+              }
+              className="flex-1 min-w-[80px] bg-transparent text-[11px] text-white placeholder-slate-600 outline-none"
+            />
+          </div>
+          {mode !== 'flux' && (context || contextTags.length === 0) && (
+            <textarea value={context} onChange={e => setContext(e.target.value)}
+              placeholder="Optional: full context sentence…"
+              rows={1}
+              className="w-full rounded-lg border border-white/[0.07] bg-white/[0.02] px-2 py-1.5 text-[11px] text-slate-300 placeholder-slate-700 outline-none resize-none"
+            />
+          )}
+
+          {/* Overwrite toggle */}
+          <div className="flex items-center gap-2">
+            <button onClick={() => setOverwrite(v => !v)}
+              className={`w-7 h-3.5 rounded-full transition-colors relative shrink-0 ${overwrite ? 'bg-cyan-500' : 'bg-white/[0.1]'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full bg-white transition-transform ${overwrite ? 'translate-x-3.5' : 'translate-x-0'}`} />
+            </button>
+            <span className="text-[10px] text-slate-600">Overwrite existing</span>
+          </div>
+
+          {/* Add to queue button */}
           <button
-            onClick={() => { if (count > 0) startJob(Array.from(selected)) }}
+            onClick={addToQueue}
             disabled={count === 0}
             className="w-full py-2 rounded-lg bg-gradient-to-r from-cyan-500/20 to-violet-500/20 border border-cyan-500/20 text-white text-xs font-semibold hover:from-cyan-500/30 hover:to-violet-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
-            {count === 0 ? 'Select images on the right →' : `Start Auto Fill (${count})`}
+            {count === 0 ? 'Select images on the right →' : `Add to Queue (${count} images)`}
           </button>
-        ) : (
-          <div>
-            <div className="flex items-center justify-between text-[10px] text-slate-600 mb-1">
-              <span className="flex items-center gap-1.5">
-                {phase === 'running' && <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />}
-                {phase === 'running'
-                  ? `Processing… ${progress} / ${total}`
-                  : summary ? `Done · ${summary.processed} filled${summary.failed ? ` · ${summary.failed} failed` : ''}` : 'Complete'
-                }
-              </span>
-              {phase === 'done' && <span className="text-emerald-400">✓</span>}
-            </div>
-            <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
-              <div className={`h-full rounded-full transition-all duration-500 ${phase === 'done' ? 'bg-emerald-500' : 'bg-cyan-500'}`}
-                style={{ width: total ? `${(progress / total) * 100}%` : '0%' }} />
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
 
-      {/* Feed — auto-saved results */}
-      {feedItems.length > 0 && (
-        <div ref={feedRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
-          <p className="text-[10px] text-slate-600 uppercase tracking-wider px-1 pb-1">
-            {feedItems.length} result{feedItems.length !== 1 ? 's' : ''} · auto-saved · edit or dismiss
-          </p>
-          {feedItems.map(item => {
-            const isSaving  = savingIds.has(item.id)
-            const isEditing = editingId === item.id
-            const isVideo   = item.imageUrl?.match(/\.(mp4|webm|mov)$/i)
-            const isError   = !!item.error
-            return (
-              <div key={item.id} className={`rounded-xl border overflow-hidden ${isError ? 'border-red-500/20 bg-red-500/[0.04]' : 'border-white/[0.08] bg-white/[0.02]'}`}>
-                <div className="flex gap-2.5 p-2.5">
-                  <div className="w-16 h-16 shrink-0 rounded-lg overflow-hidden bg-white/[0.04] border border-white/[0.07]">
-                    {item.imageUrl && !isVideo
-                      ? <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
-                      : <div className="w-full h-full flex items-center justify-center"><Video size={16} className="text-slate-600" /></div>
-                    }
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <p className="text-[9px] text-slate-700">#{item.id}</p>
-                      {!isError && <span className="text-[9px] text-emerald-600">✓ saved</span>}
-                    </div>
-                    {isError ? (
-                      <p className="text-[11px] text-red-400 leading-relaxed">{item.error}</p>
-                    ) : isEditing ? (
-                      <textarea
-                        value={editValue}
-                        onChange={e => setEditValue(e.target.value)}
-                        autoFocus
-                        rows={3}
-                        className="w-full bg-white/[0.05] border border-cyan-500/30 rounded-lg px-2 py-1.5 text-[11px] text-white outline-none resize-none"
-                      />
-                    ) : mode === 'tags' ? (
-                      <div className="flex flex-wrap gap-0.5">
-                        {(item.tags ?? []).map(t => (
-                          <span key={t} className="text-[9px] px-1 py-0.5 rounded bg-cyan-500/10 text-cyan-400">{t}</span>
-                        ))}
+        {/* ── Queue ──────────────────────────────────────────────────────────── */}
+        {runs.length > 0 ? (
+          <div className="p-3 space-y-2">
+            <p className="text-[10px] text-slate-600 uppercase tracking-wider px-1">Queue</p>
+            {runs.map(run => {
+              const isRunning   = run.status === 'running'
+              const isPaused    = run.status === 'paused'
+              const isQueued    = run.status === 'queued'
+              const isDone      = run.status === 'done'
+              const isCancelled = run.status === 'cancelled'
+              const isStuck     = isRunning && !!run.updatedAt && Date.now() - new Date(run.updatedAt).getTime() > 10 * 60 * 1000
+              const pct         = run.totalCount > 0 ? (run.nextIndex / run.totalCount) * 100 : 0
+
+              return (
+                <div key={run.jobId}
+                onClick={() => { setSelectedRunId(run.jobId); setEditingId(null); setEditValue('') }}
+                className={`rounded-xl border overflow-hidden cursor-pointer transition-colors ${
+                  isRunning   ? 'border-cyan-500/20 bg-cyan-500/[0.03] hover:bg-cyan-500/[0.05]' :
+                  isPaused    ? 'border-amber-500/20 bg-amber-500/[0.03] hover:bg-amber-500/[0.05]' :
+                  isQueued    ? 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.04]' :
+                  isDone      ? 'border-emerald-500/20 bg-emerald-500/[0.02] hover:bg-emerald-500/[0.04]' :
+                               'border-white/[0.05] bg-transparent hover:bg-white/[0.02]'
+                }`}>
+                  <div className="px-3 pt-2.5 pb-2.5">
+
+                    {/* Top row: badges + controls */}
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                          <span className={`text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
+                            isStuck     ? 'bg-red-500/15 text-red-400' :
+                            isRunning   ? 'bg-cyan-500/15 text-cyan-400' :
+                            isPaused    ? 'bg-amber-500/15 text-amber-400' :
+                            isQueued    ? 'bg-slate-700/60 text-slate-400' :
+                            isDone      ? 'bg-emerald-500/15 text-emerald-400' :
+                                         'bg-white/[0.05] text-slate-600'
+                          }`}>
+                            {isStuck ? 'Stalled' : run.status}
+                          </span>
+                          <span className="text-[10px] text-slate-300 truncate font-medium">{run.label}</span>
+                        </div>
+                        <p className="text-[10px] text-slate-600">
+                          {run.mode === 'flux' ? 'FLUX' : run.mode === 'caption' ? 'Caption' : 'Tags'}
+                          {' · '}{run.modelKey === 'flash' ? 'Flash Lite' : 'Pro'}
+                          {isQueued ? ` · ${run.totalCount} images` : ` · ${run.nextIndex}/${run.totalCount}`}
+                        </p>
                       </div>
-                    ) : (
-                      <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-3">{item.value}</p>
+
+                      {/* Controls */}
+                      <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                        {isStuck && (
+                          <button onClick={e => { e.stopPropagation(); resumeStuck(run.jobId) }}
+                            className="px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] hover:bg-amber-500/15 transition-all">
+                            Resume
+                          </button>
+                        )}
+                        {isRunning && !isStuck && (
+                          <button onClick={e => { e.stopPropagation(); pauseRun(run.jobId) }} title="Pause"
+                            className="w-6 h-6 rounded-lg bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-white text-[10px] flex items-center justify-center transition-all">
+                            ⏸
+                          </button>
+                        )}
+                        {isPaused && (
+                          <button onClick={e => { e.stopPropagation(); resumeRun(run.jobId) }} title="Resume"
+                            className="w-6 h-6 rounded-lg bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-white text-[10px] flex items-center justify-center transition-all">
+                            ▶
+                          </button>
+                        )}
+                        {(isRunning || isPaused || isQueued) && (
+                          <button onClick={e => { e.stopPropagation(); cancelRun(run.jobId) }} title="Cancel"
+                            className="w-6 h-6 rounded-lg bg-red-500/[0.07] border border-red-500/15 text-red-500 hover:text-red-400 text-[10px] flex items-center justify-center transition-all">
+                            ■
+                          </button>
+                        )}
+                        {(isDone || isCancelled) && (
+                          <>
+                            {isCancelled && run.nextIndex < run.totalCount && (
+                              <button onClick={e => { e.stopPropagation(); continueRun(run.jobId) }}
+                                className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-500 hover:text-cyan-300 text-[9px] transition-all">
+                                Continue
+                              </button>
+                            )}
+                            <button onClick={e => { e.stopPropagation(); dismissRun(run.jobId) }}
+                              className="px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-600 hover:text-slate-400 text-[9px] transition-all">
+                              Dismiss
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Progress bar */}
+                    {!isQueued && (
+                      <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden mb-1.5">
+                        <div className={`h-full rounded-full transition-all duration-500 ${
+                          isDone    ? 'bg-emerald-500' :
+                          isPaused  ? 'bg-amber-500' :
+                          isStuck   ? 'bg-red-500/60' :
+                                      'bg-cyan-500'
+                        }`} style={{ width: `${pct}%` }} />
+                      </div>
+                    )}
+
+                    {/* Counts */}
+                    {!isQueued && (run.processedCount > 0 || run.skippedCount > 0 || run.failedCount > 0) && (
+                      <p className="text-[10px] text-slate-600 leading-none">
+                        {run.processedCount > 0 && <span className="text-emerald-600">{run.processedCount} filled</span>}
+                        {run.processedCount > 0 && run.skippedCount > 0 && <span className="mx-1 text-slate-700">·</span>}
+                        {run.skippedCount > 0 && <span>{run.skippedCount} skipped</span>}
+                        {(run.processedCount > 0 || run.skippedCount > 0) && run.failedCount > 0 && <span className="mx-1 text-slate-700">·</span>}
+                        {run.failedCount > 0 && <span className="text-red-500">{run.failedCount} failed</span>}
+                      </p>
+                    )}
+                    {isDone && run.processedCount === 0 && run.skippedCount > 0 && (
+                      <p className="text-[10px] text-amber-500/60 mt-0.5">All skipped — enable Overwrite to re-process</p>
+                    )}
+                    {!isQueued && run.processedCount === 0 && run.skippedCount === 0 && run.failedCount === 0 && isRunning && (
+                      <p className="text-[10px] text-slate-700">Starting…</p>
                     )}
                   </div>
                 </div>
-
-                <div className="flex border-t border-white/[0.05]">
-                  {isError ? (
-                    <button onClick={() => dismissItem(item.id)}
-                      className="flex-1 py-1.5 text-[10px] text-slate-600 hover:bg-red-500/10 hover:text-red-400 transition-colors">
-                      Dismiss
-                    </button>
-                  ) : isEditing ? (
-                    <>
-                      <button onClick={() => editAndSaveItem(item, editValue)} disabled={isSaving}
-                        className="flex-1 py-1.5 text-[10px] text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50 font-medium">
-                        {isSaving ? 'Saving…' : 'Save changes'}
-                      </button>
-                      <button onClick={() => setEditingId(null)}
-                        className="flex-1 py-1.5 text-[10px] text-slate-500 hover:bg-white/[0.05] transition-colors border-l border-white/[0.05]">
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button onClick={() => startEdit(item)}
-                        className="flex-1 py-1.5 text-[10px] text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 transition-colors">
-                        Edit
-                      </button>
-                      <button onClick={() => dismissItem(item.id)}
-                        className="flex-1 py-1.5 text-[10px] text-slate-600 hover:bg-white/[0.05] hover:text-slate-400 transition-colors border-l border-white/[0.05]">
-                        Dismiss
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {phase !== 'setup' && feedItems.length === 0 && (
-        <div className="flex-1 flex items-center justify-center text-center p-6">
-          {phase === 'running'
-            ? <div className="space-y-1.5">
-                <p className="text-[11px] text-slate-500">Processing in background…</p>
-                <p className="text-[10px] text-slate-700">You can safely close this panel or the browser tab.</p>
-              </div>
-            : <p className="text-[11px] text-slate-600">All results reviewed.</p>
-          }
-        </div>
-      )}
+              )
+            })}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+            <p className="text-[11px] text-slate-600">No runs yet.</p>
+            <p className="text-[10px] text-slate-700 mt-1">Select images on the right, configure, then add to queue.</p>
+          </div>
+        )}
+        </div>{/* end config+queue wrapper */}
+      </div>
     </div>
   )
 }
@@ -1871,11 +2072,13 @@ export default function DatasetPage() {
   const [_p] = useState(() => loadPrefs(PAGE_PREFS_KEY))
 
   // Data
-  const [images,     setImages]     = useState<ImageRecord[]>([])
-  const [pagination, setPagination] = useState<Pagination | null>(null)
-  const [facets,     setFacets]     = useState<Facets | null>(null)
-  const [loading,    setLoading]    = useState(false)
-  const [error,      setError]      = useState("")
+  const [images,       setImages]       = useState<ImageRecord[]>([])
+  const [pagination,   setPagination]   = useState<Pagination | null>(null)
+  const [facets,       setFacets]       = useState<Facets | null>(null)
+  const [overallStats, setOverallStats] = useState<{ marked: number; tagged: number; captioned: number } | null>(null)
+  const [bucketStats,  setBucketStats]  = useState<{ marked: number; tagged: number; captioned: number; total: number } | null>(null)
+  const [loading,      setLoading]      = useState(false)
+  const [error,        setError]        = useState("")
 
   // Modes & modals
   const [selectMode, setSelectMode] = useState(false)
@@ -1894,6 +2097,11 @@ export default function DatasetPage() {
   const [uploadsBucketId,  setUploadsBucketId]  = useState<number | null>(null)
   const [uploadModalOpen,  setUploadModalOpen]  = useState(false)
   const [renameValue,   setRenameValue]   = useState("")
+  const [folders,      setFolders]      = useState<BucketFolder[]>([])
+  const [folderPath,   setFolderPath]   = useState<number[]>([])
+  const [folderMenuId, setFolderMenuId] = useState<number | null>(null)
+  const [menuAnchor,   setMenuAnchor]   = useState<{ x: number; y: number } | null>(null)
+  const activeFolderId = folderPath.length > 0 ? folderPath[folderPath.length - 1] : null
 
   // Filters
   const [search,       setSearch]       = useState<string>(() => _p.search       ?? "")
@@ -1913,8 +2121,9 @@ export default function DatasetPage() {
   const [page,         setPage]         = useState<number>(() => _p.page          ?? 1)
   const [filtersOpen,  setFiltersOpen]  = useState<boolean>(() => _p.filtersOpen  ?? false)
 
-  const searchTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isMountedRef   = useRef(false)
+  const searchTimer         = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isMountedRef        = useRef(false)
+  const bucketStatsAbortRef = useRef<AbortController | null>(null)
   const [debouncedSearch, setDebouncedSearch] = useState<string>(() => _p.search ?? "")
 
   const [bulkLoading,        setBulkLoading]        = useState(false)
@@ -1925,17 +2134,33 @@ export default function DatasetPage() {
   useEffect(() => {
     setIsAuthenticated(localStorage.getItem("multiverse-admin-auth") === "true" && !!sessionStorage.getItem("admin-password"))
     setSessionChecked(true)
-    // Mark as mounted so filter effects skip their first-run page reset
-    isMountedRef.current = true
   }, [])
 
-  // ── Close bucket menu on outside click ───────────────────────────────────────
+  // ── Close bucket/folder menus on outside click ───────────────────────────────
   useEffect(() => {
-    if (bucketMenuId === null) return
-    function handler() { setBucketMenuId(null) }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [bucketMenuId])
+    function close(e: MouseEvent) {
+      if ((e.target as Element)?.closest?.('[data-menu-btn]')) return
+      setBucketMenuId(null); setFolderMenuId(null); setMenuAnchor(null)
+    }
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [])
+
+  function openBucketMenu(e: React.MouseEvent, id: number) {
+    e.stopPropagation(); e.nativeEvent.stopImmediatePropagation()
+    if (bucketMenuId === id) { setBucketMenuId(null); setMenuAnchor(null); return }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setMenuAnchor({ x: Math.min(rect.left, window.innerWidth - 184), y: rect.bottom + 4 })
+    setBucketMenuId(id); setFolderMenuId(null)
+  }
+
+  function openFolderMenu(e: React.MouseEvent, id: number) {
+    e.stopPropagation(); e.nativeEvent.stopImmediatePropagation()
+    if (folderMenuId === id) { setFolderMenuId(null); setMenuAnchor(null); return }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setMenuAnchor({ x: Math.min(rect.left, window.innerWidth - 184), y: rect.bottom + 4 })
+    setFolderMenuId(id); setBucketMenuId(null)
+  }
 
   // ── Load buckets ─────────────────────────────────────────────────────────────
   const loadBuckets = useCallback(async () => {
@@ -1970,6 +2195,17 @@ export default function DatasetPage() {
 
   useEffect(() => { if (isAuthenticated) loadBuckets() }, [isAuthenticated, loadBuckets])
 
+  // ── Load folders ─────────────────────────────────────────────────────────────
+  const loadFolders = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/folders', { headers: authHeaders() })
+      if (!res.ok) return
+      setFolders(await res.json())
+    } catch {}
+  }, [])
+
+  useEffect(() => { if (isAuthenticated) loadFolders() }, [isAuthenticated, loadFolders])
+
   // ── Persist prefs to localStorage ───────────────────────────────────────────
   useEffect(() => {
     savePrefs(PAGE_PREFS_KEY, {
@@ -1984,9 +2220,10 @@ export default function DatasetPage() {
   // ── Search debounce ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current)
+    const alreadyMounted = isMountedRef.current  // capture now; timer fires after mounted flag is set
     searchTimer.current = setTimeout(() => {
       setDebouncedSearch(search)
-      if (isMountedRef.current) setPage(1)
+      if (alreadyMounted) setPage(1)
     }, 400)
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current) }
   }, [search])
@@ -1997,6 +2234,10 @@ export default function DatasetPage() {
     if (isMountedRef.current) setPage(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, filterResetDeps)
+
+  // Set mounted flag AFTER filter reset effect so the first-run guard works correctly.
+  // React runs effects in declaration order, so this fires after the effect above on mount.
+  useEffect(() => { isMountedRef.current = true }, [])
 
   // ── Exit select mode when selection is cleared ───────────────────────────────
   useEffect(() => { if (selected.size === 0 && selectMode) { /* keep mode on intentionally */ } }, [selected])
@@ -2024,11 +2265,26 @@ export default function DatasetPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setImages(data.images); setPagination(data.pagination); setFacets(data.facets)
+      setOverallStats(data.overallStats ?? null)
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }, [isAuthenticated, page, pageSize, sort, models, aspectRatios, qualities, userFilters, hasRefs, hasRating, hasCaption, hasTag, tagFilter, bucketFilter, markedOnly, debouncedSearch])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // ── Bucket stats — separate non-blocking fetch so it never delays image load ──
+  useEffect(() => {
+    if (!isAuthenticated || !bucketFilter) { setBucketStats(null); return }
+    if (bucketStatsAbortRef.current) bucketStatsAbortRef.current.abort()
+    const ctrl = new AbortController()
+    bucketStatsAbortRef.current = ctrl
+    const params = new URLSearchParams({ statsOnly: 'true', bucketId: bucketFilter })
+    fetch(`/api/admin/dataset?${params}`, { headers: authHeaders(), signal: ctrl.signal })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.bucketStats) setBucketStats(data.bucketStats) })
+      .catch(() => {})
+    return () => ctrl.abort()
+  }, [isAuthenticated, bucketFilter])
 
   // ── Patch helper ─────────────────────────────────────────────────────────────
   async function patch(body: object) {
@@ -2229,15 +2485,75 @@ export default function DatasetPage() {
     await loadBuckets()
   }
 
-  async function createBucket() {
+  async function createBucket(folderId?: number | null) {
     const name = prompt('Bucket name:')?.trim()
     if (!name) return
     const res = await fetch('/api/admin/buckets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, folderId: folderId ?? null }),
     })
     if (res.ok) await loadBuckets()
+  }
+
+  async function createFolder(parentId: number | null = null) {
+    const name = prompt('Folder name:')?.trim()
+    if (!name) return
+    const res = await fetch('/api/admin/folders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ name, parentId }),
+    })
+    if (res.ok) await loadFolders()
+  }
+
+  async function renameFolder(id: number) {
+    const folder = folders.find(f => f.id === id)
+    const name = prompt('New folder name:', folder?.name ?? '')?.trim()
+    if (!name) return
+    await fetch(`/api/admin/folders/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ name }),
+    })
+    await loadFolders()
+  }
+
+  async function deleteFolder(id: number) {
+    if (!confirm('Delete this folder? Buckets inside will be ungrouped, sub-folders will move to root.')) return
+    await fetch(`/api/admin/folders/${id}`, { method: 'DELETE', headers: authHeaders() })
+    setFolderPath(prev => { const idx = prev.indexOf(id); return idx === -1 ? prev : prev.slice(0, idx) })
+    await Promise.all([loadFolders(), loadBuckets()])
+  }
+
+  async function moveFolderTo(folderId: number, parentId: number | null) {
+    await fetch(`/api/admin/folders/${folderId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ parentId }),
+    })
+    setFolderMenuId(null)
+    await loadFolders()
+  }
+
+  function getDescendantIds(folderId: number): Set<number> {
+    const result = new Set<number>([folderId])
+    const queue = [folderId]
+    while (queue.length > 0) {
+      const id = queue.shift()!
+      folders.filter(f => (f.parentId ?? null) === id).forEach(f => { result.add(f.id); queue.push(f.id) })
+    }
+    return result
+  }
+
+  async function moveBucketToFolder(bucketId: number, folderId: number | null) {
+    await fetch(`/api/admin/buckets/${bucketId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ folderId }),
+    })
+    setBucketMenuId(null)
+    await loadBuckets()
   }
 
   // ── Deferred image list — keeps UI responsive while grid re-renders ───────────
@@ -2259,12 +2575,7 @@ export default function DatasetPage() {
     () => !!(models.length || aspectRatios.length || qualities.length || hasRefs || hasRating || hasCaption || hasTag || tagFilter || userFilters.length || mediaType || bucketFilter || markedOnly || search),
     [models, aspectRatios, qualities, hasRefs, hasRating, hasCaption, hasTag, tagFilter, userFilters, mediaType, bucketFilter, markedOnly, search]
   )
-  const pageStats = useMemo(() => ({
-    marked:    images.filter(i => i.markedForTraining).length,
-    tagged:    images.filter(i => i.adminTags.length > 0).length,
-    captioned: images.filter(i => i.adminCaption).length,
-  }), [images])
-  const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ value: m.value,       label: `${m.value.replace('fal-ai/', '')} (${m.count})` })), [facets?.models])
+const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ value: m.value,       label: `${m.value.replace('fal-ai/', '')} (${m.count})` })), [facets?.models])
   const aspectOptions     = useMemo(() => (facets?.aspects   ?? []).map(a => ({ value: a.value ?? '', label: `${a.value} (${a.count})` })),                          [facets?.aspects])
   const qualityOptions    = useMemo(() => (facets?.qualities ?? []).map(q => ({ value: q.value ?? '', label: `${q.value} (${q.count})` })),                          [facets?.qualities])
   const userOptions       = useMemo(() => (facets?.users     ?? []).map(u => ({ value: String(u.id), label: `${u.name ? `${u.name} · ` : ''}${u.email} (${u.count})` })), [facets?.users])
@@ -2300,6 +2611,11 @@ export default function DatasetPage() {
 
   return (
     <div className="min-h-screen bg-[#09090f] text-white flex w-full">
+
+      {/* ── Menu backdrop — closes any open context menu on tap/click outside ── */}
+      {(bucketMenuId !== null || folderMenuId !== null) && (
+        <div className="fixed inset-0 z-40" onClick={() => { setBucketMenuId(null); setFolderMenuId(null); setMenuAnchor(null) }} />
+      )}
 
       {/* ── Auto Fill side panel (desktop) / bottom sheet (mobile) ── */}
       {autoFillOpen && (
@@ -2400,11 +2716,12 @@ export default function DatasetPage() {
               </p>
             </div>
           </div>
-          {pagination && (
+          {overallStats && (
             <div className="hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.07] text-[11px]">
-              <span className="text-emerald-400/80">{pageStats.marked} marked</span>
-              <span className="text-cyan-400/70">{pageStats.tagged} tagged</span>
-              <span className="text-violet-400/70">{pageStats.captioned} captioned</span>
+              <span className="text-[9px] text-slate-600 font-mono uppercase tracking-wider">overall</span>
+              <span className="text-emerald-400/80">{overallStats.marked.toLocaleString()} marked</span>
+              <span className="text-cyan-400/70">{overallStats.tagged.toLocaleString()} tagged</span>
+              <span className="text-violet-400/70">{overallStats.captioned.toLocaleString()} captioned</span>
             </div>
           )}
           <button onClick={fetchData} className="shrink-0 p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
@@ -2454,7 +2771,7 @@ export default function DatasetPage() {
 
         {/* Filter bar */}
         {filtersOpen && (
-          <div className="border-t border-white/[0.06] px-3 py-3 max-w-7xl mx-auto space-y-2.5">
+          <div className="w-full border-t border-white/[0.06] px-3 py-3 max-w-7xl mx-auto space-y-2.5">
             {/* Row 1 */}
             <div className="flex flex-wrap gap-2 items-center">
               <div className="relative w-full sm:w-52">
@@ -2552,125 +2869,379 @@ export default function DatasetPage() {
       </div>{/* end sticky header */}
 
       {/* Body */}
-      <div className="max-w-7xl mx-auto px-3 py-4">
+      <div className="w-full max-w-7xl mx-auto px-3 py-4">
 
         {/* ── Bucket bar ── */}
-        {buckets.length > 0 && (
-          <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        {(buckets.length > 0 || folders.length > 0) && (
+          <div className="mb-1 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            {/* All buckets */}
             <button
-              onClick={() => setBucketFilter("")}
+              onClick={() => { setBucketFilter(""); setFolderPath([]) }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs whitespace-nowrap shrink-0 transition-all
-                ${!bucketFilter
+                ${!bucketFilter && folderPath.length === 0
                   ? "bg-violet-500/15 border-violet-500/30 text-violet-300"
                   : "bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white"}`}
             >
               <Database size={11} /> All buckets
             </button>
 
-            {buckets.map(b => {
-              const isUploadsBucket = b.name === UPLOADS_BUCKET_NAME
+            {/* Uploads bucket — always pinned */}
+            {buckets.filter(b => b.name === UPLOADS_BUCKET_NAME).map(b => (
+              <div key={b.id} className="relative shrink-0 group flex items-center">
+                <button
+                  onClick={() => { setBucketFilter(v => v === String(b.id) ? "" : String(b.id)); setFolderPath([]) }}
+                  className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-lg border text-xs whitespace-nowrap transition-all
+                    ${bucketFilter === String(b.id)
+                      ? "bg-violet-600/20 border-violet-500/40 text-violet-300"
+                      : "bg-violet-500/8 border-violet-500/20 text-violet-400 hover:text-violet-300 hover:border-violet-500/40"}`}
+                >
+                  <UploadCloud size={11} />
+                  Uploads
+                  <span className="ml-1 text-[9px] opacity-60">{b.count}</span>
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); setUploadModalOpen(true); setBucketFilter(String(b.id)) }}
+                  className="ml-0.5 p-1 rounded-md text-violet-600 hover:text-violet-400 transition-all"
+                  title="Upload images"
+                ><Plus size={11} /></button>
+              </div>
+            ))}
+
+            {/* Folder tabs — top-level only (parentId === null) */}
+            {folders.filter(f => !f.parentId).map(folder => {
+              const isActive = folderPath[0] === folder.id
+              const descendants = getDescendantIds(folder.id)
+              const totalBuckets = buckets.filter(b => b.folderId !== null && descendants.has(b.folderId)).length
+              const movableTargets = folders.filter(f => !f.parentId && f.id !== folder.id)
               return (
+                <div key={folder.id} className="relative shrink-0 group flex items-center">
+                  <button
+                    onClick={() => setFolderPath(isActive ? [] : [folder.id])}
+                    className={`flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-lg border text-xs whitespace-nowrap transition-all
+                      ${isActive
+                        ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
+                        : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white hover:border-white/15"}`}
+                  >
+                    <FolderOpen size={11} />
+                    {folder.name}
+                    <span className="text-[9px] opacity-50">{totalBuckets}</span>
+                    <ChevronDown size={9} className={`transition-transform ${isActive ? "rotate-180" : ""}`} />
+                  </button>
+                  <button
+                    onClick={e => openFolderMenu(e, folder.id)}
+                    className="ml-0.5 p-1 rounded-md text-slate-500 hover:text-slate-300 transition-all"
+                    data-menu-btn
+                  ><MoreHorizontal size={11} /></button>
+                  {folderMenuId === folder.id && menuAnchor && (
+                    <div data-menu-btn className="fixed z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[160px]" style={{ top: menuAnchor.y, left: menuAnchor.x }}>
+                      <button onClick={() => { renameFolder(folder.id); setFolderMenuId(null) }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                        <Pencil size={11} /> Rename
+                      </button>
+                      <button onClick={() => { setFolderMenuId(null); createFolder(folder.id) }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                        <FolderPlus size={11} /> Add subfolder
+                      </button>
+                      <button onClick={() => { setFolderMenuId(null); createBucket(null) }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                        <Plus size={11} /> Add bucket inside
+                      </button>
+                      {movableTargets.length > 0 && (
+                        <>
+                          <div className="px-3 pt-2 pb-1"><p className="text-[9px] text-slate-600 uppercase tracking-wider font-mono">Move into</p></div>
+                          {movableTargets.map(t => (
+                            <button key={t.id} onClick={() => moveFolderTo(folder.id, t.id)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                              <FolderOpen size={11} /> {t.name}
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      <button onClick={() => deleteFolder(folder.id)}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/[0.06] transition-colors">
+                        <Trash2 size={11} /> Delete folder
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            {/* Ungrouped regular buckets (no folder, not uploads) */}
+            {buckets.filter(b => !b.folderId && b.name !== UPLOADS_BUCKET_NAME).map(b => (
               <div key={b.id} className="relative shrink-0">
                 {renamingId === b.id ? (
                   <div className="flex items-center gap-1">
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onChange={e => setRenameValue(e.target.value)}
+                    <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') renameBucket(b.id); if (e.key === 'Escape') { setRenamingId(null); setRenameValue("") } }}
-                      className="px-2 py-1 rounded-lg bg-white/[0.08] border border-violet-500/40 text-xs text-white outline-none w-32"
-                    />
+                      className="px-2 py-1 rounded-lg bg-white/[0.08] border border-violet-500/40 text-xs text-white outline-none w-32" />
                     <button onClick={() => renameBucket(b.id)} className="text-[10px] text-violet-400 hover:text-violet-300 px-1">✓</button>
                     <button onClick={() => { setRenamingId(null); setRenameValue("") }} className="text-[10px] text-slate-600 hover:text-slate-400 px-1">✕</button>
                   </div>
                 ) : (
                   <div className="group flex items-center">
                     <button
-                      onClick={() => setBucketFilter(v => v === String(b.id) ? "" : String(b.id))}
+                      onClick={() => { setBucketFilter(v => v === String(b.id) ? "" : String(b.id)); setFolderPath([]) }}
                       className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-lg border text-xs whitespace-nowrap transition-all
                         ${bucketFilter === String(b.id)
-                          ? isUploadsBucket
-                            ? "bg-violet-600/20 border-violet-500/40 text-violet-300"
-                            : "bg-violet-500/15 border-violet-500/30 text-violet-300"
-                          : isUploadsBucket
-                            ? "bg-violet-500/8 border-violet-500/20 text-violet-400 hover:text-violet-300 hover:border-violet-500/40"
-                            : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white hover:border-white/15"}`}
+                          ? "bg-violet-500/15 border-violet-500/30 text-violet-300"
+                          : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white hover:border-white/15"}`}
                     >
-                      {isUploadsBucket ? <UploadCloud size={11} /> : <FolderOpen size={11} />}
-                      {isUploadsBucket ? 'Uploads' : b.name}
+                      <FolderOpen size={11} />
+                      {b.name}
                       <span className="ml-1 text-[9px] opacity-60">{b.count}</span>
                     </button>
-                    {/* Only show context menu for non-uploads buckets */}
-                    {!isUploadsBucket && (
-                      <button
-                        onClick={e => { e.stopPropagation(); setBucketMenuId(v => v === b.id ? null : b.id) }}
-                        className="ml-0.5 p-1 rounded-md text-slate-700 hover:text-slate-400 opacity-0 group-hover:opacity-100 transition-all"
-                      >
-                        <MoreHorizontal size={11} />
-                      </button>
+                    <button onClick={e => openBucketMenu(e, b.id)}
+                      className="ml-0.5 p-1 rounded-md text-slate-500 hover:text-slate-300 transition-all"
+                      data-menu-btn>
+                      <MoreHorizontal size={11} />
+                    </button>
+                    {bucketMenuId === b.id && menuAnchor && (
+                      <div data-menu-btn className="fixed z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[160px]" style={{ top: menuAnchor.y, left: menuAnchor.x }}>
+                        <button onClick={() => { setRenamingId(b.id); setRenameValue(b.name); setBucketMenuId(null); setMenuAnchor(null) }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                          <Pencil size={11} /> Rename
+                        </button>
+                        <div className="px-3 pt-2 pb-1">
+                          <p className="text-[9px] text-slate-600 uppercase tracking-wider font-mono">Move to folder</p>
+                        </div>
+                        {folders.map(f => (
+                          <button key={f.id} onClick={() => moveBucketToFolder(b.id, f.id)}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                            <FolderOpen size={11} /> {f.name}
+                          </button>
+                        ))}
+                        <button onClick={async () => {
+                          const name = prompt('New folder name:')?.trim()
+                          if (!name) return
+                          const res = await fetch('/api/admin/folders', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ name }) })
+                          if (res.ok) { const folder = await res.json(); await loadFolders(); moveBucketToFolder(b.id, folder.id) }
+                        }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-500 hover:text-amber-300 hover:bg-amber-500/[0.06] transition-colors">
+                          <Plus size={11} /> New folder…
+                        </button>
+                        <button onClick={() => exportBucket(b)} disabled={exportingBucketId === b.id}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/[0.06] transition-colors disabled:opacity-50">
+                          {exportingBucketId === b.id ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                          Export zip
+                        </button>
+                        <button onClick={() => deleteBucket(b.id)}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/[0.06] transition-colors">
+                          <Trash2 size={11} /> Delete bucket
+                        </button>
+                      </div>
                     )}
-                    {/* Upload button inline for uploads bucket */}
-                    {isUploadsBucket && (
-                      <button
-                        onClick={e => { e.stopPropagation(); setUploadModalOpen(true); setBucketFilter(String(b.id)) }}
-                        className="ml-0.5 p-1 rounded-md text-violet-700 hover:text-violet-400 opacity-0 group-hover:opacity-100 transition-all"
-                        title="Upload images"
-                      >
-                        <Plus size={11} />
-                      </button>
-                    )}
-                    {/* Export zip button — all buckets */}
-                    <button
-                      onClick={e => { e.stopPropagation(); exportBucket(b) }}
-                      disabled={exportingBucketId === b.id}
-                      className="ml-0.5 p-1 rounded-md text-emerald-700 hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all disabled:opacity-100"
-                      title={`Export "${b.name}" to zip`}
-                    >
-                      {exportingBucketId === b.id
-                        ? <Loader2 size={11} className="animate-spin text-emerald-400" />
-                        : <Download size={11} />}
-                    </button>
-                  </div>
-                )}
-
-                {/* Bucket context menu — regular buckets only */}
-                {!isUploadsBucket && bucketMenuId === b.id && (
-                  <div className="absolute top-full left-0 mt-1 z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[140px]">
-                    <button
-                      onClick={() => { setRenamingId(b.id); setRenameValue(b.name); setBucketMenuId(null) }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors"
-                    >
-                      <Pencil size={11} /> Rename
-                    </button>
-                    <button
-                      onClick={() => deleteBucket(b.id)}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/[0.06] transition-colors"
-                    >
-                      <Trash2 size={11} /> Delete bucket
-                    </button>
                   </div>
                 )}
               </div>
-            )})}
+            ))}
 
-
-            <button
-              onClick={createBucket}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-white/[0.08] text-slate-600 hover:text-slate-300 hover:border-white/20 text-xs whitespace-nowrap shrink-0 transition-all"
-            >
+            <button onClick={() => createBucket()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-white/[0.08] text-slate-600 hover:text-slate-300 hover:border-white/20 text-xs whitespace-nowrap shrink-0 transition-all">
               <FolderPlus size={11} /> New bucket
+            </button>
+            <button onClick={() => createFolder()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-amber-500/20 text-amber-700 hover:text-amber-400 hover:border-amber-500/40 text-xs whitespace-nowrap shrink-0 transition-all">
+              <Plus size={11} /> New folder
             </button>
           </div>
         )}
 
-        {buckets.length === 0 && (
+        {/* Folder sub-row — shown when navigated into a folder */}
+        {activeFolderId !== null && (
+          <div className="mb-3 border-l-2 border-amber-500/30 pl-3">
+            {/* Breadcrumb */}
+            <div className="flex items-center gap-1 mb-2 flex-wrap">
+              <button onClick={() => setFolderPath([])}
+                className="text-[9px] font-mono text-slate-600 hover:text-amber-400 uppercase tracking-wider transition-colors">
+                root
+              </button>
+              {folderPath.map((fid, idx) => (
+                <span key={fid} className="flex items-center gap-1">
+                  <ChevronRight size={8} className="text-slate-700" />
+                  <button
+                    onClick={() => setFolderPath(prev => prev.slice(0, idx + 1))}
+                    className={`text-[9px] font-mono uppercase tracking-wider transition-colors
+                      ${idx === folderPath.length - 1 ? "text-amber-400" : "text-slate-500 hover:text-amber-400"}`}
+                  >
+                    {folders.find(f => f.id === fid)?.name ?? fid}
+                  </button>
+                </span>
+              ))}
+            </div>
+
+            {/* Sub-folders + buckets in current folder */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+
+              {/* Sub-folders of activeFolderId */}
+              {folders.filter(f => (f.parentId ?? null) === activeFolderId).map(sf => {
+                const sfDescendants = getDescendantIds(sf.id)
+                const sfBucketCount = buckets.filter(b => b.folderId !== null && sfDescendants.has(b.folderId)).length
+                const isSubActive = folderPath.includes(sf.id)
+                const movableTargets = folders.filter(f => !sfDescendants.has(f.id))
+                return (
+                  <div key={sf.id} className="relative shrink-0 group flex items-center">
+                    <button
+                      onClick={() => setFolderPath(prev => [...prev, sf.id])}
+                      className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1 rounded-lg border text-[11px] whitespace-nowrap transition-all
+                        ${isSubActive
+                          ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
+                          : "bg-amber-500/5 border-amber-500/15 text-amber-600 hover:text-amber-400 hover:border-amber-500/30"}`}
+                    >
+                      <FolderOpen size={10} />
+                      {sf.name}
+                      <span className="text-[9px] opacity-50">{sfBucketCount}</span>
+                      <ChevronRight size={8} className="opacity-40" />
+                    </button>
+                    <button onClick={e => openFolderMenu(e, sf.id)}
+                      className="ml-0.5 p-1 rounded-md text-amber-700 hover:text-amber-400 transition-all"
+                      data-menu-btn>
+                      <MoreHorizontal size={10} />
+                    </button>
+                    {folderMenuId === sf.id && menuAnchor && (
+                      <div data-menu-btn className="fixed z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[160px]" style={{ top: menuAnchor.y, left: menuAnchor.x }}>
+                        <button onClick={() => { renameFolder(sf.id); setFolderMenuId(null) }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                          <Pencil size={11} /> Rename
+                        </button>
+                        <button onClick={() => { setFolderMenuId(null); createFolder(sf.id) }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                          <FolderPlus size={11} /> Add subfolder
+                        </button>
+                        <button onClick={() => moveFolderTo(sf.id, null)}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                          <FolderOpen size={11} /> Move to root
+                        </button>
+                        {movableTargets.filter(t => t.id !== sf.id && t.id !== activeFolderId).length > 0 && (
+                          <>
+                            <div className="px-3 pt-2 pb-1"><p className="text-[9px] text-slate-600 uppercase tracking-wider font-mono">Move into</p></div>
+                            {movableTargets.filter(t => t.id !== sf.id && t.id !== activeFolderId).map(t => (
+                              <button key={t.id} onClick={() => moveFolderTo(sf.id, t.id)}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                                <FolderOpen size={11} /> {t.name}
+                              </button>
+                            ))}
+                          </>
+                        )}
+                        <button onClick={() => deleteFolder(sf.id)}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/[0.06] transition-colors">
+                          <Trash2 size={11} /> Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {/* Buckets directly in activeFolderId */}
+              {buckets.filter(b => b.folderId === activeFolderId).map(b => (
+                <div key={b.id} className="relative shrink-0">
+                  {renamingId === b.id ? (
+                    <div className="flex items-center gap-1">
+                      <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') renameBucket(b.id); if (e.key === 'Escape') { setRenamingId(null); setRenameValue("") } }}
+                        className="px-2 py-1 rounded-lg bg-white/[0.08] border border-violet-500/40 text-xs text-white outline-none w-32" />
+                      <button onClick={() => renameBucket(b.id)} className="text-[10px] text-violet-400 hover:text-violet-300 px-1">✓</button>
+                      <button onClick={() => { setRenamingId(null); setRenameValue("") }} className="text-[10px] text-slate-600 hover:text-slate-400 px-1">✕</button>
+                    </div>
+                  ) : (
+                    <div className="group flex items-center">
+                      <button
+                        onClick={() => setBucketFilter(v => v === String(b.id) ? "" : String(b.id))}
+                        className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-lg border text-xs whitespace-nowrap transition-all
+                          ${bucketFilter === String(b.id)
+                            ? "bg-violet-500/15 border-violet-500/30 text-violet-300"
+                            : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white hover:border-white/15"}`}
+                      >
+                        <FolderOpen size={11} />
+                        {b.name}
+                        <span className="ml-1 text-[9px] opacity-60">{b.count}</span>
+                      </button>
+                      <button onClick={e => openBucketMenu(e, b.id)}
+                        className="ml-0.5 p-1 rounded-md text-slate-500 hover:text-slate-300 transition-all"
+                        data-menu-btn>
+                        <MoreHorizontal size={11} />
+                      </button>
+                      {bucketMenuId === b.id && menuAnchor && (
+                        <div data-menu-btn className="fixed z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[160px]" style={{ top: menuAnchor.y, left: menuAnchor.x }}>
+                          <button onClick={() => { setRenamingId(b.id); setRenameValue(b.name); setBucketMenuId(null) }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                            <Pencil size={11} /> Rename
+                          </button>
+                          <button onClick={() => moveBucketToFolder(b.id, null)}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                            <FolderOpen size={11} /> Remove from folder
+                          </button>
+                          {folders.filter(f => f.id !== activeFolderId).length > 0 && (
+                            <>
+                              <div className="px-3 pt-2 pb-1"><p className="text-[9px] text-slate-600 uppercase tracking-wider font-mono">Move to</p></div>
+                              {folders.filter(f => f.id !== activeFolderId).map(f => (
+                                <button key={f.id} onClick={() => moveBucketToFolder(b.id, f.id)}
+                                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                                  <FolderOpen size={11} /> {f.name}
+                                </button>
+                              ))}
+                            </>
+                          )}
+                          <button onClick={() => exportBucket(b)} disabled={exportingBucketId === b.id}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/[0.06] transition-colors disabled:opacity-50">
+                            {exportingBucketId === b.id ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                            Export zip
+                          </button>
+                          <button onClick={() => deleteBucket(b.id)}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/[0.06] transition-colors">
+                            <Trash2 size={11} /> Delete bucket
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {folders.filter(f => (f.parentId ?? null) === activeFolderId).length === 0 && buckets.filter(b => b.folderId === activeFolderId).length === 0 && (
+                <span className="text-[11px] text-slate-700 italic">Empty folder</span>
+              )}
+              <button onClick={() => createBucket(activeFolderId)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-dashed border-white/[0.07] text-slate-600 hover:text-slate-300 text-xs whitespace-nowrap shrink-0 transition-all">
+                <Plus size={10} /> Add bucket
+              </button>
+              <button onClick={() => createFolder(activeFolderId)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-dashed border-amber-500/15 text-amber-800 hover:text-amber-500 hover:border-amber-500/30 text-xs whitespace-nowrap shrink-0 transition-all">
+                <FolderPlus size={10} /> Add subfolder
+              </button>
+            </div>
+          </div>
+        )}
+
+        {buckets.length === 0 && folders.length === 0 && (
           <div className="mb-4 flex items-center gap-2">
-            <button
-              onClick={createBucket}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-white/[0.08] text-slate-700 hover:text-slate-400 hover:border-white/20 text-xs transition-all"
-            >
+            <button onClick={() => createBucket()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-white/[0.08] text-slate-700 hover:text-slate-400 hover:border-white/20 text-xs transition-all">
               <FolderPlus size={11} /> Create a bucket to organize generations
             </button>
+          </div>
+        )}
+
+        {/* Stats row — bucket-level + page-level counts */}
+        {bucketFilter && bucketStats && (
+          <div className="mb-3 flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.07] text-[11px] w-fit">
+              <span className="text-[9px] text-violet-500/60 font-mono uppercase tracking-wider">bucket</span>
+              <span className="text-slate-500">{bucketStats.total.toLocaleString()} total</span>
+              <span className="text-emerald-400/80">{bucketStats.marked.toLocaleString()} marked</span>
+              <span className="text-cyan-400/70">{bucketStats.tagged.toLocaleString()} tagged</span>
+              <span className="text-violet-400/70">{bucketStats.captioned.toLocaleString()} captioned</span>
+            </div>
+            {images.length > 0 && (
+              <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.07] text-[11px] w-fit">
+                <span className="text-[9px] text-sky-500/60 font-mono uppercase tracking-wider">page</span>
+                <span className="text-slate-500">{images.length} total</span>
+                <span className="text-emerald-400/80">{images.filter(img => img.markedForTraining).length} marked</span>
+                <span className="text-cyan-400/70">{images.filter(img => img.adminTags.length > 0).length} tagged</span>
+                <span className="text-violet-400/70">{images.filter(img => !!img.adminCaption).length} captioned</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -2707,7 +3278,7 @@ export default function DatasetPage() {
               <PageNav pagination={pagination} page={page} loading={loading} setPage={setPage} className="mb-4" />
             )}
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1.5 sm:gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-1.5 sm:gap-2.5">
               {deferredImages.map((img, i) => (
                 <ImageCard
                   key={img.id}
