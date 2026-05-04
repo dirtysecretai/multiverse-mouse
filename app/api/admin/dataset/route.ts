@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   const aspectRatioList = searchParams.getAll('aspectRatio').filter(Boolean)
   const userIdList      = searchParams.getAll('userId').filter(Boolean).map(Number).filter(n => !isNaN(n))
   const qualityList     = searchParams.getAll('quality').filter(Boolean)
-  const hasRefs     = searchParams.get('hasRefs')     || ''   // 'true' | 'false'
+  const hasRefs     = searchParams.get('hasRefs')     || ''   // 'true' | 'false' | '1' | '2' | '3' | '4+'
   const hasRating   = searchParams.get('hasRating')   || ''   // 'true' | 'false'
   const hasCaption  = searchParams.get('hasCaption')  || ''   // 'true' | 'false'
   const hasTag      = searchParams.get('hasTag')      || ''   // 'true' | 'false'
@@ -50,8 +50,16 @@ export async function GET(req: Request) {
   if (mediaType === 'video') where.NOT = { videoMetadata: { equals: Prisma.JsonNull } }
   if (mediaType === 'image') where.videoMetadata = { equals: Prisma.AnyNull }
 
-  if (hasRefs === 'true')  where.referenceImageUrls = { isEmpty: false }
-  if (hasRefs === 'false') where.referenceImageUrls = { isEmpty: true }
+  if (hasRefs === 'true')        where.referenceImageUrls = { isEmpty: false }
+  else if (hasRefs === 'false') where.referenceImageUrls = { isEmpty: true }
+  else if (['1', '2', '3', '4+'].includes(hasRefs)) {
+    const rows = await prisma.$queryRaw<{ id: number }[]>(
+      hasRefs === '4+'
+        ? Prisma.sql`SELECT id FROM "GeneratedImage" WHERE cardinality("referenceImageUrls") >= 4 AND "isDeleted" = false`
+        : Prisma.sql`SELECT id FROM "GeneratedImage" WHERE cardinality("referenceImageUrls") = ${parseInt(hasRefs)} AND "isDeleted" = false`
+    )
+    where.id = { in: rows.map(r => r.id) }
+  }
 
   if (hasRating === 'true')  where.imageRating = { isNot: null }
   if (hasRating === 'false') where.imageRating = { is: null }

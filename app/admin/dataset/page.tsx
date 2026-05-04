@@ -2581,7 +2581,7 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
   const userOptions       = useMemo(() => (facets?.users     ?? []).map(u => ({ value: String(u.id), label: `${u.name ? `${u.name} · ` : ''}${u.email} (${u.count})` })), [facets?.users])
   const sortOptions       = useMemo(() => [{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "rating", label: "Highest rated" }, { value: "cost", label: "Highest cost" }], [])
   const mediaTypeOptions  = useMemo(() => [{ value: "", label: "Images & videos" }, { value: "image", label: "Images only" }, { value: "video", label: "Videos only" }], [])
-  const hasRefsOptions    = useMemo(() => [{ value: "", label: "Refs: any" },    { value: "true", label: "Has refs" },    { value: "false", label: "No refs" }],    [])
+  const hasRefsOptions    = useMemo(() => [{ value: "", label: "Refs: any" }, { value: "true", label: "Has refs" }, { value: "false", label: "No refs" }, { value: "1", label: "1 ref" }, { value: "2", label: "2 refs" }, { value: "3", label: "3 refs" }, { value: "4+", label: "4+ refs" }], [])
   const hasRatingOptions  = useMemo(() => [{ value: "", label: "Rating: any" },  { value: "true", label: "Has rating" },  { value: "false", label: "Not rated" }],  [])
   const hasCaptionOptions = useMemo(() => [{ value: "", label: "Caption: any" }, { value: "true", label: "Has caption" }, { value: "false", label: "No caption" }], [])
   const hasTagOptions     = useMemo(() => [{ value: "", label: "Tags: any" },    { value: "true", label: "Has tags" },    { value: "false", label: "No tags" }],    [])
