@@ -7830,6 +7830,11 @@ export default function PortalV2Page() {
           setUser({ id: data.user.id, email: data.user.email, ticketBalance: ticketData.success ? ticketData.balance : 0 })
           if (subData.hasPromptStudioDev) setHasPromptStudioDev(true)
 
+          // Audit accounts bypass maintenance
+          const verifyRes = await fetch("/api/admin/verify")
+          const verifyData = await verifyRes.json()
+          if (verifyData.isAuditAccount) setIsGenerationMaintenance(false)
+
           // Reconcile in-flight DB jobs with locally-persisted pending slots.
           // The DB is the authoritative source — this keeps the queue accurate
           // across page refreshes and across different devices.

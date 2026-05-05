@@ -11,6 +11,13 @@ let cacheExpiry = 0
 export async function isGenerationBlocked(userEmail?: string | null): Promise<boolean> {
   if (userEmail && ADMIN_EMAILS.has(userEmail.toLowerCase())) return false
 
+  if (userEmail) {
+    try {
+      const audit = await prisma.auditAccount.findUnique({ where: { email: userEmail.toLowerCase() } })
+      if (audit) return false
+    } catch {}
+  }
+
   const now = Date.now()
   if (cachedValue !== null && now < cacheExpiry) return cachedValue
 

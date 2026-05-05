@@ -6,6 +6,7 @@ import { cookies } from 'next/headers'
 import { uploadToR2 } from '@/lib/r2'
 import { getTicketCost, getModelById } from '@/config/ai-models.config'
 import { fal } from "@fal-ai/client"
+import { isGenerationBlocked } from '@/lib/generation-guard'
 
 const prisma = new PrismaClient()
 
@@ -43,10 +44,9 @@ export async function POST(request: Request) {
 
     // Check system state
     const systemState = await prisma.systemState.findFirst()
-    
-    // Check global AI generation maintenance (admin emails bypass)
-    const ADMIN_EMAILS = ['dirtysecretai@gmail.com', 'promptandprotocol@gmail.com']
-    if (systemState?.aiGenerationMaintenance && !ADMIN_EMAILS.includes(user.email?.toLowerCase() ?? '')) {
+
+    // Check maintenance — admins and audit accounts bypass
+    if (await isGenerationBlocked(user.email?.toLowerCase())) {
       return NextResponse.json(
         { error: 'Multiverse Scanner is offline for maintenance' },
         { status: 503 }

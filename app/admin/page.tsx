@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import {
   Terminal, MessageSquare, Wrench, Image as ImageIcon, Sparkles, Tag,
   Users, CreditCard, ListOrdered, FlaskConical, Home, LayoutDashboard,
-  LogOut, ChevronRight, ShieldOff, Loader2, Shield, FileText, HardDrive, Database, Brain
+  LogOut, ChevronRight, ShieldOff, Loader2, Shield, FileText, HardDrive, Database, Brain, ClipboardCheck
 } from "lucide-react"
 
 const TOOL_PAGES = [
@@ -34,7 +34,8 @@ const TOOL_PAGES = [
     items: [
       { name: "Queue",             description: "Generation queue & concurrency", href: "/admin/queue",         icon: ListOrdered,   color: "bg-blue-500/15 text-blue-400",       border: "hover:border-blue-500/30" },
       { name: "Maintenance",       description: "Feature & model toggles",        href: "/admin/maintenance",   icon: Wrench,        color: "bg-orange-500/15 text-orange-400",   border: "hover:border-orange-500/30" },
-      { name: "Admins",            description: "Admin accounts & permissions",   href: "/admin/accounts",      icon: Shield,        color: "bg-cyan-500/15 text-cyan-400",       border: "hover:border-cyan-500/30" },
+      { name: "Admins",            description: "Admin accounts & permissions",   href: "/admin/accounts",        icon: Shield,          color: "bg-cyan-500/15 text-cyan-400",       border: "hover:border-cyan-500/30" },
+      { name: "Audit Accounts",   description: "Merchant auditor bypass accounts", href: "/admin/audit-accounts", icon: ClipboardCheck,  color: "bg-amber-500/15 text-amber-400",     border: "hover:border-amber-500/30" },
       { name: "Storage",           description: "R2 migration & Vercel Blob cleanup", href: "/admin/storage",    icon: HardDrive,     color: "bg-orange-500/15 text-orange-400",   border: "hover:border-orange-500/30" },
     ]
   },

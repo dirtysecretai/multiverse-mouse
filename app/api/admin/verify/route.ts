@@ -15,24 +15,33 @@ async function checkIsAdmin(email: string): Promise<boolean> {
     const account = await prisma.adminAccount.findUnique({ where: { email } })
     return !!(account?.canAccessAdmin)
   } catch {
-    // Prisma client not yet regenerated — fall back to hardcoded list
     return FALLBACK_ADMIN_EMAILS.includes(email)
   }
+}
+
+async function checkIsAuditAccount(email: string): Promise<boolean> {
+  try {
+    const account = await prisma.auditAccount.findUnique({ where: { email: email.toLowerCase() } })
+    return !!account
+  } catch { return false }
 }
 
 export async function GET() {
   try {
     const cookieStore = await cookies()
     const token = cookieStore.get('session')?.value
-    if (!token) return NextResponse.json({ email: null, isAdmin: false })
+    if (!token) return NextResponse.json({ email: null, isAdmin: false, isAuditAccount: false })
 
     const user = await getUserFromSession(token)
-    if (!user) return NextResponse.json({ email: null, isAdmin: false })
+    if (!user) return NextResponse.json({ email: null, isAdmin: false, isAuditAccount: false })
 
-    const isAdmin = await checkIsAdmin(user.email)
-    return NextResponse.json({ email: user.email, isAdmin })
+    const [isAdmin, isAuditAccount] = await Promise.all([
+      checkIsAdmin(user.email),
+      checkIsAuditAccount(user.email),
+    ])
+    return NextResponse.json({ email: user.email, isAdmin, isAuditAccount })
   } catch {
-    return NextResponse.json({ email: null, isAdmin: false })
+    return NextResponse.json({ email: null, isAdmin: false, isAuditAccount: false })
   }
 }
 

@@ -816,6 +816,16 @@ model AdminAccount {
   @@index([email])
 }
 
+model AuditAccount {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  notes     String?
+  addedAt   DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+}
+
 // ============================================
 // DATASET BUCKETS (Admin training data collections)
 // ============================================

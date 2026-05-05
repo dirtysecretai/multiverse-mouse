@@ -110,6 +110,7 @@ export default function MultiversePortalLegacy() {
   const [user, setUser] = useState<UserData | null>(null)
   const [sessionLoading, setSessionLoading] = useState(true)
   const [hasPromptStudioDev, setHasPromptStudioDev] = useState(false)
+  const [isAuditAccount, setIsAuditAccount] = useState(false)
 
   // AI Scanner state
   const [coordinates, setCoordinates] = useState('')
@@ -280,6 +281,14 @@ export default function MultiversePortalLegacy() {
       setSessionLoading(false)
     }
   }, [])
+
+  // Check audit account status when user changes
+  useEffect(() => {
+    fetch('/api/admin/verify')
+      .then(r => r.json())
+      .then(d => setIsAuditAccount(d.isAuditAccount ?? false))
+      .catch(() => {})
+  }, [user?.email])
 
   // Fetch admin config
   const fetchAdminConfig = useCallback(async () => {
@@ -959,8 +968,8 @@ export default function MultiversePortalLegacy() {
   // Check if current user is admin
   const isAdmin = user?.email === "dirtysecretai@gmail.com"
 
-  // Show maintenance page to non-admins if global maintenance OR scanner-specific maintenance is enabled
-  if ((adminState.isMaintenanceMode || adminState.mainScannerMaintenance) && !isAdmin) {
+  // Show maintenance page to non-admins/non-audit-accounts if maintenance is enabled
+  if ((adminState.isMaintenanceMode || adminState.mainScannerMaintenance) && !isAdmin && !isAuditAccount) {
     return (
       <div className="min-h-screen bg-[#050810] flex items-center justify-center p-6">
         <div className="text-center p-12 rounded-2xl border-2 border-yellow-500/30 bg-yellow-500/5 backdrop-blur-sm max-w-md">
