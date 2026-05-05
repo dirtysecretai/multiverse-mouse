@@ -85,14 +85,14 @@ export default function AuditAccountsPage() {
         headers: authHeaders(),
         body: JSON.stringify({ notes: newNotes || null, tickets: parseInt(newTickets) || 100 }),
       })
-      const data = await res.json()
+      let data: any = {}
+      try { data = await res.json() } catch {}
       if (res.ok) {
         setNewNotes(""); setNewTickets("100"); setShowForm(false)
-        // Show new account's password immediately
         setVisiblePw(prev => new Set([...prev, data.id]))
         await fetchAccounts()
       } else {
-        setError(data.error || "Failed to create account")
+        setError(data.error || `Server error (${res.status}) — the database table may need migration`)
       }
     } finally { setSaving(false) }
   }
