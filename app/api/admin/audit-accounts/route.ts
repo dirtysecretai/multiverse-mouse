@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { hashPassword } from '@/lib/auth'
 
 function checkAuth(req: Request) {
   const pass = process.env.ADMIN_PASSWORD
@@ -7,37 +8,95 @@ function checkAuth(req: Request) {
   return req.headers.get('x-admin-password') === pass
 }
 
+function generateUsername(): string {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789'
+  const suffix = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+  return `auditor_${suffix}`
+}
+
+function generatePassword(): string {
+  const upper  = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+  const lower  = 'abcdefghjkmnpqrstuvwxyz'
+  const digits = '23456789'
+  const pick = (s: string) => s[Math.floor(Math.random() * s.length)]
+  const chars = [pick(upper), pick(upper), pick(lower), pick(lower), pick(digits), pick(digits), pick(upper + lower), pick(digits + lower)]
+  // Fisher-Yates shuffle
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [chars[i], chars[j]] = [chars[j], chars[i]]
+  }
+  return chars.join('')
+}
+
 export async function GET(req: Request) {
   if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const accounts = await prisma.auditAccount.findMany({ orderBy: { addedAt: 'desc' } })
-  return NextResponse.json(accounts)
+  if (!accounts.length) return NextResponse.json([])
+
+  const userIds = accounts.map(a => a.userId)
+  const tickets = await prisma.ticket.findMany({
+    where: { userId: { in: userIds } },
+    select: { userId: true, balance: true },
+  })
+  const ticketMap = Object.fromEntries(tickets.map(t => [t.userId, t.balance]))
+
+  return NextResponse.json(accounts.map(a => ({
+    id: a.id, username: a.username, internalEmail: a.internalEmail,
+    plainPassword: a.plainPassword, notes: a.notes,
+    ticketBalance: ticketMap[a.userId] ?? 0, addedAt: a.addedAt,
+  })))
 }
 
 export async function POST(req: Request) {
   if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { email, notes } = await req.json()
-  if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
+  const { notes, tickets: ticketCount = 100 } = await req.json()
 
-  try {
-    const account = await prisma.auditAccount.create({
-      data: { email: email.toLowerCase().trim(), notes: notes || null },
-    })
-    return NextResponse.json(account)
-  } catch {
-    return NextResponse.json({ error: 'Email already exists' }, { status: 409 })
+  // Generate unique username
+  let username = ''
+  let internalEmail = ''
+  for (let i = 0; i < 10; i++) {
+    username = generateUsername()
+    internalEmail = `${username}@audit.pp`
+    const existing = await prisma.auditAccount.findUnique({ where: { username } })
+    if (!existing) break
   }
+
+  const plainPassword = generatePassword()
+  const hashed = await hashPassword(plainPassword)
+
+  const user = await prisma.user.create({
+    data: { email: internalEmail, password: hashed, name: username },
+  })
+
+  await prisma.ticket.create({ data: { userId: user.id, balance: Math.max(0, parseInt(ticketCount) || 0) } })
+
+  const account = await prisma.auditAccount.create({
+    data: { username, internalEmail, plainPassword, userId: user.id, notes: notes || null },
+  })
+
+  return NextResponse.json({ ...account, ticketBalance: Math.max(0, parseInt(ticketCount) || 0) })
 }
 
 export async function PUT(req: Request) {
   if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { id, notes } = await req.json()
+  const { id, notes, tickets } = await req.json()
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
   const account = await prisma.auditAccount.update({
     where: { id },
-    data: { notes: notes || null },
+    data: { notes: notes !== undefined ? (notes || null) : undefined },
   })
-  return NextResponse.json(account)
+
+  if (typeof tickets === 'number') {
+    await prisma.ticket.upsert({
+      where: { userId: account.userId },
+      update: { balance: Math.max(0, tickets) },
+      create: { userId: account.userId, balance: Math.max(0, tickets) },
+    })
+  }
+
+  return NextResponse.json({ ok: true })
 }
 
 export async function DELETE(req: Request) {
@@ -45,6 +104,7 @@ export async function DELETE(req: Request) {
   const id = parseInt(new URL(req.url).searchParams.get('id') || '')
   if (isNaN(id)) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
+  // Just remove the AuditAccount — leaves the User record intact
   await prisma.auditAccount.delete({ where: { id } })
   return NextResponse.json({ ok: true })
 }

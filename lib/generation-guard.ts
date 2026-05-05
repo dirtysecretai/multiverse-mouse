@@ -13,7 +13,7 @@ export async function isGenerationBlocked(userEmail?: string | null): Promise<bo
 
   if (userEmail) {
     try {
-      const audit = await prisma.auditAccount.findUnique({ where: { email: userEmail.toLowerCase() } })
+      const audit = await prisma.auditAccount.findUnique({ where: { internalEmail: userEmail.toLowerCase() } })
       if (audit) return false
     } catch {}
   }

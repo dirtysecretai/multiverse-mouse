@@ -817,13 +817,16 @@ model AdminAccount {
 }
 
 model AuditAccount {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  notes     String?
-  addedAt   DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  username      String   @unique      // e.g. auditor_x7k2mq (display name)
+  internalEmail String   @unique      // e.g. auditor_x7k2mq@audit.pp (login email)
+  plainPassword String               // stored for admin display
+  userId        Int      @unique      // the real User record created for this auditor
+  notes         String?
+  addedAt       DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  @@index([email])
+  @@index([internalEmail])
 }
 
 // ============================================

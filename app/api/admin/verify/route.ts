@@ -21,7 +21,7 @@ async function checkIsAdmin(email: string): Promise<boolean> {
 
 async function checkIsAuditAccount(email: string): Promise<boolean> {
   try {
-    const account = await prisma.auditAccount.findUnique({ where: { email: email.toLowerCase() } })
+    const account = await prisma.auditAccount.findUnique({ where: { internalEmail: email.toLowerCase() } })
     return !!account
   } catch { return false }
 }
