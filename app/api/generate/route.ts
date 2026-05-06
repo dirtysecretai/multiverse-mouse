@@ -89,6 +89,8 @@ export async function POST(request: Request) {
       supirCfg = 4.0,
       supirColorFix = 'Wavelet',
       supirNegPrompt = 'blurry, noisy, low quality, oversmoothed, jpeg artifacts, deformed',
+      // SeeDream 4.5 params
+      seedreamSafetyChecker = false,
     } = body
 
     // Check if admin mode is requested and user is actually admin
@@ -726,7 +728,7 @@ export async function POST(request: Request) {
 
         // Only add enable_safety_checker for models that support it (SeeDream)
         if (model === 'seedream-4.5') {
-          inputParams.enable_safety_checker = false
+          inputParams.enable_safety_checker = seedreamSafetyChecker === true
         }
 
         // Check if regular NanoBanana is trying to use reference images (not supported)

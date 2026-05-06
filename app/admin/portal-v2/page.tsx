@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import Link from "next/link"
 import ChatWidget from "@/components/ChatWidget"
-import { Image, Video, Type, ChevronDown, Ticket, User, BookMarked, ImagePlus, X, Plus, Check, Copy, Download, RotateCcw, ShoppingBag, SlidersHorizontal, Bell, AlertTriangle, CheckCircle, Info, Sparkles, Music, BookOpen, Star, Trash2, Loader2 } from "lucide-react"
+import { Image, Video, Type, ChevronDown, Ticket, User, BookMarked, ImagePlus, X, Plus, Check, Copy, Download, RotateCcw, ShoppingBag, SlidersHorizontal, Bell, AlertTriangle, CheckCircle, Info, Sparkles, Music, BookOpen, Star, Trash2, Loader2, Eye } from "lucide-react"
 
 // --- TYPES ---
 interface UserData {
@@ -3166,6 +3166,7 @@ function PromptBox({
   const [quality, setQuality] = useState<Quality>("2k")
   const [outputFormat, setOutputFormat] = useState<"png" | "jpeg" | "webp">("png")
   const [imageCount, setImageCount] = useState<number>(1)
+  const [seedreamSafetyChecker, setSeedreamSafetyChecker] = useState(false)
   const [loraJobs, setLoraJobs] = useState<Array<{ id: number; name: string; loraUrl: string; custom?: boolean; triggerWord?: string }>>([])
   const [selectedLoraUrl, setSelectedLoraUrl] = useState<string | null>(null)
   const [loraScale, setLoraScale] = useState(1.0)
@@ -3818,7 +3819,7 @@ function PromptBox({
             const res = await fetch("/api/generate", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined, loraScale: selectedLoraUrl ? loraScale : undefined, loraGuidanceScale: selectedLoraUrl ? loraGuidanceScale : undefined, loraSteps: selectedLoraUrl ? loraSteps : undefined }),
+              body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined, loraScale: selectedLoraUrl ? loraScale : undefined, loraGuidanceScale: selectedLoraUrl ? loraGuidanceScale : undefined, loraSteps: selectedLoraUrl ? loraSteps : undefined, ...(model.id === "seedream-4.5" ? { seedreamSafetyChecker } : {}) }),
             })
             const data = await res.json()
             if (!res.ok) { onUpdatePending(sid, { status: "failed", error: data.error || "Generation failed" }); return }
@@ -3834,7 +3835,7 @@ function PromptBox({
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined, loraScale: selectedLoraUrl ? loraScale : undefined, loraGuidanceScale: selectedLoraUrl ? loraGuidanceScale : undefined, loraSteps: selectedLoraUrl ? loraSteps : undefined }),
+          body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined, loraScale: selectedLoraUrl ? loraScale : undefined, loraGuidanceScale: selectedLoraUrl ? loraGuidanceScale : undefined, loraSteps: selectedLoraUrl ? loraSteps : undefined, ...(model.id === "seedream-4.5" ? { seedreamSafetyChecker } : {}) }),
         })
         const data = await res.json()
         if (!res.ok) {
@@ -4780,6 +4781,24 @@ function PromptBox({
                     className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed transition-all text-sm leading-none font-bold"
                   >+</button>
                 </div>
+              </>
+            )}
+
+            {/* Safety Checker toggle — SeeDream 4.5 only */}
+            {model.id === "seedream-4.5" && (
+              <>
+                <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
+                <button
+                  onClick={() => setSeedreamSafetyChecker(v => !v)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-all shrink-0 ${
+                    seedreamSafetyChecker
+                      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                      : "border-white/10 bg-white/5 text-slate-500 hover:border-white/20 hover:text-slate-300"
+                  }`}
+                >
+                  <Eye size={11} />
+                  Safety {seedreamSafetyChecker ? "ON" : "OFF"}
+                </button>
               </>
             )}
 
