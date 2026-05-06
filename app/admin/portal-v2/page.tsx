@@ -8202,9 +8202,15 @@ export default function PortalV2Page() {
               <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
                 <Sparkles size={12} className="text-white/50" />
               </div>
-              <div className="flex flex-col leading-none">
+              <div className="flex flex-col leading-none gap-0.5">
                 <span className="text-[11px] font-black tracking-tight text-white/90">AI Design Studio</span>
-                <span className="text-[8px] font-mono text-white/20 tracking-widest uppercase">Prompt Protocol</span>
+                <div className="flex items-center gap-1.5">
+                  <a href="/terms" target="_blank" className="text-[8px] text-white/25 hover:text-white/50 transition-colors">Terms</a>
+                  <span className="text-[7px] text-white/10">·</span>
+                  <a href="/privacy" target="_blank" className="text-[8px] text-white/25 hover:text-white/50 transition-colors">Privacy</a>
+                  <span className="text-[7px] text-white/10">·</span>
+                  <a href="/refund" target="_blank" className="text-[8px] text-white/25 hover:text-white/50 transition-colors">Refund</a>
+                </div>
               </div>
             </div>
             <div className="w-px h-4 bg-white/8" />
