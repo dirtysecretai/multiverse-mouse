@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import { createPortal } from "react-dom"
 import Link from "next/link"
 import ChatWidget from "@/components/ChatWidget"
 import { Image, Video, Type, ChevronDown, Ticket, User, BookMarked, ImagePlus, X, Plus, Check, Copy, Download, RotateCcw, ShoppingBag, SlidersHorizontal, Bell, AlertTriangle, CheckCircle, Info, Sparkles, Music, BookOpen, Star, Trash2, Loader2, Eye } from "lucide-react"
@@ -4848,9 +4849,9 @@ function PromptBox({
         onLoad={handleLoadPreset}
       />
 
-      {/* Age verification modal — shown when user tries to disable safety checker */}
-      {showSafetyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Age verification modal — rendered at document.body via portal to escape any ancestor stacking context */}
+      {showSafetyModal && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowSafetyModal(false)} />
           <div className="relative w-full max-w-sm rounded-2xl border border-white/[0.1] bg-[#0e0e1a] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
             {/* Header stripe */}
@@ -4906,7 +4907,8 @@ function PromptBox({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
