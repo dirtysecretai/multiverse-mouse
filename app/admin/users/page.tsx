@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
-  Terminal, RefreshCw, ArrowLeft, Users as UsersIcon, Search, ChevronDown, ChevronUp, Crown, Ticket, DollarSign, Calendar, Tag, ArrowUpDown
+  Terminal, RefreshCw, ArrowLeft, Users as UsersIcon, Search, ChevronDown, ChevronUp, Crown, Ticket, DollarSign, Calendar, Tag, ArrowUpDown,
+  AlertTriangle, X, ShieldCheck, ClipboardCheck, Loader2, RotateCcw
 } from "lucide-react"
 
 interface UserData {
@@ -39,6 +40,18 @@ export default function AdminUsersPage() {
   const [filterTier, setFilterTier] = useState<'all' | 'dev' | 'free'>('all')
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null)
   const [sortBy, setSortBy] = useState<'totalSpent' | 'ticketBalance' | 'totalBought' | 'totalUsed'>('totalSpent')
+
+  // Reset tickets state
+  const [showResetPanel, setShowResetPanel] = useState(false)
+  const [resetExcludeAdmins, setResetExcludeAdmins] = useState(true)
+  const [resetExcludeAudit, setResetExcludeAudit] = useState(true)
+  const [resetExcludeIds, setResetExcludeIds] = useState<Set<number>>(new Set())
+  const [resetUserSearch, setResetUserSearch] = useState("")
+  const [resetPreview, setResetPreview] = useState<{ willReset: number; excluded: number } | null>(null)
+  const [resetConfirmText, setResetConfirmText] = useState("")
+  const [resetting, setResetting] = useState(false)
+  const [resetDone, setResetDone] = useState<{ resetCount: number; excludedCount: number } | null>(null)
+  const previewTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const authStatus = localStorage.getItem("multiverse-admin-auth")
@@ -114,6 +127,60 @@ export default function AdminUsersPage() {
       hour: 'numeric',
       minute: '2-digit'
     })
+  }
+
+  const adminPassword = () => sessionStorage.getItem("admin-password") || ""
+
+  const fetchResetPreview = (excludeAdmins: boolean, excludeAudit: boolean, excludeIds: Set<number>) => {
+    if (previewTimeout.current) clearTimeout(previewTimeout.current)
+    previewTimeout.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({
+          excludeAdmins: String(excludeAdmins),
+          excludeAuditAccounts: String(excludeAudit),
+          excludeUserIds: JSON.stringify(Array.from(excludeIds)),
+        })
+        const res = await fetch(`/api/admin/users/reset-tickets?${params}`, {
+          headers: { 'x-admin-password': adminPassword() },
+        })
+        if (res.ok) setResetPreview(await res.json())
+      } catch {}
+    }, 400)
+  }
+
+  const toggleExcludeUser = (userId: number) => {
+    setResetExcludeIds(prev => {
+      const next = new Set(prev)
+      next.has(userId) ? next.delete(userId) : next.add(userId)
+      fetchResetPreview(resetExcludeAdmins, resetExcludeAudit, next)
+      return next
+    })
+  }
+
+  const handleResetTickets = async () => {
+    if (resetConfirmText !== "RESET") return
+    setResetting(true)
+    try {
+      const res = await fetch('/api/admin/users/reset-tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPassword() },
+        body: JSON.stringify({
+          excludeAdmins: resetExcludeAdmins,
+          excludeAuditAccounts: resetExcludeAudit,
+          excludeUserIds: Array.from(resetExcludeIds),
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setResetDone(data)
+        setResetConfirmText("")
+        await fetchUsers()
+      } else {
+        alert(data.error || 'Reset failed')
+      }
+    } finally {
+      setResetting(false)
+    }
   }
 
   // Filter and sort users
@@ -225,6 +292,156 @@ export default function AdminUsersPage() {
               <UsersIcon className="text-slate-400" size={40} />
             </div>
           </div>
+        </div>
+
+        {/* Danger Zone */}
+        <div className="mb-6 rounded-xl border border-red-500/20 bg-red-500/[0.03] overflow-hidden">
+          <button
+            onClick={() => {
+              setShowResetPanel(v => !v)
+              if (!showResetPanel) fetchResetPreview(resetExcludeAdmins, resetExcludeAudit, resetExcludeIds)
+            }}
+            className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-red-500/[0.04] transition-colors"
+          >
+            <div className="flex items-center gap-2 text-red-400 font-bold text-sm">
+              <AlertTriangle size={15} /> DANGER ZONE — Reset All Ticket Balances
+            </div>
+            {showResetPanel ? <ChevronUp size={15} className="text-red-400/60" /> : <ChevronDown size={15} className="text-red-400/60" />}
+          </button>
+
+          {showResetPanel && (
+            <div className="px-5 pb-5 space-y-4 border-t border-red-500/10">
+              <p className="text-xs text-slate-500 pt-3">
+                Sets every user's ticket balance to <span className="text-white font-bold">0</span>. Use after a payment processor refund event. Cannot be undone.
+              </p>
+
+              {/* Exclusion toggles */}
+              <div className="space-y-2">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Exclude from reset:</p>
+                <label className="flex items-center gap-2.5 cursor-pointer select-none group">
+                  <div
+                    onClick={() => {
+                      const next = !resetExcludeAdmins
+                      setResetExcludeAdmins(next)
+                      fetchResetPreview(next, resetExcludeAudit, resetExcludeIds)
+                    }}
+                    className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${resetExcludeAdmins ? 'bg-cyan-500' : 'bg-slate-700'}`}
+                  >
+                    <div className={`w-3 h-3 rounded-full bg-white shadow transition-transform ${resetExcludeAdmins ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </div>
+                  <ShieldCheck size={13} className={resetExcludeAdmins ? 'text-cyan-400' : 'text-slate-600'} />
+                  <span className="text-xs text-slate-400 group-hover:text-slate-300">Admin accounts</span>
+                </label>
+                <label className="flex items-center gap-2.5 cursor-pointer select-none group">
+                  <div
+                    onClick={() => {
+                      const next = !resetExcludeAudit
+                      setResetExcludeAudit(next)
+                      fetchResetPreview(resetExcludeAdmins, next, resetExcludeIds)
+                    }}
+                    className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${resetExcludeAudit ? 'bg-amber-500' : 'bg-slate-700'}`}
+                  >
+                    <div className={`w-3 h-3 rounded-full bg-white shadow transition-transform ${resetExcludeAudit ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </div>
+                  <ClipboardCheck size={13} className={resetExcludeAudit ? 'text-amber-400' : 'text-slate-600'} />
+                  <span className="text-xs text-slate-400 group-hover:text-slate-300">Audit accounts</span>
+                </label>
+              </div>
+
+              {/* Exclude specific users */}
+              <div>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Exclude specific accounts:</p>
+                <div className="relative mb-2">
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
+                  <input
+                    value={resetUserSearch}
+                    onChange={e => setResetUserSearch(e.target.value)}
+                    placeholder="Search users to exclude…"
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-red-500/30"
+                  />
+                </div>
+
+                {/* Selected exclusions chips */}
+                {resetExcludeIds.size > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {Array.from(resetExcludeIds).map(uid => {
+                      const u = users.find(x => x.id === uid)
+                      return u ? (
+                        <span key={uid} className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">
+                          {u.email}
+                          <button onClick={() => toggleExcludeUser(uid)} className="text-slate-500 hover:text-white ml-0.5"><X size={9} /></button>
+                        </span>
+                      ) : null
+                    })}
+                  </div>
+                )}
+
+                {/* Matching users list */}
+                {resetUserSearch.trim() && (
+                  <div className="max-h-36 overflow-y-auto rounded-lg border border-white/[0.07] bg-black/30 divide-y divide-white/[0.04]">
+                    {users
+                      .filter(u =>
+                        (u.email?.toLowerCase().includes(resetUserSearch.toLowerCase()) ||
+                         u.name?.toLowerCase().includes(resetUserSearch.toLowerCase())) &&
+                        !resetExcludeIds.has(u.id)
+                      )
+                      .slice(0, 20)
+                      .map(u => (
+                        <button
+                          key={u.id}
+                          onClick={() => { toggleExcludeUser(u.id); setResetUserSearch("") }}
+                          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.04] text-left"
+                        >
+                          <span className="text-xs text-slate-300 truncate">{u.email}</span>
+                          <span className="text-[10px] text-slate-600 ml-2 shrink-0">{u.ticketBalance} tickets</span>
+                        </button>
+                      ))}
+                    {users.filter(u =>
+                      u.email?.toLowerCase().includes(resetUserSearch.toLowerCase()) && !resetExcludeIds.has(u.id)
+                    ).length === 0 && (
+                      <p className="text-xs text-slate-600 px-3 py-2">No matching users</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Preview */}
+              {resetPreview && (
+                <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-red-500/[0.06] border border-red-500/20">
+                  <RotateCcw size={12} className="text-red-400 shrink-0" />
+                  <span className="text-red-300">Will reset <span className="font-bold text-white">{resetPreview.willReset}</span> account{resetPreview.willReset !== 1 ? 's' : ''} to 0</span>
+                  {resetPreview.excluded > 0 && (
+                    <span className="text-slate-500 ml-auto shrink-0">{resetPreview.excluded} excluded</span>
+                  )}
+                </div>
+              )}
+
+              {/* Success banner */}
+              {resetDone && (
+                <div className="text-xs px-3 py-2 rounded-lg bg-emerald-500/[0.08] border border-emerald-500/20 text-emerald-400">
+                  Reset complete — <span className="font-bold">{resetDone.resetCount}</span> accounts zeroed, {resetDone.excludedCount} skipped.
+                </div>
+              )}
+
+              {/* Confirm + execute */}
+              <div className="flex items-center gap-3">
+                <input
+                  value={resetConfirmText}
+                  onChange={e => setResetConfirmText(e.target.value)}
+                  placeholder='Type "RESET" to confirm'
+                  className="flex-1 px-3 py-1.5 text-xs bg-white/[0.04] border border-red-500/20 rounded-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-red-500/50"
+                />
+                <button
+                  onClick={handleResetTickets}
+                  disabled={resetConfirmText !== "RESET" || resetting}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  {resetting ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                  Reset Tickets
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Filters */}
