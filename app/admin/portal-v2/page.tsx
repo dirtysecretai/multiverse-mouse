@@ -3169,6 +3169,7 @@ function PromptBox({
   const [imageCount, setImageCount] = useState<number>(1)
   const [seedreamSafetyChecker, setSeedreamSafetyChecker] = useState(true)
   const [wanSafetyChecker, setWanSafetyChecker] = useState(true)
+  const [fluxDevSafetyChecker, setFluxDevSafetyChecker] = useState(true)
   const [showSafetyModal, setShowSafetyModal] = useState(false)
   const [safetyAgeConfirmed, setSafetyAgeConfirmed] = useState(false)
   const [safetyConfirmCallback, setSafetyConfirmCallback] = useState<(() => void) | null>(null)
@@ -3825,7 +3826,7 @@ function PromptBox({
             const res = await fetch("/api/generate", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined, loraScale: selectedLoraUrl ? loraScale : undefined, loraGuidanceScale: selectedLoraUrl ? loraGuidanceScale : undefined, loraSteps: selectedLoraUrl ? loraSteps : undefined, ...(model.id === "seedream-4.5" ? { seedreamSafetyChecker } : {}) }),
+              body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined, loraScale: selectedLoraUrl ? loraScale : undefined, loraGuidanceScale: selectedLoraUrl ? loraGuidanceScale : undefined, loraSteps: selectedLoraUrl ? loraSteps : undefined, ...(model.id === "seedream-4.5" ? { seedreamSafetyChecker } : {}), ...(model.id === "flux-1-dev" ? { fluxDevSafetyChecker } : {}) }),
             })
             const data = await res.json()
             if (!res.ok) { onUpdatePending(sid, { status: "failed", error: data.error || "Generation failed" }); return }
@@ -3841,7 +3842,7 @@ function PromptBox({
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined, loraScale: selectedLoraUrl ? loraScale : undefined, loraGuidanceScale: selectedLoraUrl ? loraGuidanceScale : undefined, loraSteps: selectedLoraUrl ? loraSteps : undefined, ...(model.id === "seedream-4.5" ? { seedreamSafetyChecker } : {}) }),
+          body: JSON.stringify({ prompt: currentPrompt, model: model.apiId, quality, aspectRatio, referenceImages, loraUrl: selectedLoraUrl || undefined, loraName: selectedLoraUrl ? (loraJobs.find(j => j.loraUrl === selectedLoraUrl)?.name || undefined) : undefined, loraScale: selectedLoraUrl ? loraScale : undefined, loraGuidanceScale: selectedLoraUrl ? loraGuidanceScale : undefined, loraSteps: selectedLoraUrl ? loraSteps : undefined, ...(model.id === "seedream-4.5" ? { seedreamSafetyChecker } : {}), ...(model.id === "flux-1-dev" ? { fluxDevSafetyChecker } : {}) }),
         })
         const data = await res.json()
         if (!res.ok) {
@@ -4790,10 +4791,10 @@ function PromptBox({
               </>
             )}
 
-            {/* Safety Checker toggle — SeeDream 4.5 only */}
-            {(model.id === "seedream-4.5" || model.id === "wan-2.7-pro") && (() => {
-              const safetyOn = model.id === "seedream-4.5" ? seedreamSafetyChecker : wanSafetyChecker
-              const setSafety = model.id === "seedream-4.5" ? setSeedreamSafetyChecker : setWanSafetyChecker
+            {/* Safety Checker toggle — SeeDream 4.5, WAN 2.7 Pro, FLUX 1 Dev */}
+            {(model.id === "seedream-4.5" || model.id === "wan-2.7-pro" || model.id === "flux-1-dev") && (() => {
+              const safetyOn = model.id === "seedream-4.5" ? seedreamSafetyChecker : model.id === "wan-2.7-pro" ? wanSafetyChecker : fluxDevSafetyChecker
+              const setSafety = model.id === "seedream-4.5" ? setSeedreamSafetyChecker : model.id === "wan-2.7-pro" ? setWanSafetyChecker : setFluxDevSafetyChecker
               return (
                 <>
                   <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />

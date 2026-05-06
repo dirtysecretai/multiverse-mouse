@@ -91,6 +91,8 @@ export async function POST(request: Request) {
       supirNegPrompt = 'blurry, noisy, low quality, oversmoothed, jpeg artifacts, deformed',
       // SeeDream 4.5 params
       seedreamSafetyChecker = false,
+      // FLUX 1 Dev params
+      fluxDevSafetyChecker = true,
     } = body
 
     // Check if admin mode is requested and user is actually admin
@@ -807,7 +809,7 @@ export async function POST(request: Request) {
           inputParams.num_inference_steps = loraUrl ? (loraSteps ?? 28) : 40
           inputParams.guidance_scale = loraUrl ? (loraGuidanceScale ?? 3.5) : 3.5
           inputParams.num_images = 1
-          inputParams.enable_safety_checker = false
+          inputParams.enable_safety_checker = fluxDevSafetyChecker === true
           inputParams.output_format = 'png'
           inputParams.acceleration = loraUrl ? 'none' : 'regular'
           if (loraUrl) {
