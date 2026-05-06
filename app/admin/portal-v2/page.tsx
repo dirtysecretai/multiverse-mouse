@@ -5924,6 +5924,8 @@ function VideoPromptBar({
   startFramePreview, startFrameUploading, onStartFrameSelect,
   motionVideoFilename, motionVideoUploading, onMotionVideoSelect, onMotionVideoDurationChange,
   motionPromptText, lipsyncVideoDuration, isGenerationMaintenance = false,
+  wan25SafetyChecker, setWan25SafetyChecker,
+  seedance15SafetyChecker, setSeedance15SafetyChecker,
 }: {
   model: VideoModelConfig
   onGenerate: (prompt: string) => void
@@ -5950,9 +5952,16 @@ function VideoPromptBar({
   motionPromptText: string
   lipsyncVideoDuration?: number
   isGenerationMaintenance?: boolean
+  wan25SafetyChecker: boolean
+  setWan25SafetyChecker: (v: boolean) => void
+  seedance15SafetyChecker: boolean
+  setSeedance15SafetyChecker: (v: boolean) => void
 }) {
   const [prompt, setPrompt] = useState("")
   const [modelOpen, setModelOpen] = useState(false)
+  const [showVideoSafetyModal, setShowVideoSafetyModal] = useState(false)
+  const [videoAgeConfirmed, setVideoAgeConfirmed] = useState(false)
+  const [videoSafetyCallback, setVideoSafetyCallback] = useState<(() => void) | null>(null)
   const startFrameInputRef = useRef<HTMLInputElement>(null)
   const motionVideoInputRef = useRef<HTMLInputElement>(null)
 
@@ -6142,6 +6151,31 @@ function VideoPromptBar({
                 <SlidersHorizontal size={13} className="text-orange-400" />
                 Config
               </button>
+              {(model.id === "wan-2.5" || model.id === "seedance-1.5") && (() => {
+                const safetyOn = model.id === "wan-2.5" ? wan25SafetyChecker : seedance15SafetyChecker
+                const setSafety = model.id === "wan-2.5" ? setWan25SafetyChecker : setSeedance15SafetyChecker
+                return (
+                  <button
+                    onClick={() => {
+                      if (safetyOn) {
+                        setVideoAgeConfirmed(false)
+                        setVideoSafetyCallback(() => () => setSafety(false))
+                        setShowVideoSafetyModal(true)
+                      } else {
+                        setSafety(true)
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] transition-all shrink-0 ${
+                      safetyOn
+                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                        : "border-red-500/20 bg-red-500/[0.06] text-red-400 hover:bg-red-500/10"
+                    }`}
+                  >
+                    <Eye size={11} />
+                    Safety {safetyOn ? "ON" : "OFF"}
+                  </button>
+                )
+              })()}
               <span className="flex-1 text-[10px] text-center font-mono truncate">
                 {queueFull
                   ? <span className="text-red-400/80">Queue full</span>
@@ -6212,6 +6246,33 @@ function VideoPromptBar({
           className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 resize-none focus:outline-none focus:border-orange-500/30 transition-all"
         />
 
+        {/* Safety toggle — WAN 2.5 and Seedance 1.5 */}
+        {(model.id === "wan-2.5" || model.id === "seedance-1.5") && (() => {
+          const safetyOn = model.id === "wan-2.5" ? wan25SafetyChecker : seedance15SafetyChecker
+          const setSafety = model.id === "wan-2.5" ? setWan25SafetyChecker : setSeedance15SafetyChecker
+          return (
+            <button
+              onClick={() => {
+                if (safetyOn) {
+                  setVideoAgeConfirmed(false)
+                  setVideoSafetyCallback(() => () => setSafety(false))
+                  setShowVideoSafetyModal(true)
+                } else {
+                  setSafety(true)
+                }
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all shrink-0 self-end mb-1 ${
+                safetyOn
+                  ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                  : "border-red-500/20 bg-red-500/[0.06] text-red-400 hover:bg-red-500/10"
+              }`}
+            >
+              <Eye size={11} />
+              Safety {safetyOn ? "ON" : "OFF"}
+            </button>
+          )
+        })()}
+
         {/* Generate button + meta */}
         <div className="flex flex-col items-end gap-1.5 shrink-0">
           {queueFull
@@ -6235,6 +6296,64 @@ function VideoPromptBar({
           </button>
         </div>
       </div>
+
+      {/* Age verification modal — shared for all video safety toggles */}
+      {showVideoSafetyModal && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowVideoSafetyModal(false)} />
+          <div className="relative w-full max-w-sm rounded-2xl border border-white/[0.1] bg-[#0e0e1a] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="h-1 w-full bg-gradient-to-r from-orange-500 to-red-500" />
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-9 h-9 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center shrink-0">
+                  <AlertTriangle size={18} className="text-orange-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Age Verification Required</h3>
+                  <p className="text-[11px] text-white/40 mt-0.5">Safety filter controls</p>
+                </div>
+              </div>
+              <p className="text-[12px] text-white/60 leading-relaxed mb-5">
+                Disabling the safety checker may allow the generation of content intended for mature audiences only. This feature is restricted to users 18 years of age or older.
+              </p>
+              <label className="flex items-start gap-2.5 mb-5 cursor-pointer group">
+                <div
+                  onClick={() => setVideoAgeConfirmed(v => !v)}
+                  className={`w-4 h-4 mt-0.5 rounded border flex items-center justify-center shrink-0 transition-all ${
+                    videoAgeConfirmed ? "bg-orange-500 border-orange-500" : "border-white/20 bg-white/5 group-hover:border-white/40"
+                  }`}
+                >
+                  {videoAgeConfirmed && <Check size={10} className="text-white" />}
+                </div>
+                <span className="text-[12px] text-white/70 leading-snug">I am 18 years of age or older and understand the implications of disabling the safety checker.</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowVideoSafetyModal(false)}
+                  className="flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-[12px] text-white/60 hover:bg-white/10 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={!videoAgeConfirmed}
+                  onClick={() => {
+                    videoSafetyCallback?.()
+                    setShowVideoSafetyModal(false)
+                  }}
+                  className={`flex-1 px-4 py-2 rounded-xl text-[12px] font-semibold transition-all ${
+                    videoAgeConfirmed
+                      ? "bg-gradient-to-r from-orange-500 to-red-500 text-white hover:opacity-90"
+                      : "bg-white/5 border border-white/10 text-white/25 cursor-not-allowed"
+                  }`}
+                >
+                  I Agree — Disable Safety
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
@@ -6855,6 +6974,8 @@ export default function PortalV2Page() {
   const [videoLipsyncAudioFilename, setVideoLipsyncAudioFilename] = useState<string | null>(null)
   const [videoLipsyncAudioUrl, setVideoLipsyncAudioUrl] = useState<string | null>(null)
   const [videoLipsyncSyncMode, setVideoLipsyncSyncMode] = useState<string>("cut_off")
+  const [wan25VideoSafetyChecker, setWan25VideoSafetyChecker] = useState(true)
+  const [seedance15VideoSafetyChecker, setSeedance15VideoSafetyChecker] = useState(true)
 
   const handleAddPending    = useCallback((slot: PendingSlot) => setPendingSlots(p => [slot, ...p]), [])
   const handleUpdatePending = useCallback((slotId: string, update: Partial<PendingSlot>) => {
@@ -7228,6 +7349,8 @@ export default function PortalV2Page() {
             lipsyncSyncMode:        videoLipsyncSyncMode,
             lipsyncVideoDurationSec: videoLipsyncVideoDuration,
           }),
+          ...(selectedVideoModel.id === "wan-2.5" ? { wan25SafetyChecker: wan25VideoSafetyChecker } : {}),
+          ...(selectedVideoModel.id === "seedance-1.5" ? { seedance15SafetyChecker: seedance15VideoSafetyChecker } : {}),
         }),
       })
       const data = await res.json()
@@ -7286,7 +7409,7 @@ export default function PortalV2Page() {
     } finally {
       setVideoGenerating(false)
     }
-  }, [videoStartFrameUrl, videoEndFrameUrl, videoDuration, videoResolution, videoAspectRatio, videoAudioEnabled, videoAudioUrl, selectedVideoModel, videoMotionVideoUrl, videoCharacterOrientation, videoKeepOriginalSound, videoMotionVideoDuration, videoSD20Mode, videoRefImageUrls, videoRefVideoUrls, videoRefAudioUrls, videoRefVideoDuration, videoLipsyncVideoUrl, videoLipsyncAudioUrl, videoLipsyncSyncMode, videoLipsyncVideoDuration])
+  }, [videoStartFrameUrl, videoEndFrameUrl, videoDuration, videoResolution, videoAspectRatio, videoAudioEnabled, videoAudioUrl, selectedVideoModel, videoMotionVideoUrl, videoCharacterOrientation, videoKeepOriginalSound, videoMotionVideoDuration, videoSD20Mode, videoRefImageUrls, videoRefVideoUrls, videoRefAudioUrls, videoRefVideoDuration, videoLipsyncVideoUrl, videoLipsyncAudioUrl, videoLipsyncSyncMode, videoLipsyncVideoDuration, wan25VideoSafetyChecker, seedance15VideoSafetyChecker])
 
   const applyVideoModel = useCallback((model: VideoModelConfig) => {
     setSelectedVideoModel(model)
@@ -8480,6 +8603,10 @@ export default function PortalV2Page() {
             onMotionVideoDurationChange={setVideoMotionVideoDuration}
             motionPromptText={videoMotionPromptText}
             lipsyncVideoDuration={videoLipsyncVideoDuration}
+            wan25SafetyChecker={wan25VideoSafetyChecker}
+            setWan25SafetyChecker={setWan25VideoSafetyChecker}
+            seedance15SafetyChecker={seedance15VideoSafetyChecker}
+            setSeedance15SafetyChecker={setSeedance15VideoSafetyChecker}
           />
 
           {/* Mobile: Config bottom drawer */}

@@ -67,6 +67,10 @@ export async function POST(request: NextRequest) {
       lipsyncAudioUrl,
       lipsyncSyncMode = 'cut_off',
       lipsyncVideoDurationSec = 0,
+      // WAN 2.5 safety
+      wan25SafetyChecker = true,
+      // Seedance 1.5 safety
+      seedance15SafetyChecker = true,
     } = await request.json();
 
     const isSD20Family = model === 'seedance-2.0' || model === 'seedance-2.0-fast'
@@ -222,7 +226,7 @@ export async function POST(request: NextRequest) {
         resolution,
         duration: String(duration),
         generate_audio: generateAudio,
-        enable_safety_checker: false,
+        enable_safety_checker: seedance15SafetyChecker === true,
       };
       if (imageUrl) falInput.image_url = imageUrl;
       if (endImageUrl) falInput.end_image_url = endImageUrl;
@@ -266,7 +270,7 @@ export async function POST(request: NextRequest) {
         resolution,
         duration,
         enable_prompt_expansion: true,
-        enable_safety_checker: false,
+        enable_safety_checker: wan25SafetyChecker === true,
       };
       if (audioUrl) falInput.audio_url = audioUrl;
     }
