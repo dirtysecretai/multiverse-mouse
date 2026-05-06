@@ -3168,8 +3168,10 @@ function PromptBox({
   const [outputFormat, setOutputFormat] = useState<"png" | "jpeg" | "webp">("png")
   const [imageCount, setImageCount] = useState<number>(1)
   const [seedreamSafetyChecker, setSeedreamSafetyChecker] = useState(true)
+  const [wanSafetyChecker, setWanSafetyChecker] = useState(true)
   const [showSafetyModal, setShowSafetyModal] = useState(false)
   const [safetyAgeConfirmed, setSafetyAgeConfirmed] = useState(false)
+  const [safetyConfirmCallback, setSafetyConfirmCallback] = useState<(() => void) | null>(null)
   const [loraJobs, setLoraJobs] = useState<Array<{ id: number; name: string; loraUrl: string; custom?: boolean; triggerWord?: string }>>([])
   const [selectedLoraUrl, setSelectedLoraUrl] = useState<string | null>(null)
   const [loraScale, setLoraScale] = useState(1.0)
@@ -3581,6 +3583,7 @@ function PromptBox({
                 image_urls: imageUrls,
                 aspect_ratio: aspectRatio,
                 num_images: 1,
+                enable_safety_checker: wanSafetyChecker,
               }),
             })
             const submitData = await res.json()
@@ -4788,29 +4791,34 @@ function PromptBox({
             )}
 
             {/* Safety Checker toggle — SeeDream 4.5 only */}
-            {model.id === "seedream-4.5" && (
-              <>
-                <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
-                <button
-                  onClick={() => {
-                    if (seedreamSafetyChecker) {
-                      setSafetyAgeConfirmed(false)
-                      setShowSafetyModal(true)
-                    } else {
-                      setSeedreamSafetyChecker(true)
-                    }
-                  }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-all shrink-0 ${
-                    seedreamSafetyChecker
-                      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                      : "border-red-500/20 bg-red-500/[0.06] text-red-400 hover:bg-red-500/10"
-                  }`}
-                >
-                  <Eye size={11} />
-                  Safety {seedreamSafetyChecker ? "ON" : "OFF"}
-                </button>
-              </>
-            )}
+            {(model.id === "seedream-4.5" || model.id === "wan-2.7-pro") && (() => {
+              const safetyOn = model.id === "seedream-4.5" ? seedreamSafetyChecker : wanSafetyChecker
+              const setSafety = model.id === "seedream-4.5" ? setSeedreamSafetyChecker : setWanSafetyChecker
+              return (
+                <>
+                  <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
+                  <button
+                    onClick={() => {
+                      if (safetyOn) {
+                        setSafetyAgeConfirmed(false)
+                        setSafetyConfirmCallback(() => () => setSafety(false))
+                        setShowSafetyModal(true)
+                      } else {
+                        setSafety(true)
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-all shrink-0 ${
+                      safetyOn
+                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                        : "border-red-500/20 bg-red-500/[0.06] text-red-400 hover:bg-red-500/10"
+                    }`}
+                  >
+                    <Eye size={11} />
+                    Safety {safetyOn ? "ON" : "OFF"}
+                  </button>
+                </>
+              )
+            })()}
 
             {/* Generate button — own row on mobile, pushed right on desktop */}
             <div className="hidden sm:block sm:flex-1" />
@@ -4897,7 +4905,7 @@ function PromptBox({
                 <button
                   disabled={!safetyAgeConfirmed}
                   onClick={() => {
-                    setSeedreamSafetyChecker(false)
+                    safetyConfirmCallback?.()
                     setShowSafetyModal(false)
                   }}
                   className="flex-1 py-2 rounded-lg text-[12px] font-semibold bg-orange-500/10 border border-orange-500/30 text-orange-400 hover:bg-orange-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"

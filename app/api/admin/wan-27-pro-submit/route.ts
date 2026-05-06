@@ -39,6 +39,7 @@ export async function POST(req: Request) {
       image_urls,          // array of hosted URLs or base64 data URIs (edit mode)
       aspect_ratio = '16:9',
       num_images = 1,
+      enable_safety_checker = true,
     } = await req.json()
 
     if (!prompt?.trim()) {
@@ -51,8 +52,7 @@ export async function POST(req: Request) {
     const input: Record<string, unknown> = {
       prompt: prompt.trim(),
       image_size: imageSize,
-      enable_safety_checker: false,
-      safety_tolerance: 6,
+      enable_safety_checker: enable_safety_checker === true,
     }
 
     if (Array.isArray(image_urls) && image_urls.length > 0) {
