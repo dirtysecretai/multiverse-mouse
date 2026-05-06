@@ -701,7 +701,7 @@ export default function AdminUsersPage() {
             <ArrowUpDown size={16} className="text-cyan-400" />
             <span className="text-sm font-bold text-white">Sort By (Highest to Lowest):</span>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mb-4">
             <Button
               onClick={() => setSortBy('totalSpent')}
               className={`text-sm ${sortBy === 'totalSpent' ? 'bg-green-500 text-white' : 'bg-slate-800 text-slate-300'}`}
@@ -730,6 +730,43 @@ export default function AdminUsersPage() {
               <Ticket size={14} className="mr-1" />
               Tickets Used
             </Button>
+          </div>
+
+          <div className="border-t border-slate-800 pt-3">
+            <p className="text-xs text-slate-500 mb-2 font-bold uppercase tracking-wide">Filter:</p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => setFilterTier(filterTier === 'dev' ? 'all' : 'dev')}
+                className={`text-sm ${filterTier === 'dev' ? 'bg-cyan-500 text-black' : 'bg-slate-800 text-slate-300'}`}
+              >
+                <Crown size={14} className="mr-1" />
+                Dev Tier Active
+                {filterTier === 'dev' && (
+                  <span className="ml-1.5 text-[10px] bg-black/20 px-1.5 py-0.5 rounded-full">
+                    {filteredUsers.length}
+                  </span>
+                )}
+              </Button>
+              <Button
+                onClick={() => setFilterTier(filterTier === 'free' ? 'all' : 'free')}
+                className={`text-sm ${filterTier === 'free' ? 'bg-slate-500 text-white' : 'bg-slate-800 text-slate-300'}`}
+              >
+                Free Tier Only
+                {filterTier === 'free' && (
+                  <span className="ml-1.5 text-[10px] bg-black/20 px-1.5 py-0.5 rounded-full">
+                    {filteredUsers.length}
+                  </span>
+                )}
+              </Button>
+              {filterTier !== 'all' && (
+                <Button
+                  onClick={() => setFilterTier('all')}
+                  className="text-sm bg-slate-800 text-slate-400 hover:text-white"
+                >
+                  <X size={13} className="mr-1" /> Clear Filter
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
