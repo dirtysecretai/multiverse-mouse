@@ -3166,7 +3166,9 @@ function PromptBox({
   const [quality, setQuality] = useState<Quality>("2k")
   const [outputFormat, setOutputFormat] = useState<"png" | "jpeg" | "webp">("png")
   const [imageCount, setImageCount] = useState<number>(1)
-  const [seedreamSafetyChecker, setSeedreamSafetyChecker] = useState(false)
+  const [seedreamSafetyChecker, setSeedreamSafetyChecker] = useState(true)
+  const [showSafetyModal, setShowSafetyModal] = useState(false)
+  const [safetyAgeConfirmed, setSafetyAgeConfirmed] = useState(false)
   const [loraJobs, setLoraJobs] = useState<Array<{ id: number; name: string; loraUrl: string; custom?: boolean; triggerWord?: string }>>([])
   const [selectedLoraUrl, setSelectedLoraUrl] = useState<string | null>(null)
   const [loraScale, setLoraScale] = useState(1.0)
@@ -4789,11 +4791,18 @@ function PromptBox({
               <>
                 <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
                 <button
-                  onClick={() => setSeedreamSafetyChecker(v => !v)}
+                  onClick={() => {
+                    if (seedreamSafetyChecker) {
+                      setSafetyAgeConfirmed(false)
+                      setShowSafetyModal(true)
+                    } else {
+                      setSeedreamSafetyChecker(true)
+                    }
+                  }}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-all shrink-0 ${
                     seedreamSafetyChecker
                       ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                      : "border-white/10 bg-white/5 text-slate-500 hover:border-white/20 hover:text-slate-300"
+                      : "border-red-500/20 bg-red-500/[0.06] text-red-400 hover:bg-red-500/10"
                   }`}
                 >
                   <Eye size={11} />
@@ -4838,6 +4847,67 @@ function PromptBox({
         onClose={() => setShowPresets(false)}
         onLoad={handleLoadPreset}
       />
+
+      {/* Age verification modal — shown when user tries to disable safety checker */}
+      {showSafetyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowSafetyModal(false)} />
+          <div className="relative w-full max-w-sm rounded-2xl border border-white/[0.1] bg-[#0e0e1a] shadow-2xl overflow-hidden">
+            {/* Header stripe */}
+            <div className="h-1 w-full bg-gradient-to-r from-orange-500 to-red-500" />
+            <div className="p-6">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-9 h-9 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                  <AlertTriangle size={16} className="text-orange-400" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white leading-tight">Age Verification Required</h2>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Disabling the safety checker</p>
+                </div>
+              </div>
+
+              <p className="text-[12px] text-slate-400 leading-relaxed mb-4">
+                Turning off the safety checker may allow the generation of content that is not suitable for minors. You must be at least <span className="text-white font-semibold">18 years of age</span> to disable this setting.
+              </p>
+
+              <label className="flex items-start gap-3 mb-5 cursor-pointer group">
+                <div
+                  onClick={() => setSafetyAgeConfirmed(v => !v)}
+                  className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                    safetyAgeConfirmed
+                      ? "bg-orange-500 border-orange-500"
+                      : "border-white/20 bg-white/[0.04] group-hover:border-white/40"
+                  }`}
+                >
+                  {safetyAgeConfirmed && <Check size={10} className="text-white" />}
+                </div>
+                <span className="text-[12px] text-slate-300 leading-relaxed">
+                  I confirm that I am <span className="text-white font-semibold">18 years of age or older</span> and I understand that disabling the safety checker may expose adult or sensitive content.
+                </span>
+              </label>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowSafetyModal(false)}
+                  className="flex-1 py-2 rounded-lg text-[12px] font-semibold border border-white/10 bg-white/[0.04] text-slate-400 hover:text-white hover:bg-white/[0.07] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={!safetyAgeConfirmed}
+                  onClick={() => {
+                    setSeedreamSafetyChecker(false)
+                    setShowSafetyModal(false)
+                  }}
+                  className="flex-1 py-2 rounded-lg text-[12px] font-semibold bg-orange-500/10 border border-orange-500/30 text-orange-400 hover:bg-orange-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  I Agree — Disable Safety
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
