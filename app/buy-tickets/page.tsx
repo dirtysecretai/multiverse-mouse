@@ -60,14 +60,21 @@ export default function BuyTicketsPage() {
   const [purchasing, setPurchasing] = useState(false)
   const [purchaseError, setPurchaseError] = useState<string | null>(null)
   const [successTickets, setSuccessTickets] = useState<number | null>(null)
+  const [dispenserDown, setDispenserDown] = useState(false)
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const res = await fetch('/api/auth/session')
-        const data = await res.json()
+        const [sessionRes, configRes] = await Promise.all([
+          fetch('/api/auth/session'),
+          fetch('/api/admin/config'),
+        ])
+        const data = await sessionRes.json()
         if (!data.authenticated) { router.push('/login'); return }
-        // Fetch real-time ticket balance — session value may be stale from login
+        if (configRes.ok) {
+          const cfg = await configRes.json()
+          if (cfg.ticketDispenserMaintenance) setDispenserDown(true)
+        }
         const ticketRes = await fetch(`/api/user/tickets?userId=${data.user.id}`)
         const ticketData = await ticketRes.json()
         const liveBalance = ticketData.success ? ticketData.balance : data.user.ticketBalance
@@ -374,37 +381,50 @@ export default function BuyTicketsPage() {
               </label>
 
               {/* ── Dispense button ── */}
-              {purchaseError && (
-                <p className="text-xs text-red-400 text-center bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
-                  {purchaseError}
-                </p>
+              {dispenserDown ? (
+                <div className="space-y-3">
+                  <div className="w-full py-4 rounded-xl border-2 border-orange-500/30 bg-orange-500/5 text-center cursor-not-allowed">
+                    <p className="font-black text-base tracking-widest text-orange-400">COMING SOON</p>
+                    <p className="text-[10px] font-normal mt-0.5 text-orange-400/50">Ticket purchasing is temporarily unavailable</p>
+                  </div>
+                  <p className="text-xs text-slate-600 text-center leading-relaxed">
+                    We're setting up a new payment system. Check back soon — your existing tickets are unaffected.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {purchaseError && (
+                    <p className="text-xs text-red-400 text-center bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                      {purchaseError}
+                    </p>
+                  )}
+                  <button
+                    onClick={handleDispense}
+                    disabled={!acceptedTOS || purchasing}
+                    className={`w-full py-4 rounded-xl font-black text-base tracking-widest transition-all ${
+                      !acceptedTOS
+                        ? 'cursor-not-allowed bg-slate-900 border-2 border-slate-800 text-slate-600'
+                        : purchasing
+                        ? 'cursor-wait bg-slate-800 border-2 border-cyan-500/50 text-cyan-400 animate-pulse'
+                        : 'cursor-pointer bg-gradient-to-r from-cyan-500 to-fuchsia-500 border-2 border-cyan-400/50 text-black hover:shadow-lg hover:shadow-cyan-500/30 active:scale-[0.99]'
+                    }`}
+                  >
+                    {purchasing ? 'REDIRECTING TO CHECKOUT...' : 'DISPENSE TICKETS'}
+                    <span className={`block text-[10px] font-normal mt-0.5 tracking-normal ${
+                      !acceptedTOS ? 'text-slate-700' : purchasing ? 'text-cyan-600' : 'text-black/60'
+                    }`}>
+                      {purchasing
+                        ? 'Opening secure checkout...'
+                        : !acceptedTOS
+                        ? 'Accept the terms above to continue'
+                        : `${selected.tickets} tickets · $${price.toFixed(2)}`}
+                    </span>
+                  </button>
+                  <p className="text-[9px] text-slate-800 text-center font-mono tracking-widest uppercase">
+                    All transactions encrypted · Powered by LemonSqueezy
+                  </p>
+                </>
               )}
-              <button
-                onClick={handleDispense}
-                disabled={!acceptedTOS || purchasing}
-                className={`w-full py-4 rounded-xl font-black text-base tracking-widest transition-all ${
-                  !acceptedTOS
-                    ? 'cursor-not-allowed bg-slate-900 border-2 border-slate-800 text-slate-600'
-                    : purchasing
-                    ? 'cursor-wait bg-slate-800 border-2 border-cyan-500/50 text-cyan-400 animate-pulse'
-                    : 'cursor-pointer bg-gradient-to-r from-cyan-500 to-fuchsia-500 border-2 border-cyan-400/50 text-black hover:shadow-lg hover:shadow-cyan-500/30 active:scale-[0.99]'
-                }`}
-              >
-                {purchasing ? 'REDIRECTING TO CHECKOUT...' : 'DISPENSE TICKETS'}
-                <span className={`block text-[10px] font-normal mt-0.5 tracking-normal ${
-                  !acceptedTOS ? 'text-slate-700' : purchasing ? 'text-cyan-600' : 'text-black/60'
-                }`}>
-                  {purchasing
-                    ? 'Opening secure checkout...'
-                    : !acceptedTOS
-                    ? 'Accept the terms above to continue'
-                    : `${selected.tickets} tickets · $${price.toFixed(2)}`}
-                </span>
-              </button>
-
-              <p className="text-[9px] text-slate-800 text-center font-mono tracking-widest uppercase">
-                All transactions encrypted · Powered by LemonSqueezy
-              </p>
             </div>
           </div>
         </div>

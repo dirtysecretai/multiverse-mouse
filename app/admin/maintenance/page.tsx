@@ -1,509 +1,509 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import {
-  Terminal, RefreshCw, AlertTriangle, Wrench, ArrowLeft, Sparkles
+  Wrench, RefreshCw, ChevronLeft, ChevronDown, ChevronRight,
+  Zap, Globe, Ticket, Monitor, Layers, Film, Box, Sparkles, Terminal, Loader2
 } from "lucide-react"
 
-// Model definitions
 const MODELS = [
-  { id: 'nanoBanana', name: 'NanoBanana', color: 'cyan', icon: '⚡' },
-  { id: 'nanoBananaPro', name: 'NanoBanana Pro', color: 'purple', icon: '✨' },
-  { id: 'seedream', name: 'SeeDream 4.5', color: 'orange', icon: '🌟' },
-  { id: 'flux2', name: 'FLUX 2', color: 'blue', icon: '🔥' },
-  { id: 'proScannerV3', name: 'Pro Scanner v3', color: 'fuchsia', icon: '💎' },
-  { id: 'flashScannerV25', name: 'Flash Scanner v2.5', color: 'emerald', icon: '⚡' },
+  { id: 'nanoBanana',      name: 'NanoBanana',       emoji: '⚡' },
+  { id: 'nanoBananaPro',   name: 'NB Pro',            emoji: '✨' },
+  { id: 'seedream',        name: 'SeeDream',          emoji: '🌟' },
+  { id: 'flux2',           name: 'FLUX 2',            emoji: '🔥' },
+  { id: 'proScannerV3',    name: 'Pro Scanner v3',    emoji: '💎' },
+  { id: 'flashScannerV25', name: 'Flash v2.5',        emoji: '⚡' },
 ]
 
 const SCANNERS = [
-  { id: 'mainScanner', name: 'Main Scanner', path: 'multiverse-portal.tsx' },
-  { id: 'legacyScanner', name: 'Legacy Scanner', path: 'prompting-studio/legacy' },
-  { id: 'adminScanner', name: 'Admin Scanner', path: 'admin/scanner' },
-  { id: 'canvasScanner', name: 'Canvas Scanner', path: 'prompting-studio/canvas' },
+  { id: 'mainScanner',   name: 'Main Scanner',         path: 'multiverse-portal' },
+  { id: 'legacyScanner', name: 'Legacy Scanner',        path: 'prompting-studio/legacy' },
+  { id: 'adminScanner',  name: 'Admin Scanner',         path: 'admin/scanner' },
+  { id: 'canvasScanner', name: 'Canvas Scanner',        path: 'prompting-studio/canvas' },
 ]
 
 interface AdminState {
   isMaintenanceMode: boolean
   aiGenerationMaintenance: boolean
   echoChamberMaintenance: boolean
-
-  // Scanner-level maintenance
+  ticketDispenserMaintenance: boolean
   mainScannerMaintenance: boolean
   legacyScannerMaintenance: boolean
   adminScannerMaintenance: boolean
   canvasScannerMaintenance: boolean
   videoScannerMaintenance: boolean
-
-  // Video scanner model maintenance
+  compositionCanvasMaintenance: boolean
   klingV3Maintenance: boolean
   wan25Maintenance: boolean
-  compositionCanvasMaintenance: boolean
-
-  // Per-scanner, per-model maintenance
   [key: string]: boolean
 }
+
+const DEFAULT_STATE: AdminState = {
+  isMaintenanceMode: false,
+  aiGenerationMaintenance: false,
+  echoChamberMaintenance: false,
+  ticketDispenserMaintenance: false,
+  mainScannerMaintenance: false,
+  legacyScannerMaintenance: false,
+  adminScannerMaintenance: false,
+  canvasScannerMaintenance: false,
+  videoScannerMaintenance: false,
+  compositionCanvasMaintenance: false,
+  klingV3Maintenance: false,
+  wan25Maintenance: false,
+}
+
+// ── Reusable compact toggle row ──────────────────────────────────────────────
+function ToggleRow({
+  label, sub, active, color = 'red', onToggle, danger = false,
+}: {
+  label: string; sub?: string; active: boolean; color?: 'red' | 'yellow' | 'orange' | 'cyan' | 'emerald'
+  onToggle: () => void; danger?: boolean
+}) {
+  const trackColor = {
+    red:     active ? 'bg-red-500'     : 'bg-white/[0.08]',
+    yellow:  active ? 'bg-yellow-500'  : 'bg-white/[0.08]',
+    orange:  active ? 'bg-orange-500'  : 'bg-white/[0.08]',
+    cyan:    active ? 'bg-cyan-500'    : 'bg-white/[0.08]',
+    emerald: active ? 'bg-emerald-500' : 'bg-white/[0.08]',
+  }[color]
+
+  const statusColor = {
+    red:     active ? 'text-red-400'     : 'text-emerald-400',
+    yellow:  active ? 'text-yellow-400'  : 'text-emerald-400',
+    orange:  active ? 'text-orange-400'  : 'text-emerald-400',
+    cyan:    active ? 'text-cyan-400'    : 'text-emerald-400',
+    emerald: active ? 'text-emerald-400' : 'text-slate-500',
+  }[color]
+
+  const dotColor = {
+    red:     active ? 'bg-red-500'     : 'bg-emerald-500',
+    yellow:  active ? 'bg-yellow-500'  : 'bg-emerald-500',
+    orange:  active ? 'bg-orange-500'  : 'bg-emerald-500',
+    cyan:    active ? 'bg-cyan-500'    : 'bg-emerald-500',
+    emerald: active ? 'bg-emerald-500' : 'bg-slate-600',
+  }[color]
+
+  return (
+    <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor} ${active && danger ? 'animate-pulse' : ''}`} />
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-white leading-none">{label}</p>
+          {sub && <p className="text-[11px] text-slate-600 mt-0.5 leading-none">{sub}</p>}
+        </div>
+      </div>
+      <div className="flex items-center gap-2.5 shrink-0 ml-3">
+        <span className={`text-[10px] font-bold uppercase tracking-wide ${statusColor}`}>
+          {active ? 'offline' : 'online'}
+        </span>
+        <button
+          onClick={onToggle}
+          className={`relative w-9 h-5 rounded-full transition-colors ${trackColor}`}
+        >
+          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${active ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Model chip ────────────────────────────────────────────────────────────────
+function ModelChip({ emoji, name, offline, onClick }: { emoji: string; name: string; offline: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center justify-between px-3 py-2 rounded-lg border text-left transition-all ${
+        offline
+          ? 'border-red-500/30 bg-red-500/[0.06] hover:bg-red-500/10'
+          : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04]'
+      }`}
+    >
+      <span className="text-xs font-medium text-white flex items-center gap-1.5">
+        <span className="text-sm leading-none">{emoji}</span>{name}
+      </span>
+      <span className={`text-[9px] font-bold uppercase ml-2 ${offline ? 'text-red-400' : 'text-emerald-400'}`}>
+        {offline ? 'off' : 'on'}
+      </span>
+    </button>
+  )
+}
+
+// ── Section card wrapper ───────────────────────────────────────────────────────
+function Section({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-xl border border-white/[0.07] bg-white/[0.015] overflow-hidden ${className}`}>
+      {children}
+    </div>
+  )
+}
+
+function SectionHeader({ icon: Icon, label, color = 'text-slate-500' }: { icon: any; label: string; color?: string }) {
+  return (
+    <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+      <Icon size={11} className={color} />
+      <p className={`text-[10px] font-bold uppercase tracking-widest ${color}`}>{label}</p>
+    </div>
+  )
+}
+
+function Divider() {
+  return <div className="mx-4 border-t border-white/[0.04]" />
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function MaintenancePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(true)
-  const [adminState, setAdminState] = useState<AdminState>({
-    isMaintenanceMode: false,
-    aiGenerationMaintenance: false,
-    echoChamberMaintenance: false,
-    mainScannerMaintenance: false,
-    legacyScannerMaintenance: false,
-    adminScannerMaintenance: false,
-    canvasScannerMaintenance: false,
-    videoScannerMaintenance: false,
-    klingV3Maintenance: false,
-    wan25Maintenance: false,
-    compositionCanvasMaintenance: false,
-  })
+  const [saving, setSaving] = useState(false)
+  const [adminState, setAdminState] = useState<AdminState>(DEFAULT_STATE)
+  const [expandedScanners, setExpandedScanners] = useState<Set<string>>(new Set())
 
   const fetchCloudData = useCallback(async () => {
     setIsLoading(true)
     try {
-      const configRes = await fetch('/api/admin/config')
-      if (configRes.ok) {
-        const configData = await configRes.json()
-        setAdminState(configData)
-      }
-    } catch (err) {
-      console.error("Sync failed:", err)
-    } finally {
-      setIsLoading(false)
-    }
+      const res = await fetch('/api/admin/config')
+      if (res.ok) setAdminState(await res.json())
+    } catch {}
+    finally { setIsLoading(false) }
   }, [])
 
   useEffect(() => {
-    const authStatus = localStorage.getItem("multiverse-admin-auth")
-    const savedPassword = sessionStorage.getItem("admin-password")
-
-    if (authStatus === "true" && savedPassword) {
-      setIsAuthenticated(true)
-      fetchCloudData()
-    } else {
-      localStorage.removeItem("multiverse-admin-auth")
-    }
+    const authed = localStorage.getItem("multiverse-admin-auth") === "true"
+    const pass = sessionStorage.getItem("admin-password")
+    if (authed && pass) { setIsAuthenticated(true); fetchCloudData() }
+    else { localStorage.removeItem("multiverse-admin-auth"); setIsLoading(false) }
   }, [fetchCloudData])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-
     try {
-      const response = await fetch('/api/admin/verify', {
+      const res = await fetch('/api/admin/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ password }),
       })
-
-      if (response.ok) {
+      if (res.ok) {
         sessionStorage.setItem("admin-password", password)
-        setIsAuthenticated(true)
         localStorage.setItem("multiverse-admin-auth", "true")
+        setIsAuthenticated(true)
         fetchCloudData()
       } else {
         alert("Invalid password")
       }
-    } catch (error) {
-      console.error("Auth error:", error)
-      alert("Authentication failed")
-    }
+    } catch { alert("Authentication failed") }
   }
 
   const updateAdminState = async (updates: Partial<AdminState>) => {
     const newState = { ...adminState, ...updates } as AdminState
     setAdminState(newState)
-
+    setSaving(true)
     try {
       await fetch('/api/admin/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newState),
       })
-    } catch (err) {
-      console.error("Cloud sync failed:", err)
-    }
+    } catch {}
+    finally { setSaving(false) }
   }
 
-  // Toggle a specific model for a specific scanner
+  const toggle = (key: keyof AdminState) => updateAdminState({ [key]: !adminState[key] })
+
   const toggleScannerModel = (scanner: string, model: string) => {
     const key = `${scanner}_${model}`
     updateAdminState({ [key]: !adminState[key] })
   }
 
-  // Toggle ALL models for a specific scanner
-  const toggleAllModels = (scanner: string) => {
-    const updates: Record<string, boolean> = {}
-
-    // Check if all models are currently offline
-    const allOffline = MODELS.every(model => adminState[`${scanner}_${model.id}`])
-
-    // Toggle all models to the opposite state
-    MODELS.forEach(model => {
-      updates[`${scanner}_${model.id}`] = !allOffline
+  const toggleModelGlobally = (model: string) => {
+    const currentValue = adminState[`mainScanner_${model}`]
+    updateAdminState({
+      [`mainScanner_${model}`]:   !currentValue,
+      [`legacyScanner_${model}`]: !currentValue,
+      [`adminScanner_${model}`]:  !currentValue,
+      [`canvasScanner_${model}`]: !currentValue,
     })
+  }
 
+  const toggleAllModelsForScanner = (scannerId: string) => {
+    const allOff = MODELS.every(m => adminState[`${scannerId}_${m.id}`])
+    const updates: Record<string, boolean> = {}
+    MODELS.forEach(m => { updates[`${scannerId}_${m.id}`] = !allOff })
     updateAdminState(updates)
   }
 
-  // Toggle a model globally (for all 4 scanners: Main, Legacy, Admin, Canvas)
-  const toggleModelGlobally = (model: string) => {
-    const currentValue = adminState[`mainScanner_${model}`]
-    const newValue = !currentValue
+  const isModelGloballyOff = (modelId: string) =>
+    !!adminState[`mainScanner_${modelId}`] &&
+    !!adminState[`legacyScanner_${modelId}`] &&
+    !!adminState[`adminScanner_${modelId}`] &&
+    !!adminState[`canvasScanner_${modelId}`]
 
-    updateAdminState({
-      [`mainScanner_${model}`]: newValue,
-      [`legacyScanner_${model}`]: newValue,
-      [`adminScanner_${model}`]: newValue,
-      [`canvasScanner_${model}`]: newValue,
+  const toggleExpanded = (id: string) =>
+    setExpandedScanners(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
     })
-  }
 
-  // Check if a model is globally enabled (all 4 scanners have same state)
-  const isModelGloballyEnabled = (model: string) => {
-    const main = adminState[`mainScanner_${model}`]
-    const legacy = adminState[`legacyScanner_${model}`]
-    const admin = adminState[`adminScanner_${model}`]
-    const canvas = adminState[`canvasScanner_${model}`]
-    return main && legacy && admin && canvas
-  }
-
+  // ── Login screen ─────────────────────────────────────────────────────────────
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#050810] flex items-center justify-center p-6">
-        <div className="w-full max-w-md p-8 rounded-2xl border-2 border-cyan-500/30 bg-slate-900/80 backdrop-blur-sm">
-          <div className="text-center mb-8">
-            <Terminal className="mx-auto text-cyan-400 mb-4" size={48} />
-            <h1 className="text-2xl font-black text-cyan-400">ADMIN_ACCESS</h1>
-            <p className="text-sm text-slate-500 mt-2">Authorized personnel only</p>
+      <div className="min-h-screen bg-[#09090f] flex items-center justify-center p-6">
+        <div className="w-full max-w-sm">
+          <div className="flex items-center gap-2 justify-center mb-6">
+            <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+              <Wrench size={14} className="text-orange-400" />
+            </div>
+            <span className="text-sm font-bold text-white">Maintenance Control</span>
           </div>
-          <form onSubmit={handleLogin}>
-            <Input
-              type="password"
-              placeholder="Enter password..."
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="bg-slate-950 border-slate-700 text-white mb-4"
-            />
-            <Button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold">
-              AUTHENTICATE
-            </Button>
-          </form>
+          <Section>
+            <form onSubmit={handleLogin} className="p-4 space-y-3">
+              <Input
+                type="password"
+                placeholder="Admin password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-600 h-9 text-sm"
+              />
+              <Button type="submit" className="w-full h-9 bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 text-sm font-bold">
+                Authenticate
+              </Button>
+            </form>
+          </Section>
         </div>
       </div>
     )
   }
 
+  // ── Main page ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#050810] relative overflow-hidden">
-      <div className="fixed inset-0 bg-[linear-gradient(rgba(0,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
-      <div className="fixed top-20 left-20 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl" />
-      <div className="fixed bottom-20 right-20 w-96 h-96 bg-fuchsia-500/5 rounded-full blur-3xl" />
+    <div className="min-h-screen bg-[#09090f] relative">
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] bg-orange-500/[0.025] rounded-full blur-3xl pointer-events-none" />
 
-      <div className="relative z-10 p-6 max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500 flex items-center gap-3">
-              <Wrench size={32} /> MAINTENANCE_CONTROL
-            </h1>
-            <p className="text-slate-500 text-sm mt-1">Per-scanner, per-model maintenance system</p>
-          </div>
-          <div className="flex gap-2">
-            <Button
+      <div className="relative z-10 max-w-2xl mx-auto px-5 py-8">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <button
               onClick={() => window.location.href = '/admin'}
-              className="bg-slate-700 hover:bg-slate-600 text-white"
+              className="w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.07] flex items-center justify-center hover:bg-white/[0.07] transition-colors text-slate-400 hover:text-white"
             >
-              <ArrowLeft size={16} className="mr-2" /> Back
-            </Button>
-            <Button onClick={fetchCloudData} disabled={isLoading} className="bg-cyan-500 hover:bg-cyan-400 text-black">
-              <RefreshCw className={isLoading ? 'animate-spin' : ''} size={16} />
-            </Button>
-          </div>
-        </div>
-
-        {/* AI Generation Kill Switch */}
-        <div className="mb-6">
-          <div className={`p-6 rounded-xl border-2 ${adminState.aiGenerationMaintenance ? 'border-red-500 bg-red-500/15' : 'border-slate-700 bg-slate-900/40'}`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-3">
-                <div className={`w-4 h-4 rounded-full ${adminState.aiGenerationMaintenance ? 'bg-red-500 animate-pulse' : 'bg-slate-600'}`} />
-                <span className="font-black text-white text-xl tracking-wide">KILL ALL GENERATION</span>
-              </div>
-              <button
-                onClick={() => updateAdminState({ aiGenerationMaintenance: !adminState.aiGenerationMaintenance })}
-                className={`relative w-20 h-10 rounded-full transition-all ${
-                  adminState.aiGenerationMaintenance ? 'bg-red-600' : 'bg-slate-600'
-                }`}
-              >
-                <div className={`absolute top-1 w-8 h-8 bg-white rounded-full transition-transform shadow-lg ${
-                  adminState.aiGenerationMaintenance ? 'left-11' : 'left-1'
-                }`} />
-              </button>
+              <ChevronLeft size={15} />
+            </button>
+            <div className="w-9 h-9 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+              <Wrench size={16} className="text-orange-400" />
             </div>
-            <p className="text-sm text-slate-400 mt-1">
-              {adminState.aiGenerationMaintenance
-                ? '🔴 ALL generation blocked — FAL.ai and Gemini calls are rejected. Portal shows maintenance overlay.'
-                : '🟢 Generation active — FAL.ai and Gemini calls are allowed.'}
-            </p>
-          </div>
-        </div>
-
-        {/* Master Maintenance Toggle */}
-        <div className="mb-8">
-          <div className={`p-6 rounded-xl border-2 ${adminState.isMaintenanceMode ? 'border-yellow-500/50 bg-yellow-500/10' : 'border-slate-800 bg-slate-900/40'}`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <AlertTriangle size={24} className={adminState.isMaintenanceMode ? 'text-yellow-400' : 'text-slate-600'} />
-                <span className="font-bold text-white text-lg">GLOBAL MAINTENANCE MODE</span>
-              </div>
-              <button
-                onClick={() => updateAdminState({ isMaintenanceMode: !adminState.isMaintenanceMode })}
-                className={`relative w-16 h-8 rounded-full transition-all ${
-                  adminState.isMaintenanceMode ? 'bg-yellow-500' : 'bg-slate-600'
-                }`}
-              >
-                <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${
-                  adminState.isMaintenanceMode ? 'left-9' : 'left-1'
-                }`} />
-              </button>
+            <div>
+              <h1 className="text-lg font-bold text-white leading-none">Maintenance</h1>
+              <p className="text-[11px] text-slate-600 mt-0.5">Feature & model toggles</p>
             </div>
-            <p className="text-sm text-slate-400">{adminState.isMaintenanceMode ? 'Site is locked - users cannot access' : 'All systems operational'}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {saving && <Loader2 size={13} className="text-slate-600 animate-spin" />}
+            <button
+              onClick={fetchCloudData}
+              disabled={isLoading}
+              className="w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.07] flex items-center justify-center hover:bg-white/[0.07] transition-colors text-slate-400 hover:text-white disabled:opacity-40"
+            >
+              <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+            </button>
           </div>
         </div>
 
-        {/* Global Models Maintenance */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold text-fuchsia-400 mb-4 font-mono flex items-center gap-2">
-            <Sparkles size={20} /> GLOBAL_MODELS_MAINTENANCE
-          </h2>
-          <p className="text-xs text-slate-500 mb-4">Toggle models across all 4 scanners (Main, Legacy, Admin, Canvas)</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {MODELS.map((model) => {
-              const isEnabled = isModelGloballyEnabled(model.id)
-              return (
-                <button
-                  key={model.id}
-                  onClick={() => toggleModelGlobally(model.id)}
-                  className={`p-4 rounded-xl border-2 transition-all ${
-                    isEnabled
-                      ? 'border-red-500 bg-red-500/20'
-                      : 'border-green-500 bg-green-500/10'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-2xl">{model.icon}</span>
-                    <div className={`w-3 h-3 rounded-full ${isEnabled ? 'bg-red-500' : 'bg-green-500'}`} />
-                  </div>
-                  <div className="text-left">
-                    <p className="font-bold text-white text-sm">{model.name}</p>
-                    <p className="text-xs text-slate-400 mt-1">
-                      {isEnabled ? 'OFFLINE (Global)' : 'ONLINE'}
-                    </p>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        </div>
+        <div className="space-y-4">
 
-        {/* Video Scanner Controls */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold text-orange-400 mb-4 font-mono flex items-center gap-2">
-            <Wrench size={20} /> VIDEO_SCANNER_CONTROLS
-          </h2>
-          <div className="p-6 rounded-xl bg-slate-900/60 backdrop-blur-sm border border-slate-800">
-            {/* Scanner-level toggle */}
-            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-800">
-              <div>
-                <h3 className="text-lg font-bold text-white">Video Scanner</h3>
-                <p className="text-xs text-slate-500">app/video-scanner</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className={`text-xs font-bold ${adminState.videoScannerMaintenance ? 'text-red-400' : 'text-green-400'}`}>
-                  {adminState.videoScannerMaintenance ? 'OFFLINE' : 'ONLINE'}
-                </span>
-                <button
-                  onClick={() => updateAdminState({ videoScannerMaintenance: !adminState.videoScannerMaintenance })}
-                  className={`relative w-14 h-7 rounded-full transition-all ${
-                    adminState.videoScannerMaintenance ? 'bg-red-500' : 'bg-green-500'
-                  }`}
-                >
-                  <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
-                    adminState.videoScannerMaintenance ? 'left-8' : 'left-1'
-                  }`} />
-                </button>
-              </div>
-            </div>
+          {/* ── Global Controls ── */}
+          <Section>
+            <SectionHeader icon={Globe} label="Global Controls" color="text-slate-500" />
+            <ToggleRow
+              label="Kill All Generation"
+              sub="Blocks all FAL.ai and Gemini calls site-wide"
+              active={adminState.aiGenerationMaintenance}
+              color="red"
+              danger
+              onToggle={() => toggle('aiGenerationMaintenance')}
+            />
+            <Divider />
+            <ToggleRow
+              label="Global Maintenance Mode"
+              sub="Locks the site — users cannot access any page"
+              active={adminState.isMaintenanceMode}
+              color="yellow"
+              danger
+              onToggle={() => toggle('isMaintenanceMode')}
+            />
+            <Divider />
+            <ToggleRow
+              label="Ticket Dispenser"
+              sub="buy-tickets page — replaces button with Coming Soon"
+              active={adminState.ticketDispenserMaintenance}
+              color="orange"
+              onToggle={() => toggle('ticketDispenserMaintenance')}
+            />
+            <div className="h-1" />
+          </Section>
 
-            {/* Per-model toggles */}
-            <p className="text-xs text-slate-500 mb-3 uppercase tracking-wider font-bold">Model Controls</p>
-            <div className="grid grid-cols-2 gap-3">
+          {/* ── Scanners ── */}
+          <Section>
+            <SectionHeader icon={Monitor} label="Scanners" color="text-slate-500" />
+            <ToggleRow
+              label="Main Scanner"
+              sub="multiverse-portal"
+              active={adminState.mainScannerMaintenance}
+              color="red"
+              onToggle={() => toggle('mainScannerMaintenance')}
+            />
+            <Divider />
+            <ToggleRow
+              label="Legacy Scanner"
+              sub="prompting-studio/legacy"
+              active={adminState.legacyScannerMaintenance}
+              color="red"
+              onToggle={() => toggle('legacyScannerMaintenance')}
+            />
+            <Divider />
+            <ToggleRow
+              label="Admin Scanner"
+              sub="admin/scanner"
+              active={adminState.adminScannerMaintenance}
+              color="red"
+              onToggle={() => toggle('adminScannerMaintenance')}
+            />
+            <Divider />
+            <ToggleRow
+              label="Canvas Scanner"
+              sub="prompting-studio/canvas"
+              active={adminState.canvasScannerMaintenance}
+              color="red"
+              onToggle={() => toggle('canvasScannerMaintenance')}
+            />
+            <Divider />
+            <ToggleRow
+              label="Video Scanner"
+              sub="video-scanner"
+              active={adminState.videoScannerMaintenance}
+              color="red"
+              onToggle={() => toggle('videoScannerMaintenance')}
+            />
+            <Divider />
+            <ToggleRow
+              label="Composition Canvas"
+              sub="composition-canvas"
+              active={adminState.compositionCanvasMaintenance}
+              color="red"
+              onToggle={() => toggle('compositionCanvasMaintenance')}
+            />
+            <div className="h-1" />
+          </Section>
+
+          {/* ── Video Scanner Models ── */}
+          <Section>
+            <SectionHeader icon={Film} label="Video Scanner Models" color="text-slate-500" />
+            <div className="px-4 pb-4 pt-1 grid grid-cols-2 gap-2">
               {[
-                { id: 'klingV3Maintenance', name: 'Kling 3.0', icon: '🎬' },
-                { id: 'wan25Maintenance', name: 'WAN 2.5', icon: '🌊' },
-              ].map((model) => {
-                const isOffline = adminState[model.id]
+                { id: 'klingV3Maintenance', name: 'Kling 3.0', emoji: '🎬' },
+                { id: 'wan25Maintenance',   name: 'WAN 2.5',   emoji: '🌊' },
+              ].map(m => (
+                <ModelChip
+                  key={m.id}
+                  emoji={m.emoji}
+                  name={m.name}
+                  offline={adminState[m.id]}
+                  onClick={() => toggle(m.id as keyof AdminState)}
+                />
+              ))}
+            </div>
+          </Section>
+
+          {/* ── Global Model Toggles ── */}
+          <Section>
+            <SectionHeader icon={Sparkles} label="Image Models — All Scanners" color="text-slate-500" />
+            <p className="px-4 pb-2 text-[11px] text-slate-600">Toggles apply to Main, Legacy, Admin, and Canvas scanners simultaneously.</p>
+            <div className="px-4 pb-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {MODELS.map(m => (
+                <ModelChip
+                  key={m.id}
+                  emoji={m.emoji}
+                  name={m.name}
+                  offline={!!isModelGloballyOff(m.id)}
+                  onClick={() => toggleModelGlobally(m.id)}
+                />
+              ))}
+            </div>
+          </Section>
+
+          {/* ── Per-Scanner Model Controls ── */}
+          <Section>
+            <SectionHeader icon={Layers} label="Per-Scanner Model Controls" color="text-slate-500" />
+            <div className="pb-2">
+              {SCANNERS.map((scanner, i) => {
+                const expanded = expandedScanners.has(scanner.id)
+                const anyOff = MODELS.some(m => adminState[`${scanner.id}_${m.id}`])
+                const allOff = MODELS.every(m => adminState[`${scanner.id}_${m.id}`])
+                const offCount = MODELS.filter(m => adminState[`${scanner.id}_${m.id}`]).length
+
                 return (
-                  <button
-                    key={model.id}
-                    onClick={() => updateAdminState({ [model.id]: !adminState[model.id] })}
-                    className={`p-4 rounded-xl border-2 transition-all text-left ${
-                      isOffline
-                        ? 'border-red-500 bg-red-500/20'
-                        : 'border-green-500 bg-green-500/10'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-2xl">{model.icon}</span>
-                      <div className={`w-3 h-3 rounded-full ${isOffline ? 'bg-red-500' : 'bg-green-500'}`} />
-                    </div>
-                    <p className="font-bold text-white text-sm">{model.name}</p>
-                    <p className={`text-xs mt-1 ${isOffline ? 'text-red-400' : 'text-green-400'}`}>
-                      {isOffline ? 'OFFLINE — Maintenance' : 'ONLINE'}
-                    </p>
-                  </button>
+                  <div key={scanner.id}>
+                    {i > 0 && <Divider />}
+                    {/* Scanner row */}
+                    <button
+                      onClick={() => toggleExpanded(scanner.id)}
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-1.5 h-1.5 rounded-full ${anyOff ? 'bg-orange-500' : 'bg-emerald-500'}`} />
+                        <div>
+                          <p className="text-sm font-medium text-white leading-none">{scanner.name}</p>
+                          <p className="text-[11px] text-slate-600 mt-0.5 leading-none">{scanner.path}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {offCount > 0 && (
+                          <span className="text-[10px] font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded">
+                            {offCount} off
+                          </span>
+                        )}
+                        {expanded ? <ChevronDown size={13} className="text-slate-600" /> : <ChevronRight size={13} className="text-slate-600" />}
+                      </div>
+                    </button>
+
+                    {/* Expanded model chips */}
+                    {expanded && (
+                      <div className="px-4 pb-3 space-y-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {MODELS.map(m => (
+                            <ModelChip
+                              key={m.id}
+                              emoji={m.emoji}
+                              name={m.name}
+                              offline={adminState[`${scanner.id}_${m.id}`]}
+                              onClick={() => toggleScannerModel(scanner.id, m.id)}
+                            />
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => toggleAllModelsForScanner(scanner.id)}
+                          className={`w-full text-[11px] font-bold py-1.5 rounded-lg border transition-colors ${
+                            allOff
+                              ? 'border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/5'
+                              : 'border-red-500/20 text-red-400 hover:bg-red-500/5'
+                          }`}
+                        >
+                          {allOff ? '↑ Turn all ON' : '↓ Turn all OFF'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )
               })}
             </div>
-          </div>
-        </div>
+          </Section>
 
-        {/* Canvas Scanner Controls */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold text-purple-400 mb-4 font-mono flex items-center gap-2">
-            <Wrench size={20} /> CANVAS_SCANNER_CONTROLS
-          </h2>
-          <div className="p-6 rounded-xl bg-slate-900/60 backdrop-blur-sm border border-slate-800">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-white">Canvas Scanner</h3>
-                <p className="text-xs text-slate-500">app/prompting-studio/canvas</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className={`text-xs font-bold ${adminState.canvasScannerMaintenance ? 'text-red-400' : 'text-green-400'}`}>
-                  {adminState.canvasScannerMaintenance ? 'OFFLINE' : 'ONLINE'}
-                </span>
-                <button
-                  onClick={() => updateAdminState({ canvasScannerMaintenance: !adminState.canvasScannerMaintenance })}
-                  className={`relative w-14 h-7 rounded-full transition-all ${
-                    adminState.canvasScannerMaintenance ? 'bg-red-500' : 'bg-green-500'
-                  }`}
-                >
-                  <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
-                    adminState.canvasScannerMaintenance ? 'left-8' : 'left-1'
-                  }`} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Composition Canvas Controls */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold text-emerald-400 mb-4 font-mono flex items-center gap-2">
-            <Wrench size={20} /> COMPOSITION_CANVAS_CONTROLS
-          </h2>
-          <div className="p-6 rounded-xl bg-slate-900/60 backdrop-blur-sm border border-slate-800">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-white">Composition Canvas</h3>
-                <p className="text-xs text-slate-500">app/composition-canvas</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className={`text-xs font-bold ${adminState.compositionCanvasMaintenance ? 'text-red-400' : 'text-green-400'}`}>
-                  {adminState.compositionCanvasMaintenance ? 'OFFLINE' : 'ONLINE'}
-                </span>
-                <button
-                  onClick={() => updateAdminState({ compositionCanvasMaintenance: !adminState.compositionCanvasMaintenance })}
-                  className={`relative w-14 h-7 rounded-full transition-all ${
-                    adminState.compositionCanvasMaintenance ? 'bg-red-500' : 'bg-green-500'
-                  }`}
-                >
-                  <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
-                    adminState.compositionCanvasMaintenance ? 'left-8' : 'left-1'
-                  }`} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Per-Scanner Model Controls */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold text-cyan-400 mb-4 font-mono flex items-center gap-2">
-            <Wrench size={20} /> PER_SCANNER_CONTROLS
-          </h2>
-          <div className="space-y-6">
-            {SCANNERS.map((scanner) => (
-              <div key={scanner.id} className="p-6 rounded-xl bg-slate-900/60 backdrop-blur-sm border border-slate-800">
-                {/* Scanner Header */}
-                <div className="mb-4 pb-3 border-b border-slate-800">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h3 className="text-lg font-bold text-white">{scanner.name}</h3>
-                      <p className="text-xs text-slate-500">{scanner.path}</p>
-                    </div>
-                    <button
-                      onClick={() => updateAdminState({ [`${scanner.id}Maintenance`]: !adminState[`${scanner.id}Maintenance`] })}
-                      className={`relative w-14 h-7 rounded-full transition-all ${
-                        adminState[`${scanner.id}Maintenance`] ? 'bg-red-500' : 'bg-green-500'
-                      }`}
-                    >
-                      <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
-                        adminState[`${scanner.id}Maintenance`] ? 'left-8' : 'left-1'
-                      }`} />
-                    </button>
-                  </div>
-
-                  {/* ALL MODELS Toggle */}
-                  <button
-                    onClick={() => toggleAllModels(scanner.id)}
-                    className={`w-full p-2 rounded-lg border-2 transition-all text-sm font-bold ${
-                      MODELS.every(model => adminState[`${scanner.id}_${model.id}`])
-                        ? 'border-red-500 bg-red-500/20 text-red-400'
-                        : 'border-yellow-500 bg-yellow-500/20 text-yellow-400'
-                    }`}
-                  >
-                    {MODELS.every(model => adminState[`${scanner.id}_${model.id}`])
-                      ? '✓ Turn ALL Models ON'
-                      : '⚠ Turn ALL Models OFF'}
-                  </button>
-                </div>
-
-                {/* Model Toggles */}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-                  {MODELS.map((model) => {
-                    const key = `${scanner.id}_${model.id}`
-                    const isOffline = adminState[key]
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => toggleScannerModel(scanner.id, model.id)}
-                        className={`p-3 rounded-lg border transition-all ${
-                          isOffline
-                            ? 'border-red-500/50 bg-red-500/10'
-                            : 'border-green-500/50 bg-green-500/5'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-lg">{model.icon}</span>
-                          <div className={`w-2 h-2 rounded-full ${isOffline ? 'bg-red-500' : 'bg-green-500'}`} />
-                        </div>
-                        <p className="text-xs font-bold text-white truncate">{model.name}</p>
-                        <p className={`text-[10px] mt-0.5 ${isOffline ? 'text-red-400' : 'text-green-400'}`}>
-                          {isOffline ? 'OFF' : 'ON'}
-                        </p>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </div>

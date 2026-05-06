@@ -1,11 +1,11 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
-  Terminal, RefreshCw, ArrowLeft, Users as UsersIcon, Search, ChevronDown, ChevronUp, Crown, Ticket, DollarSign, Calendar, Tag, ArrowUpDown,
-  AlertTriangle, X, ShieldCheck, ClipboardCheck, Loader2, RotateCcw, Ban
+  Users as UsersIcon, RefreshCw, ChevronLeft, ChevronDown, ChevronRight,
+  Crown, Ticket, DollarSign, Search, ArrowUpDown, AlertTriangle, X,
+  ShieldCheck, ClipboardCheck, Loader2, RotateCcw, Ban, Sparkles, ShoppingCart, Clock, Tag
 } from "lucide-react"
 
 interface UserData {
@@ -16,6 +16,7 @@ interface UserData {
   ticketBalance: number
   totalTicketsBought: number
   totalTicketsUsed: number
+  generationCount: number
   hasDevTier: boolean
   subscription: any | null
   recentPurchases: any[]
@@ -30,6 +31,60 @@ interface Stats {
   freeUsers: number
 }
 
+function Section({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-xl border border-white/[0.07] bg-white/[0.015] overflow-hidden ${className}`}>
+      {children}
+    </div>
+  )
+}
+
+function SectionLabel({ icon: Icon, label }: { icon: any; label: string }) {
+  return (
+    <div className="flex items-center gap-2 px-4 pt-3.5 pb-2">
+      <Icon size={11} className="text-slate-600" />
+      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">{label}</p>
+    </div>
+  )
+}
+
+function Divider() {
+  return <div className="mx-4 border-t border-white/[0.04]" />
+}
+
+type ChipColor = 'cyan' | 'green' | 'yellow' | 'red' | 'violet' | 'slate' | 'fuchsia' | 'orange'
+
+function Chip({ label, active, color = 'cyan', count, onClick, icon: Icon }: {
+  label: string; active: boolean; color?: ChipColor
+  count?: number; onClick: () => void; icon?: any
+}) {
+  const activeStyles: Record<ChipColor, string> = {
+    cyan:    'border-cyan-500/40 bg-cyan-500/10 text-cyan-400',
+    green:   'border-green-500/40 bg-green-500/10 text-green-400',
+    yellow:  'border-yellow-500/40 bg-yellow-500/10 text-yellow-400',
+    red:     'border-red-500/40 bg-red-500/10 text-red-400',
+    violet:  'border-violet-500/40 bg-violet-500/10 text-violet-400',
+    slate:   'border-slate-500/40 bg-slate-500/10 text-slate-300',
+    fuchsia: 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-400',
+    orange:  'border-orange-500/40 bg-orange-500/10 text-orange-400',
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-all ${
+        active ? activeStyles[color] : 'border-white/[0.07] bg-white/[0.02] text-slate-500 hover:text-slate-300 hover:border-white/[0.12]'
+      }`}
+    >
+      {Icon && <Icon size={11} />}
+      {label}
+      {active && count !== undefined && (
+        <span className="text-[9px] bg-black/20 px-1 py-0.5 rounded-full leading-none">{count}</span>
+      )}
+    </button>
+  )
+}
+
 export default function AdminUsersPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [password, setPassword] = useState("")
@@ -39,7 +94,8 @@ export default function AdminUsersPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [filterTier, setFilterTier] = useState<'all' | 'dev' | 'free'>('all')
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null)
-  const [sortBy, setSortBy] = useState<'totalSpent' | 'ticketBalance' | 'totalBought' | 'totalUsed'>('totalSpent')
+  const [sortBy, setSortBy] = useState<'totalSpent' | 'ticketBalance' | 'totalBought' | 'totalUsed' | 'generations' | 'purchases' | 'joinedNewest' | 'joinedOldest'>('totalSpent')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'hasPurchased' | 'neverPurchased' | 'hasTickets' | 'noTickets' | 'joinedThisWeek' | 'joinedThisMonth'>('all')
 
   // Reset tickets state
   const [showResetPanel, setShowResetPanel] = useState(false)
@@ -68,7 +124,6 @@ export default function AdminUsersPage() {
   useEffect(() => {
     const authStatus = localStorage.getItem("multiverse-admin-auth")
     const savedPassword = sessionStorage.getItem("admin-password")
-
     if (authStatus === "true" && savedPassword) {
       setIsAuthenticated(true)
       fetchUsers()
@@ -80,14 +135,12 @@ export default function AdminUsersPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-
     try {
       const response = await fetch('/api/admin/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ password }),
       })
-
       if (response.ok) {
         sessionStorage.setItem("admin-password", password)
         setIsAuthenticated(true)
@@ -96,8 +149,7 @@ export default function AdminUsersPage() {
       } else {
         alert("Invalid password")
       }
-    } catch (error) {
-      console.error("Auth error:", error)
+    } catch {
       alert("Authentication failed")
     }
   }
@@ -107,14 +159,9 @@ export default function AdminUsersPage() {
     try {
       const res = await fetch('/api/admin/users')
       const data = await res.json()
-
       if (data.success) {
         setUsers(data.users)
-        setStats({
-          totalUsers: data.totalUsers,
-          devTierUsers: data.devTierUsers,
-          freeUsers: data.freeUsers
-        })
+        setStats({ totalUsers: data.totalUsers, devTierUsers: data.devTierUsers, freeUsers: data.freeUsers })
       }
     } catch (err) {
       console.error("Failed to fetch users:", err)
@@ -123,23 +170,11 @@ export default function AdminUsersPage() {
     }
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    })
-  }
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
-  const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
-    })
-  }
+  const formatDateTime = (dateString: string) =>
+    new Date(dateString).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 
   const adminPassword = () => sessionStorage.getItem("admin-password") || ""
 
@@ -247,688 +282,531 @@ export default function AdminUsersPage() {
     }
   }
 
-  // Filter and sort users
+  // Filter + sort
+  const now = Date.now()
   const filteredUsers = users
     .filter(user => {
       const matchesSearch = user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           false
-      const matchesTier = filterTier === 'all' ||
-                         (filterTier === 'dev' && user.hasDevTier) ||
-                         (filterTier === 'free' && !user.hasDevTier)
-      return matchesSearch && matchesTier
+                           user.name?.toLowerCase().includes(searchQuery.toLowerCase()) || false
+      const matchesTier = filterTier === 'all' || (filterTier === 'dev' && user.hasDevTier) || (filterTier === 'free' && !user.hasDevTier)
+      const age = now - new Date(user.createdAt).getTime()
+      const matchesStatus =
+        filterStatus === 'all'             ? true :
+        filterStatus === 'hasPurchased'    ? user.totalSpent > 0 :
+        filterStatus === 'neverPurchased'  ? user.totalSpent === 0 :
+        filterStatus === 'hasTickets'      ? user.ticketBalance > 0 :
+        filterStatus === 'noTickets'       ? user.ticketBalance === 0 :
+        filterStatus === 'joinedThisWeek'  ? age < 7 * 86400_000 :
+        filterStatus === 'joinedThisMonth' ? age < 30 * 86400_000 :
+        true
+      return matchesSearch && matchesTier && matchesStatus
     })
     .sort((a, b) => {
       switch (sortBy) {
-        case 'totalSpent':
-          return b.totalSpent - a.totalSpent
-        case 'ticketBalance':
-          return b.ticketBalance - a.ticketBalance
-        case 'totalBought':
-          return b.totalTicketsBought - a.totalTicketsBought
-        case 'totalUsed':
-          return b.totalTicketsUsed - a.totalTicketsUsed
-        default:
-          return 0
+        case 'totalSpent':    return b.totalSpent - a.totalSpent
+        case 'ticketBalance': return b.ticketBalance - a.ticketBalance
+        case 'totalBought':   return b.totalTicketsBought - a.totalTicketsBought
+        case 'totalUsed':     return b.totalTicketsUsed - a.totalTicketsUsed
+        case 'generations':   return (b.generationCount ?? 0) - (a.generationCount ?? 0)
+        case 'purchases':     return b.totalPurchases - a.totalPurchases
+        case 'joinedNewest':  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        case 'joinedOldest':  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        default:              return 0
       }
     })
 
+  // ── Login ───────────────────────────────────────────────────────────────────
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#050810] flex items-center justify-center p-6">
-        <div className="w-full max-w-md p-8 rounded-2xl border-2 border-cyan-500/30 bg-slate-900/80 backdrop-blur-sm">
-          <div className="text-center mb-8">
-            <Terminal className="mx-auto text-cyan-400 mb-4" size={48} />
-            <h1 className="text-2xl font-black text-cyan-400">ADMIN_ACCESS</h1>
-            <p className="text-sm text-slate-500 mt-2">Authorized personnel only</p>
+      <div className="min-h-screen bg-[#09090f] flex items-center justify-center p-6">
+        <div className="w-full max-w-sm">
+          <div className="flex items-center gap-2 justify-center mb-6">
+            <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+              <UsersIcon size={14} className="text-purple-400" />
+            </div>
+            <span className="text-sm font-bold text-white">User Management</span>
           </div>
-          <form onSubmit={handleLogin}>
-            <Input
-              type="password"
-              placeholder="Enter password..."
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="bg-slate-950 border-slate-700 text-white mb-4"
-            />
-            <Button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold">
-              AUTHENTICATE
-            </Button>
-          </form>
+          <Section>
+            <form onSubmit={handleLogin} className="p-4 space-y-3">
+              <Input
+                type="password"
+                placeholder="Admin password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-600 h-9 text-sm"
+              />
+              <button type="submit" className="w-full h-9 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 text-sm font-bold transition-colors">
+                Authenticate
+              </button>
+            </form>
+          </Section>
         </div>
       </div>
     )
   }
 
+  // ── Main ────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#050810] relative overflow-hidden">
-      <div className="fixed inset-0 bg-[linear-gradient(rgba(0,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
-      <div className="fixed top-20 left-20 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl" />
-      <div className="fixed bottom-20 right-20 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl" />
+    <div className="min-h-screen bg-[#09090f]">
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] bg-purple-500/[0.02] rounded-full blur-3xl pointer-events-none" />
 
-      <div className="relative z-10 p-6 max-w-7xl mx-auto">
+      <div className="relative z-10 max-w-3xl mx-auto px-5 py-8">
+
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 flex items-center gap-3">
-              <UsersIcon size={32} /> USER_MANAGEMENT
-            </h1>
-            <p className="text-slate-500 text-sm mt-1">View user accounts and transaction history</p>
-          </div>
-          <div className="flex gap-2">
-            <Button
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <button
               onClick={() => window.location.href = '/admin'}
-              className="bg-slate-700 hover:bg-slate-600 text-white"
+              className="w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.07] flex items-center justify-center hover:bg-white/[0.07] transition-colors text-slate-400 hover:text-white"
             >
-              <ArrowLeft size={16} className="mr-2" /> Back
-            </Button>
-            <Button onClick={fetchUsers} disabled={isLoading} className="bg-cyan-500 hover:bg-cyan-400 text-black">
-              <RefreshCw className={isLoading ? 'animate-spin' : ''} size={16} />
-            </Button>
+              <ChevronLeft size={15} />
+            </button>
+            <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+              <UsersIcon size={16} className="text-purple-400" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-white leading-none">User Management</h1>
+              <p className="text-[11px] text-slate-600 mt-0.5">{stats.totalUsers} accounts</p>
+            </div>
           </div>
+          <button
+            onClick={fetchUsers}
+            disabled={isLoading}
+            className="w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.07] flex items-center justify-center hover:bg-white/[0.07] transition-colors text-slate-400 hover:text-white disabled:opacity-40"
+          >
+            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+          </button>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="p-6 rounded-xl border-2 border-purple-500/30 bg-slate-900/60">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400 mb-1">Total Users</p>
-                <p className="text-3xl font-black text-white">{stats.totalUsers}</p>
-              </div>
-              <UsersIcon className="text-purple-400" size={40} />
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          {[
+            { label: 'Total Users', value: stats.totalUsers,   color: 'text-white' },
+            { label: 'Dev Tier',    value: stats.devTierUsers, color: 'text-cyan-400' },
+            { label: 'Free Tier',   value: stats.freeUsers,    color: 'text-slate-400' },
+          ].map(s => (
+            <div key={s.label} className="rounded-xl border border-white/[0.07] bg-white/[0.015] p-3.5">
+              <p className="text-[10px] text-slate-600 uppercase tracking-wide mb-1.5">{s.label}</p>
+              <p className={`text-2xl font-bold ${s.color} leading-none`}>{s.value}</p>
             </div>
-          </div>
-          <div className="p-6 rounded-xl border-2 border-cyan-500/30 bg-slate-900/60">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400 mb-1">Dev Tier Users</p>
-                <p className="text-3xl font-black text-cyan-400">{stats.devTierUsers}</p>
-              </div>
-              <Crown className="text-cyan-400" size={40} />
-            </div>
-          </div>
-          <div className="p-6 rounded-xl border-2 border-slate-700 bg-slate-900/60">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400 mb-1">Free Tier Users</p>
-                <p className="text-3xl font-black text-slate-300">{stats.freeUsers}</p>
-              </div>
-              <UsersIcon className="text-slate-400" size={40} />
-            </div>
-          </div>
+          ))}
         </div>
 
-        {/* Danger Zone */}
-        <div className="mb-6 rounded-xl border border-red-500/20 bg-red-500/[0.03] overflow-hidden">
+        {/* Sort + Filter + Search */}
+        <Section className="mb-4">
+          {/* Search */}
+          <div className="p-3 border-b border-white/[0.04]">
+            <div className="relative">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
+              <input
+                type="text"
+                placeholder="Search by email or name…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 text-sm bg-white/[0.03] border border-white/[0.06] rounded-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-white/[0.12]"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-white">
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Sort */}
+          <SectionLabel icon={ArrowUpDown} label="Sort By" />
+          <div className="px-4 pb-3 flex flex-wrap gap-1.5">
+            {([
+              { key: 'totalSpent',    label: 'Total Spent',    icon: DollarSign,    color: 'green'   },
+              { key: 'ticketBalance', label: 'Balance',        icon: Ticket,        color: 'yellow'  },
+              { key: 'totalBought',   label: 'Tickets Bought', icon: Ticket,        color: 'cyan'    },
+              { key: 'totalUsed',     label: 'Tickets Used',   icon: Ticket,        color: 'red'     },
+              { key: 'generations',   label: 'Generations',    icon: Sparkles,      color: 'fuchsia' },
+              { key: 'purchases',     label: 'Purchases',      icon: ShoppingCart,  color: 'orange'  },
+              { key: 'joinedNewest',  label: 'Newest First',   icon: Clock,         color: 'violet'  },
+              { key: 'joinedOldest',  label: 'Oldest First',   icon: Clock,         color: 'slate'   },
+            ] as const).map(({ key, label, icon, color }) => (
+              <Chip key={key} label={label} active={sortBy === key} color={color} icon={icon} onClick={() => setSortBy(key)} />
+            ))}
+          </div>
+
+          <div className="mx-4 border-t border-white/[0.04]" />
+
+          {/* Filter */}
+          <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Search size={11} className="text-slate-600" />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Filter</p>
+            </div>
+            {(filterTier !== 'all' || filterStatus !== 'all') && (
+              <button onClick={() => { setFilterTier('all'); setFilterStatus('all') }}
+                className="text-[11px] text-slate-600 hover:text-white transition-colors flex items-center gap-1">
+                <X size={10} /> Clear
+              </button>
+            )}
+          </div>
+          <div className="px-4 pb-3 flex flex-wrap gap-1.5">
+            <Chip label="Dev Tier"    active={filterTier === 'dev'}                  color="cyan"    icon={Crown}        count={filteredUsers.length} onClick={() => setFilterTier(filterTier === 'dev' ? 'all' : 'dev')} />
+            <Chip label="Free Only"   active={filterTier === 'free'}                 color="slate"                       count={filteredUsers.length} onClick={() => setFilterTier(filterTier === 'free' ? 'all' : 'free')} />
+            <Chip label="Has Spent"   active={filterStatus === 'hasPurchased'}        color="green"   icon={DollarSign}   count={filteredUsers.length} onClick={() => setFilterStatus(filterStatus === 'hasPurchased' ? 'all' : 'hasPurchased')} />
+            <Chip label="Never Spent" active={filterStatus === 'neverPurchased'}      color="slate"                       count={filteredUsers.length} onClick={() => setFilterStatus(filterStatus === 'neverPurchased' ? 'all' : 'neverPurchased')} />
+            <Chip label="Has Tickets" active={filterStatus === 'hasTickets'}          color="yellow"  icon={Ticket}       count={filteredUsers.length} onClick={() => setFilterStatus(filterStatus === 'hasTickets' ? 'all' : 'hasTickets')} />
+            <Chip label="No Tickets"  active={filterStatus === 'noTickets'}           color="red"                         count={filteredUsers.length} onClick={() => setFilterStatus(filterStatus === 'noTickets' ? 'all' : 'noTickets')} />
+            <Chip label="This Week"   active={filterStatus === 'joinedThisWeek'}      color="violet"  icon={Clock}        count={filteredUsers.length} onClick={() => setFilterStatus(filterStatus === 'joinedThisWeek' ? 'all' : 'joinedThisWeek')} />
+            <Chip label="This Month"  active={filterStatus === 'joinedThisMonth'}     color="violet"  icon={Clock}        count={filteredUsers.length} onClick={() => setFilterStatus(filterStatus === 'joinedThisMonth' ? 'all' : 'joinedThisMonth')} />
+          </div>
+
+          {(filterTier !== 'all' || filterStatus !== 'all' || searchQuery) && (
+            <div className="px-4 py-2 border-t border-white/[0.04] text-[11px] text-slate-600">
+              Showing <span className="text-white font-bold">{filteredUsers.length}</span> of {users.length} users
+            </div>
+          )}
+        </Section>
+
+        {/* Danger Zone — Reset Tickets */}
+        <div className="mb-3 rounded-xl border border-red-500/15 bg-red-500/[0.02] overflow-hidden">
           <button
             onClick={() => {
               setShowResetPanel(v => !v)
               if (!showResetPanel) fetchResetPreview(resetExcludeAdmins, resetExcludeAudit, resetExcludeIds)
             }}
-            className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-red-500/[0.04] transition-colors"
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-red-500/[0.03] transition-colors"
           >
-            <div className="flex items-center gap-2 text-red-400 font-bold text-sm">
-              <AlertTriangle size={15} /> DANGER ZONE — Reset All Ticket Balances
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={12} className="text-red-400/70" />
+              <span className="text-xs font-bold text-red-400/80">Reset All Ticket Balances</span>
             </div>
-            {showResetPanel ? <ChevronUp size={15} className="text-red-400/60" /> : <ChevronDown size={15} className="text-red-400/60" />}
+            {showResetPanel ? <ChevronDown size={12} className="text-red-400/40" /> : <ChevronRight size={12} className="text-red-400/40" />}
           </button>
 
           {showResetPanel && (
-            <div className="px-5 pb-5 space-y-4 border-t border-red-500/10">
-              <p className="text-xs text-slate-500 pt-3">
-                Sets every user's ticket balance to <span className="text-white font-bold">0</span>. Use after a payment processor refund event. Cannot be undone.
+            <div className="px-4 pb-4 space-y-3 border-t border-red-500/[0.08]">
+              <p className="text-[11px] text-slate-600 pt-3 leading-relaxed">
+                Sets every user's ticket balance to <span className="text-white font-medium">0</span>. Cannot be undone.
               </p>
 
-              {/* Exclusion toggles */}
-              <div className="space-y-2">
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Exclude from reset:</p>
-                <label className="flex items-center gap-2.5 cursor-pointer select-none group">
-                  <div
-                    onClick={() => {
-                      const next = !resetExcludeAdmins
-                      setResetExcludeAdmins(next)
-                      fetchResetPreview(next, resetExcludeAudit, resetExcludeIds)
-                    }}
-                    className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${resetExcludeAdmins ? 'bg-cyan-500' : 'bg-slate-700'}`}
-                  >
-                    <div className={`w-3 h-3 rounded-full bg-white shadow transition-transform ${resetExcludeAdmins ? 'translate-x-4' : 'translate-x-0'}`} />
-                  </div>
-                  <ShieldCheck size={13} className={resetExcludeAdmins ? 'text-cyan-400' : 'text-slate-600'} />
-                  <span className="text-xs text-slate-400 group-hover:text-slate-300">Admin accounts</span>
-                </label>
-                <label className="flex items-center gap-2.5 cursor-pointer select-none group">
-                  <div
-                    onClick={() => {
-                      const next = !resetExcludeAudit
-                      setResetExcludeAudit(next)
-                      fetchResetPreview(resetExcludeAdmins, next, resetExcludeIds)
-                    }}
-                    className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${resetExcludeAudit ? 'bg-amber-500' : 'bg-slate-700'}`}
-                  >
-                    <div className={`w-3 h-3 rounded-full bg-white shadow transition-transform ${resetExcludeAudit ? 'translate-x-4' : 'translate-x-0'}`} />
-                  </div>
-                  <ClipboardCheck size={13} className={resetExcludeAudit ? 'text-amber-400' : 'text-slate-600'} />
-                  <span className="text-xs text-slate-400 group-hover:text-slate-300">Audit accounts</span>
-                </label>
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Exclude from reset:</p>
+                {[
+                  { label: 'Admin accounts', state: resetExcludeAdmins, icon: ShieldCheck,   color: 'bg-cyan-500',  onToggle: () => { const n = !resetExcludeAdmins; setResetExcludeAdmins(n); fetchResetPreview(n, resetExcludeAudit, resetExcludeIds) } },
+                  { label: 'Audit accounts', state: resetExcludeAudit,  icon: ClipboardCheck, color: 'bg-amber-500', onToggle: () => { const n = !resetExcludeAudit; setResetExcludeAudit(n); fetchResetPreview(resetExcludeAdmins, n, resetExcludeIds) } },
+                ].map(({ label, state, icon: Icon, color, onToggle }) => (
+                  <label key={label} className="flex items-center gap-2.5 cursor-pointer select-none group">
+                    <div onClick={onToggle} className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${state ? color : 'bg-white/[0.08]'}`}>
+                      <div className={`w-3 h-3 rounded-full bg-white shadow transition-transform ${state ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </div>
+                    <Icon size={12} className={state ? 'text-slate-400' : 'text-slate-700'} />
+                    <span className="text-xs text-slate-500 group-hover:text-slate-300">{label}</span>
+                  </label>
+                ))}
               </div>
 
-              {/* Exclude specific users */}
               <div>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Exclude specific accounts:</p>
+                <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Exclude specific accounts:</p>
                 <div className="relative mb-2">
-                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
-                  <input
-                    value={resetUserSearch}
-                    onChange={e => setResetUserSearch(e.target.value)}
+                  <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
+                  <input value={resetUserSearch} onChange={e => setResetUserSearch(e.target.value)}
                     placeholder="Search users to exclude…"
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-red-500/30"
-                  />
+                    className="w-full pl-7 pr-3 py-1.5 text-xs bg-white/[0.03] border border-white/[0.07] rounded-lg text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-red-500/30" />
                 </div>
-
-                {/* Selected exclusions chips */}
                 {resetExcludeIds.size > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
+                  <div className="flex flex-wrap gap-1 mb-2">
                     {Array.from(resetExcludeIds).map(uid => {
                       const u = users.find(x => x.id === uid)
                       return u ? (
-                        <span key={uid} className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">
+                        <span key={uid} className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-slate-400">
                           {u.email}
-                          <button onClick={() => toggleExcludeUser(uid)} className="text-slate-500 hover:text-white ml-0.5"><X size={9} /></button>
+                          <button onClick={() => toggleExcludeUser(uid)}><X size={8} className="text-slate-600 hover:text-white" /></button>
                         </span>
                       ) : null
                     })}
                   </div>
                 )}
-
-                {/* Matching users list */}
                 {resetUserSearch.trim() && (
-                  <div className="max-h-36 overflow-y-auto rounded-lg border border-white/[0.07] bg-black/30 divide-y divide-white/[0.04]">
-                    {users
-                      .filter(u =>
-                        (u.email?.toLowerCase().includes(resetUserSearch.toLowerCase()) ||
-                         u.name?.toLowerCase().includes(resetUserSearch.toLowerCase())) &&
-                        !resetExcludeIds.has(u.id)
-                      )
-                      .slice(0, 20)
-                      .map(u => (
-                        <button
-                          key={u.id}
-                          onClick={() => { toggleExcludeUser(u.id); setResetUserSearch("") }}
-                          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.04] text-left"
-                        >
-                          <span className="text-xs text-slate-300 truncate">{u.email}</span>
-                          <span className="text-[10px] text-slate-600 ml-2 shrink-0">{u.ticketBalance} tickets</span>
-                        </button>
-                      ))}
+                  <div className="max-h-32 overflow-y-auto rounded-lg border border-white/[0.06] bg-black/30 divide-y divide-white/[0.03]">
                     {users.filter(u =>
-                      u.email?.toLowerCase().includes(resetUserSearch.toLowerCase()) && !resetExcludeIds.has(u.id)
-                    ).length === 0 && (
-                      <p className="text-xs text-slate-600 px-3 py-2">No matching users</p>
+                      (u.email?.toLowerCase().includes(resetUserSearch.toLowerCase()) || u.name?.toLowerCase().includes(resetUserSearch.toLowerCase())) && !resetExcludeIds.has(u.id)
+                    ).slice(0, 20).map(u => (
+                      <button key={u.id} onClick={() => { toggleExcludeUser(u.id); setResetUserSearch("") }}
+                        className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.03] text-left">
+                        <span className="text-xs text-slate-400 truncate">{u.email}</span>
+                        <span className="text-[10px] text-slate-600 ml-2 shrink-0">{u.ticketBalance} tickets</span>
+                      </button>
+                    ))}
+                    {users.filter(u => u.email?.toLowerCase().includes(resetUserSearch.toLowerCase()) && !resetExcludeIds.has(u.id)).length === 0 && (
+                      <p className="text-xs text-slate-700 px-3 py-2">No matching users</p>
                     )}
                   </div>
                 )}
               </div>
 
-              {/* Preview */}
               {resetPreview && (
-                <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-red-500/[0.06] border border-red-500/20">
-                  <RotateCcw size={12} className="text-red-400 shrink-0" />
-                  <span className="text-red-300">Will reset <span className="font-bold text-white">{resetPreview.willReset}</span> account{resetPreview.willReset !== 1 ? 's' : ''} to 0</span>
-                  {resetPreview.excluded > 0 && (
-                    <span className="text-slate-500 ml-auto shrink-0">{resetPreview.excluded} excluded</span>
-                  )}
+                <div className="flex items-center gap-2 text-[11px] px-3 py-2 rounded-lg bg-red-500/[0.05] border border-red-500/15">
+                  <RotateCcw size={11} className="text-red-400/70 shrink-0" />
+                  <span className="text-red-400/80">Will reset <span className="font-bold text-white">{resetPreview.willReset}</span> account{resetPreview.willReset !== 1 ? 's' : ''}</span>
+                  {resetPreview.excluded > 0 && <span className="text-slate-600 ml-auto">{resetPreview.excluded} excluded</span>}
                 </div>
               )}
-
-              {/* Success banner */}
               {resetDone && (
-                <div className="text-xs px-3 py-2 rounded-lg bg-emerald-500/[0.08] border border-emerald-500/20 text-emerald-400">
-                  Reset complete — <span className="font-bold">{resetDone.resetCount}</span> accounts zeroed, {resetDone.excludedCount} skipped.
+                <div className="text-[11px] px-3 py-2 rounded-lg bg-emerald-500/[0.06] border border-emerald-500/15 text-emerald-400">
+                  Done — <span className="font-bold">{resetDone.resetCount}</span> accounts zeroed, {resetDone.excludedCount} skipped.
                 </div>
               )}
-
-              {/* Confirm + execute */}
-              <div className="flex items-center gap-3">
-                <input
-                  value={resetConfirmText}
-                  onChange={e => setResetConfirmText(e.target.value)}
+              <div className="flex items-center gap-2">
+                <input value={resetConfirmText} onChange={e => setResetConfirmText(e.target.value)}
                   placeholder='Type "RESET" to confirm'
-                  className="flex-1 px-3 py-1.5 text-xs bg-white/[0.04] border border-red-500/20 rounded-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-red-500/50"
-                />
-                <button
-                  onClick={handleResetTickets}
-                  disabled={resetConfirmText !== "RESET" || resetting}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  {resetting ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
-                  Reset Tickets
+                  className="flex-1 px-3 py-1.5 text-xs bg-white/[0.03] border border-red-500/15 rounded-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-red-500/40" />
+                <button onClick={handleResetTickets} disabled={resetConfirmText !== "RESET" || resetting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/[0.08] border border-red-500/20 text-red-400 hover:bg-red-500/[0.15] disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  {resetting ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
+                  Reset
                 </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Revoke Subscriptions */}
-        <div className="mb-6 rounded-xl border border-purple-500/20 bg-purple-500/[0.03] overflow-hidden">
+        {/* Danger Zone — Revoke Subscriptions */}
+        <div className="mb-5 rounded-xl border border-purple-500/15 bg-purple-500/[0.02] overflow-hidden">
           <button
             onClick={() => {
               setShowRevokePanel(v => !v)
               if (!showRevokePanel) fetchRevokePreview(revokeExcludeAdmins, revokeExcludeAudit, revokeExcludeIds)
             }}
-            className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-purple-500/[0.04] transition-colors"
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-purple-500/[0.03] transition-colors"
           >
-            <div className="flex items-center gap-2 text-purple-400 font-bold text-sm">
-              <Ban size={15} /> DANGER ZONE — Revoke All Dev Tier Subscriptions
+            <div className="flex items-center gap-2">
+              <Ban size={12} className="text-purple-400/70" />
+              <span className="text-xs font-bold text-purple-400/80">Revoke All Dev Tier Subscriptions</span>
             </div>
-            {showRevokePanel ? <ChevronUp size={15} className="text-purple-400/60" /> : <ChevronDown size={15} className="text-purple-400/60" />}
+            {showRevokePanel ? <ChevronDown size={12} className="text-purple-400/40" /> : <ChevronRight size={12} className="text-purple-400/40" />}
           </button>
 
           {showRevokePanel && (
-            <div className="px-5 pb-5 space-y-4 border-t border-purple-500/10">
-              <p className="text-xs text-slate-500 pt-3">
-                Sets all active subscriptions to <span className="text-white font-bold">cancelled</span> with an immediate end date. Users lose Dev Tier pricing instantly. Cannot be undone.
+            <div className="px-4 pb-4 space-y-3 border-t border-purple-500/[0.08]">
+              <p className="text-[11px] text-slate-600 pt-3 leading-relaxed">
+                Cancels all active subscriptions immediately. Cannot be undone.
               </p>
 
-              {/* Exclusion toggles */}
-              <div className="space-y-2">
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Exclude from revoke:</p>
-                <label className="flex items-center gap-2.5 cursor-pointer select-none group">
-                  <div
-                    onClick={() => {
-                      const next = !revokeExcludeAdmins
-                      setRevokeExcludeAdmins(next)
-                      fetchRevokePreview(next, revokeExcludeAudit, revokeExcludeIds)
-                    }}
-                    className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${revokeExcludeAdmins ? 'bg-cyan-500' : 'bg-slate-700'}`}
-                  >
-                    <div className={`w-3 h-3 rounded-full bg-white shadow transition-transform ${revokeExcludeAdmins ? 'translate-x-4' : 'translate-x-0'}`} />
-                  </div>
-                  <ShieldCheck size={13} className={revokeExcludeAdmins ? 'text-cyan-400' : 'text-slate-600'} />
-                  <span className="text-xs text-slate-400 group-hover:text-slate-300">Admin accounts</span>
-                </label>
-                <label className="flex items-center gap-2.5 cursor-pointer select-none group">
-                  <div
-                    onClick={() => {
-                      const next = !revokeExcludeAudit
-                      setRevokeExcludeAudit(next)
-                      fetchRevokePreview(revokeExcludeAdmins, next, revokeExcludeIds)
-                    }}
-                    className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${revokeExcludeAudit ? 'bg-amber-500' : 'bg-slate-700'}`}
-                  >
-                    <div className={`w-3 h-3 rounded-full bg-white shadow transition-transform ${revokeExcludeAudit ? 'translate-x-4' : 'translate-x-0'}`} />
-                  </div>
-                  <ClipboardCheck size={13} className={revokeExcludeAudit ? 'text-amber-400' : 'text-slate-600'} />
-                  <span className="text-xs text-slate-400 group-hover:text-slate-300">Audit accounts</span>
-                </label>
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Exclude from revoke:</p>
+                {[
+                  { label: 'Admin accounts', state: revokeExcludeAdmins, icon: ShieldCheck,   color: 'bg-cyan-500',  onToggle: () => { const n = !revokeExcludeAdmins; setRevokeExcludeAdmins(n); fetchRevokePreview(n, revokeExcludeAudit, revokeExcludeIds) } },
+                  { label: 'Audit accounts', state: revokeExcludeAudit,  icon: ClipboardCheck, color: 'bg-amber-500', onToggle: () => { const n = !revokeExcludeAudit; setRevokeExcludeAudit(n); fetchRevokePreview(revokeExcludeAdmins, n, revokeExcludeIds) } },
+                ].map(({ label, state, icon: Icon, color, onToggle }) => (
+                  <label key={label} className="flex items-center gap-2.5 cursor-pointer select-none group">
+                    <div onClick={onToggle} className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${state ? color : 'bg-white/[0.08]'}`}>
+                      <div className={`w-3 h-3 rounded-full bg-white shadow transition-transform ${state ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </div>
+                    <Icon size={12} className={state ? 'text-slate-400' : 'text-slate-700'} />
+                    <span className="text-xs text-slate-500 group-hover:text-slate-300">{label}</span>
+                  </label>
+                ))}
               </div>
 
-              {/* Exclude specific users */}
               <div>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Exclude specific accounts:</p>
+                <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Exclude specific accounts:</p>
                 <div className="relative mb-2">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" size={12} />
-                  <input
-                    value={revokeUserSearch}
-                    onChange={e => setRevokeUserSearch(e.target.value)}
-                    placeholder="Search users to exclude…"
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-purple-500/30"
-                  />
+                  <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
+                  <input value={revokeUserSearch} onChange={e => setRevokeUserSearch(e.target.value)}
+                    placeholder="Search dev tier users to exclude…"
+                    className="w-full pl-7 pr-3 py-1.5 text-xs bg-white/[0.03] border border-white/[0.07] rounded-lg text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-purple-500/30" />
                 </div>
-
                 {revokeExcludeIds.size > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
+                  <div className="flex flex-wrap gap-1 mb-2">
                     {Array.from(revokeExcludeIds).map(uid => {
                       const u = users.find(x => x.id === uid)
                       return u ? (
-                        <span key={uid} className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">
+                        <span key={uid} className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-slate-400">
                           {u.email}
-                          <button onClick={() => toggleRevokeExcludeUser(uid)} className="text-slate-500 hover:text-white ml-0.5"><X size={9} /></button>
+                          <button onClick={() => toggleRevokeExcludeUser(uid)}><X size={8} className="text-slate-600 hover:text-white" /></button>
                         </span>
                       ) : null
                     })}
                   </div>
                 )}
-
                 {revokeUserSearch.trim() && (
-                  <div className="max-h-36 overflow-y-auto rounded-lg border border-white/[0.07] bg-black/30 divide-y divide-white/[0.04]">
-                    {users
-                      .filter(u =>
-                        u.hasDevTier &&
-                        (u.email?.toLowerCase().includes(revokeUserSearch.toLowerCase()) ||
-                         u.name?.toLowerCase().includes(revokeUserSearch.toLowerCase())) &&
-                        !revokeExcludeIds.has(u.id)
-                      )
-                      .slice(0, 20)
-                      .map(u => (
-                        <button
-                          key={u.id}
-                          onClick={() => { toggleRevokeExcludeUser(u.id); setRevokeUserSearch("") }}
-                          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.04] text-left"
-                        >
-                          <span className="text-xs text-slate-300 truncate">{u.email}</span>
-                          <span className="text-[10px] text-purple-400/60 ml-2 shrink-0">Dev Tier</span>
-                        </button>
-                      ))}
+                  <div className="max-h-32 overflow-y-auto rounded-lg border border-white/[0.06] bg-black/30 divide-y divide-white/[0.03]">
                     {users.filter(u =>
                       u.hasDevTier &&
-                      u.email?.toLowerCase().includes(revokeUserSearch.toLowerCase()) &&
+                      (u.email?.toLowerCase().includes(revokeUserSearch.toLowerCase()) || u.name?.toLowerCase().includes(revokeUserSearch.toLowerCase())) &&
                       !revokeExcludeIds.has(u.id)
+                    ).slice(0, 20).map(u => (
+                      <button key={u.id} onClick={() => { toggleRevokeExcludeUser(u.id); setRevokeUserSearch("") }}
+                        className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.03] text-left">
+                        <span className="text-xs text-slate-400 truncate">{u.email}</span>
+                        <span className="text-[10px] text-purple-400/60 ml-2 shrink-0">Dev Tier</span>
+                      </button>
+                    ))}
+                    {users.filter(u =>
+                      u.hasDevTier && u.email?.toLowerCase().includes(revokeUserSearch.toLowerCase()) && !revokeExcludeIds.has(u.id)
                     ).length === 0 && (
-                      <p className="text-xs text-slate-600 px-3 py-2">No matching Dev Tier users</p>
+                      <p className="text-xs text-slate-700 px-3 py-2">No matching Dev Tier users</p>
                     )}
                   </div>
                 )}
               </div>
 
-              {/* Preview */}
               {revokePreview && (
-                <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-purple-500/[0.06] border border-purple-500/20">
-                  <Ban size={12} className="text-purple-400 shrink-0" />
-                  <span className="text-purple-300">Will revoke <span className="font-bold text-white">{revokePreview.willRevoke}</span> active subscription{revokePreview.willRevoke !== 1 ? 's' : ''}</span>
-                  {revokePreview.excluded > 0 && (
-                    <span className="text-slate-500 ml-auto shrink-0">{revokePreview.excluded} excluded</span>
-                  )}
+                <div className="flex items-center gap-2 text-[11px] px-3 py-2 rounded-lg bg-purple-500/[0.05] border border-purple-500/15">
+                  <Ban size={11} className="text-purple-400/70 shrink-0" />
+                  <span className="text-purple-400/80">Will revoke <span className="font-bold text-white">{revokePreview.willRevoke}</span> subscription{revokePreview.willRevoke !== 1 ? 's' : ''}</span>
+                  {revokePreview.excluded > 0 && <span className="text-slate-600 ml-auto">{revokePreview.excluded} excluded</span>}
                 </div>
               )}
-
-              {/* Success banner */}
               {revokeDone && (
-                <div className="text-xs px-3 py-2 rounded-lg bg-emerald-500/[0.08] border border-emerald-500/20 text-emerald-400">
+                <div className="text-[11px] px-3 py-2 rounded-lg bg-emerald-500/[0.06] border border-emerald-500/15 text-emerald-400">
                   Done — <span className="font-bold">{revokeDone.revokedCount}</span> subscription{revokeDone.revokedCount !== 1 ? 's' : ''} revoked, {revokeDone.excludedCount} skipped.
                 </div>
               )}
-
-              {/* Confirm + execute */}
-              <div className="flex items-center gap-3">
-                <input
-                  value={revokeConfirmText}
-                  onChange={e => setRevokeConfirmText(e.target.value)}
+              <div className="flex items-center gap-2">
+                <input value={revokeConfirmText} onChange={e => setRevokeConfirmText(e.target.value)}
                   placeholder='Type "REVOKE" to confirm'
-                  className="flex-1 px-3 py-1.5 text-xs bg-white/[0.04] border border-purple-500/20 rounded-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/50"
-                />
-                <button
-                  onClick={handleRevokeSubscriptions}
-                  disabled={revokeConfirmText !== "REVOKE" || revoking}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold bg-purple-500/10 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  {revoking ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
-                  Revoke All
+                  className="flex-1 px-3 py-1.5 text-xs bg-white/[0.03] border border-purple-500/15 rounded-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/40" />
+                <button onClick={handleRevokeSubscriptions} disabled={revokeConfirmText !== "REVOKE" || revoking}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-500/[0.08] border border-purple-500/20 text-purple-400 hover:bg-purple-500/[0.15] disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  {revoking ? <Loader2 size={11} className="animate-spin" /> : <Ban size={11} />}
+                  Revoke
                 </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-col md:flex-row gap-4 mb-6">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-            <Input
-              type="text"
-              placeholder="Search by email or name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-slate-900 border-slate-700 text-white"
-            />
-          </div>
-
-          {/* Tier Filter */}
-          <div className="flex gap-2">
-            <Button
-              onClick={() => setFilterTier('all')}
-              className={filterTier === 'all' ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-300'}
-            >
-              All
-            </Button>
-            <Button
-              onClick={() => setFilterTier('dev')}
-              className={filterTier === 'dev' ? 'bg-cyan-500 text-black' : 'bg-slate-800 text-slate-300'}
-            >
-              Dev Tier
-            </Button>
-            <Button
-              onClick={() => setFilterTier('free')}
-              className={filterTier === 'free' ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-300'}
-            >
-              Free Tier
-            </Button>
-          </div>
-        </div>
-
-        {/* Sort Options */}
-        <div className="mb-6 p-4 rounded-xl bg-slate-900/60 border border-slate-800">
-          <div className="flex items-center gap-3 mb-3">
-            <ArrowUpDown size={16} className="text-cyan-400" />
-            <span className="text-sm font-bold text-white">Sort By (Highest to Lowest):</span>
-          </div>
-          <div className="flex flex-wrap gap-2 mb-4">
-            <Button
-              onClick={() => setSortBy('totalSpent')}
-              className={`text-sm ${sortBy === 'totalSpent' ? 'bg-green-500 text-white' : 'bg-slate-800 text-slate-300'}`}
-            >
-              <DollarSign size={14} className="mr-1" />
-              Total Spent
-            </Button>
-            <Button
-              onClick={() => setSortBy('ticketBalance')}
-              className={`text-sm ${sortBy === 'ticketBalance' ? 'bg-yellow-500 text-black' : 'bg-slate-800 text-slate-300'}`}
-            >
-              <Ticket size={14} className="mr-1" />
-              Current Tickets
-            </Button>
-            <Button
-              onClick={() => setSortBy('totalBought')}
-              className={`text-sm ${sortBy === 'totalBought' ? 'bg-cyan-500 text-black' : 'bg-slate-800 text-slate-300'}`}
-            >
-              <Ticket size={14} className="mr-1" />
-              Tickets Bought
-            </Button>
-            <Button
-              onClick={() => setSortBy('totalUsed')}
-              className={`text-sm ${sortBy === 'totalUsed' ? 'bg-red-500 text-white' : 'bg-slate-800 text-slate-300'}`}
-            >
-              <Ticket size={14} className="mr-1" />
-              Tickets Used
-            </Button>
-          </div>
-
-          <div className="border-t border-slate-800 pt-3">
-            <p className="text-xs text-slate-500 mb-2 font-bold uppercase tracking-wide">Filter:</p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                onClick={() => setFilterTier(filterTier === 'dev' ? 'all' : 'dev')}
-                className={`text-sm ${filterTier === 'dev' ? 'bg-cyan-500 text-black' : 'bg-slate-800 text-slate-300'}`}
-              >
-                <Crown size={14} className="mr-1" />
-                Dev Tier Active
-                {filterTier === 'dev' && (
-                  <span className="ml-1.5 text-[10px] bg-black/20 px-1.5 py-0.5 rounded-full">
-                    {filteredUsers.length}
-                  </span>
-                )}
-              </Button>
-              <Button
-                onClick={() => setFilterTier(filterTier === 'free' ? 'all' : 'free')}
-                className={`text-sm ${filterTier === 'free' ? 'bg-slate-500 text-white' : 'bg-slate-800 text-slate-300'}`}
-              >
-                Free Tier Only
-                {filterTier === 'free' && (
-                  <span className="ml-1.5 text-[10px] bg-black/20 px-1.5 py-0.5 rounded-full">
-                    {filteredUsers.length}
-                  </span>
-                )}
-              </Button>
-              {filterTier !== 'all' && (
-                <Button
-                  onClick={() => setFilterTier('all')}
-                  className="text-sm bg-slate-800 text-slate-400 hover:text-white"
-                >
-                  <X size={13} className="mr-1" /> Clear Filter
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-
         {/* Users List */}
         {isLoading ? (
-          <div className="text-center py-12">
-            <RefreshCw className="animate-spin mx-auto text-cyan-400 mb-4" size={40} />
-            <p className="text-slate-400">Loading users...</p>
+          <div className="flex items-center justify-center py-16 text-slate-600">
+            <RefreshCw className="animate-spin mr-2" size={15} />
+            <span className="text-sm">Loading…</span>
+          </div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-slate-700">
+            <UsersIcon size={28} className="mb-3 opacity-40" />
+            <p className="text-sm">No users match your filters</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {filteredUsers.map((user) => (
-              <div key={user.id} className={`p-6 rounded-xl border-2 bg-slate-900/60 backdrop-blur-sm ${user.hasDevTier ? 'border-cyan-500/30' : 'border-slate-800'}`}>
-                {/* User Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-full ${user.hasDevTier ? 'bg-gradient-to-r from-cyan-500 to-purple-500' : 'bg-slate-700'} flex items-center justify-center`}>
-                      <span className="text-white font-bold text-lg">
-                        {user.email?.[0]?.toUpperCase() || '?'}
-                      </span>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-lg font-bold text-white">{user.email || 'No email'}</p>
-                        {user.hasDevTier && (
-                          <span className="px-2 py-1 text-xs font-bold rounded-full bg-gradient-to-r from-cyan-500 to-purple-500 text-white">
-                            DEV TIER
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-slate-400">Joined {formatDate(user.createdAt)}</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setExpandedUserId(expandedUserId === user.id ? null : user.id)}
-                    className="text-slate-400 hover:text-white transition-colors"
-                  >
-                    {expandedUserId === user.id ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
-                  </button>
-                </div>
+          <Section>
+            {filteredUsers.map((user, index) => (
+              <div key={user.id}>
+                {index > 0 && <Divider />}
 
-                {/* Quick Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                  <div className="p-3 rounded-lg bg-slate-950/50 border border-slate-800">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Ticket size={14} className="text-yellow-400" />
-                      <p className="text-xs text-slate-400">Tickets</p>
-                    </div>
-                    <p className="text-lg font-bold text-white">{user.ticketBalance}</p>
+                {/* Compact user row */}
+                <button
+                  onClick={() => setExpandedUserId(expandedUserId === user.id ? null : user.id)}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors text-left"
+                >
+                  <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-bold ${
+                    user.hasDevTier
+                      ? 'bg-gradient-to-br from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/20'
+                      : 'bg-white/[0.05] text-slate-500 border border-white/[0.06]'
+                  }`}>
+                    {user.email?.[0]?.toUpperCase() || '?'}
                   </div>
-                  <div className="p-3 rounded-lg bg-slate-950/50 border border-slate-800">
-                    <div className="flex items-center gap-2 mb-1">
-                      <DollarSign size={14} className="text-green-400" />
-                      <p className="text-xs text-slate-400">Total Spent</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium text-white truncate">{user.email || 'No email'}</span>
+                      {user.hasDevTier && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 shrink-0">DEV</span>
+                      )}
                     </div>
-                    <p className="text-lg font-bold text-white">${user.totalSpent.toFixed(2)}</p>
+                    <p className="text-[11px] text-slate-600 mt-0.5">Joined {formatDate(user.createdAt)}</p>
                   </div>
-                  <div className="p-3 rounded-lg bg-slate-950/50 border border-slate-800">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Ticket size={14} className="text-cyan-400" />
-                      <p className="text-xs text-slate-400">Bought</p>
+                  <div className="hidden sm:flex items-center gap-4 shrink-0">
+                    <div className="text-right">
+                      <p className="text-xs font-bold text-white leading-none">{user.ticketBalance}</p>
+                      <p className="text-[10px] text-slate-600 mt-0.5">tickets</p>
                     </div>
-                    <p className="text-lg font-bold text-white">{user.totalTicketsBought}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-slate-950/50 border border-slate-800">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Ticket size={14} className="text-red-400" />
-                      <p className="text-xs text-slate-400">Used</p>
+                    <div className="text-right">
+                      <p className="text-xs font-bold text-green-400 leading-none">${user.totalSpent.toFixed(0)}</p>
+                      <p className="text-[10px] text-slate-600 mt-0.5">spent</p>
                     </div>
-                    <p className="text-lg font-bold text-white">{user.totalTicketsUsed}</p>
                   </div>
-                </div>
+                  <ChevronRight size={13} className={`shrink-0 text-slate-600 transition-transform duration-150 ${expandedUserId === user.id ? 'rotate-90' : ''}`} />
+                </button>
 
-                {/* Expanded Details */}
+                {/* Expanded details */}
                 {expandedUserId === user.id && (
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
-                    {/* Subscription Info */}
+                  <div className="px-4 pb-4 pt-1 space-y-3 border-t border-white/[0.04]">
+                    {/* Stats */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { label: 'Balance',  value: String(user.ticketBalance),          color: 'text-yellow-400', icon: Ticket },
+                        { label: 'Spent',    value: `$${user.totalSpent.toFixed(2)}`,    color: 'text-green-400',  icon: DollarSign },
+                        { label: 'Bought',   value: String(user.totalTicketsBought),     color: 'text-cyan-400',   icon: Ticket },
+                        { label: 'Used',     value: String(user.totalTicketsUsed),       color: 'text-red-400',    icon: Ticket },
+                      ].map(s => (
+                        <div key={s.label} className="rounded-lg bg-white/[0.03] border border-white/[0.05] p-2.5">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <s.icon size={11} className={s.color} />
+                            <span className="text-[10px] text-slate-600">{s.label}</span>
+                          </div>
+                          <p className="text-sm font-bold text-white">{s.value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Subscription */}
                     {user.subscription && (
-                      <div className="p-4 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
-                        <h3 className="text-sm font-bold text-cyan-400 mb-3 flex items-center gap-2">
-                          <Crown size={16} /> ACTIVE SUBSCRIPTION
-                        </h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                          <div>
-                            <p className="text-slate-400 mb-1">Plan</p>
-                            <p className="text-white font-bold capitalize">{user.subscription.billingCycle || 'Monthly'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-400 mb-1">Amount</p>
-                            <p className="text-white font-bold">${user.subscription.billingAmount?.toFixed(2) || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-400 mb-1">Next Billing</p>
-                            <p className="text-white font-bold">{user.subscription.nextBillingDate ? formatDate(user.subscription.nextBillingDate) : 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-400 mb-1">Started</p>
-                            <p className="text-white font-bold">{formatDate(user.subscription.createdAt)}</p>
-                          </div>
+                      <div className="rounded-lg bg-cyan-500/[0.04] border border-cyan-500/15 p-3">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <Crown size={11} className="text-cyan-400" />
+                          <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wide">Active Subscription</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                          {[
+                            { label: 'Plan',         value: user.subscription.billingCycle || 'Monthly' },
+                            { label: 'Amount',       value: `$${user.subscription.billingAmount?.toFixed(2) || 'N/A'}` },
+                            { label: 'Next Billing', value: user.subscription.nextBillingDate ? formatDate(user.subscription.nextBillingDate) : 'N/A' },
+                            { label: 'Started',      value: formatDate(user.subscription.createdAt) },
+                          ].map(item => (
+                            <div key={item.label}>
+                              <p className="text-slate-600 mb-0.5">{item.label}</p>
+                              <p className="text-white font-medium capitalize">{item.value}</p>
+                            </div>
+                          ))}
                         </div>
                         {user.subscription.metadata?.ticketsPerCycle && (
-                          <div className="mt-3 p-2 rounded bg-green-500/10 border border-green-500/30">
-                            <p className="text-xs text-green-400">
-                              <Ticket size={12} className="inline mr-1" />
-                              {user.subscription.metadata.ticketsPerCycle} tickets per billing cycle
-                            </p>
+                          <div className="mt-2 text-[11px] text-emerald-400">
+                            <Ticket size={10} className="inline mr-1" />{user.subscription.metadata.ticketsPerCycle} tickets / cycle
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* Purchase History */}
+                    {/* Transactions */}
                     {(user.recentPurchases.length > 0 || user.recentTicketPurchases.length > 0) && (
                       <div>
-                        <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                          <DollarSign size={16} /> RECENT TRANSACTIONS
-                        </h3>
-                        <div className="space-y-2">
-                          {/* Ticket Purchases */}
-                          {user.recentTicketPurchases.map((purchase) => (
-                            <div key={`ticket-${purchase.id}`} className="p-3 rounded-lg bg-slate-950/50 border border-slate-800 text-xs">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                  <Ticket size={14} className="text-yellow-400" />
-                                  <span className="font-bold text-white">{purchase.tickets} Tickets</span>
-                                  {purchase.discountCode && (
-                                    <span className="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 text-[10px] font-bold flex items-center gap-1">
-                                      <Tag size={10} /> {purchase.discountCode}
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="font-bold text-green-400">${purchase.amount.toFixed(2)}</span>
-                              </div>
-                              <div className="flex items-center justify-between text-slate-500">
-                                <span>{formatDateTime(purchase.date)}</span>
-                                {purchase.originalAmount && purchase.discountAmount && (
-                                  <span className="text-green-400">
-                                    Saved: ${purchase.discountAmount.toFixed(2)}
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <DollarSign size={11} className="text-slate-600" />
+                          <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wide">Recent Transactions</p>
+                        </div>
+                        <div className="space-y-1.5">
+                          {user.recentTicketPurchases.map(purchase => (
+                            <div key={`t-${purchase.id}`} className="flex items-center justify-between px-3 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04] text-xs">
+                              <div className="flex items-center gap-2">
+                                <Ticket size={11} className="text-yellow-400 shrink-0" />
+                                <span className="text-slate-300 font-medium">{purchase.tickets} Tickets</span>
+                                {purchase.discountCode && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/15 text-green-400 flex items-center gap-0.5">
+                                    <Tag size={8} />{purchase.discountCode}
                                   </span>
                                 )}
                               </div>
+                              <div className="text-right">
+                                <p className="text-green-400 font-bold">${purchase.amount.toFixed(2)}</p>
+                                <p className="text-slate-600 text-[10px]">{formatDateTime(purchase.date)}</p>
+                              </div>
                             </div>
                           ))}
-
-                          {/* Other Purchases */}
-                          {user.recentPurchases.map((purchase) => (
-                            <div key={`purchase-${purchase.id}`} className="p-3 rounded-lg bg-slate-950/50 border border-slate-800 text-xs">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                  <DollarSign size={14} className="text-purple-400" />
-                                  <span className="font-bold text-white capitalize">{purchase.type}</span>
-                                  {purchase.discountCode && (
-                                    <span className="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 text-[10px] font-bold flex items-center gap-1">
-                                      <Tag size={10} /> {purchase.discountCode}
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="font-bold text-green-400">${purchase.amount.toFixed(2)}</span>
+                          {user.recentPurchases.map(purchase => (
+                            <div key={`p-${purchase.id}`} className="flex items-center justify-between px-3 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04] text-xs">
+                              <div className="flex items-center gap-2">
+                                <DollarSign size={11} className="text-purple-400 shrink-0" />
+                                <span className="text-slate-300 font-medium capitalize">{purchase.type}</span>
                               </div>
-                              <div className="flex items-center justify-between text-slate-500">
-                                <span>{formatDateTime(purchase.date)}</span>
-                                {purchase.description && <span className="text-slate-400">{purchase.description}</span>}
+                              <div className="text-right">
+                                <p className="text-green-400 font-bold">${purchase.amount.toFixed(2)}</p>
+                                <p className="text-slate-600 text-[10px]">{formatDateTime(purchase.date)}</p>
                               </div>
                             </div>
                           ))}
@@ -939,15 +817,9 @@ export default function AdminUsersPage() {
                 )}
               </div>
             ))}
-
-            {filteredUsers.length === 0 && (
-              <div className="text-center py-12">
-                <UsersIcon className="mx-auto text-slate-600 mb-4" size={48} />
-                <p className="text-slate-400">No users found matching your filters</p>
-              </div>
-            )}
-          </div>
+          </Section>
         )}
+
       </div>
     </div>
   )
