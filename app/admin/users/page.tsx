@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   Terminal, RefreshCw, ArrowLeft, Users as UsersIcon, Search, ChevronDown, ChevronUp, Crown, Ticket, DollarSign, Calendar, Tag, ArrowUpDown,
-  AlertTriangle, X, ShieldCheck, ClipboardCheck, Loader2, RotateCcw
+  AlertTriangle, X, ShieldCheck, ClipboardCheck, Loader2, RotateCcw, Ban
 } from "lucide-react"
 
 interface UserData {
@@ -52,6 +52,18 @@ export default function AdminUsersPage() {
   const [resetting, setResetting] = useState(false)
   const [resetDone, setResetDone] = useState<{ resetCount: number; excludedCount: number } | null>(null)
   const previewTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Revoke subscriptions state
+  const [showRevokePanel, setShowRevokePanel] = useState(false)
+  const [revokeExcludeAdmins, setRevokeExcludeAdmins] = useState(true)
+  const [revokeExcludeAudit, setRevokeExcludeAudit] = useState(true)
+  const [revokeExcludeIds, setRevokeExcludeIds] = useState<Set<number>>(new Set())
+  const [revokeUserSearch, setRevokeUserSearch] = useState("")
+  const [revokePreview, setRevokePreview] = useState<{ willRevoke: number; excluded: number } | null>(null)
+  const [revokeConfirmText, setRevokeConfirmText] = useState("")
+  const [revoking, setRevoking] = useState(false)
+  const [revokeDone, setRevokeDone] = useState<{ revokedCount: number; excludedCount: number } | null>(null)
+  const revokePreviewTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const authStatus = localStorage.getItem("multiverse-admin-auth")
@@ -180,6 +192,58 @@ export default function AdminUsersPage() {
       }
     } finally {
       setResetting(false)
+    }
+  }
+
+  const fetchRevokePreview = (excludeAdmins: boolean, excludeAudit: boolean, excludeIds: Set<number>) => {
+    if (revokePreviewTimeout.current) clearTimeout(revokePreviewTimeout.current)
+    revokePreviewTimeout.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({
+          excludeAdmins: String(excludeAdmins),
+          excludeAuditAccounts: String(excludeAudit),
+          excludeUserIds: JSON.stringify(Array.from(excludeIds)),
+        })
+        const res = await fetch(`/api/admin/users/revoke-subscriptions?${params}`, {
+          headers: { 'x-admin-password': adminPassword() },
+        })
+        if (res.ok) setRevokePreview(await res.json())
+      } catch {}
+    }, 400)
+  }
+
+  const toggleRevokeExcludeUser = (userId: number) => {
+    setRevokeExcludeIds(prev => {
+      const next = new Set(prev)
+      next.has(userId) ? next.delete(userId) : next.add(userId)
+      fetchRevokePreview(revokeExcludeAdmins, revokeExcludeAudit, next)
+      return next
+    })
+  }
+
+  const handleRevokeSubscriptions = async () => {
+    if (revokeConfirmText !== "REVOKE") return
+    setRevoking(true)
+    try {
+      const res = await fetch('/api/admin/users/revoke-subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': adminPassword() },
+        body: JSON.stringify({
+          excludeAdmins: revokeExcludeAdmins,
+          excludeAuditAccounts: revokeExcludeAudit,
+          excludeUserIds: Array.from(revokeExcludeIds),
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setRevokeDone(data)
+        setRevokeConfirmText("")
+        await fetchUsers()
+      } else {
+        alert(data.error || 'Revoke failed')
+      }
+    } finally {
+      setRevoking(false)
     }
   }
 
@@ -438,6 +502,157 @@ export default function AdminUsersPage() {
                 >
                   {resetting ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
                   Reset Tickets
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Revoke Subscriptions */}
+        <div className="mb-6 rounded-xl border border-purple-500/20 bg-purple-500/[0.03] overflow-hidden">
+          <button
+            onClick={() => {
+              setShowRevokePanel(v => !v)
+              if (!showRevokePanel) fetchRevokePreview(revokeExcludeAdmins, revokeExcludeAudit, revokeExcludeIds)
+            }}
+            className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-purple-500/[0.04] transition-colors"
+          >
+            <div className="flex items-center gap-2 text-purple-400 font-bold text-sm">
+              <Ban size={15} /> DANGER ZONE — Revoke All Dev Tier Subscriptions
+            </div>
+            {showRevokePanel ? <ChevronUp size={15} className="text-purple-400/60" /> : <ChevronDown size={15} className="text-purple-400/60" />}
+          </button>
+
+          {showRevokePanel && (
+            <div className="px-5 pb-5 space-y-4 border-t border-purple-500/10">
+              <p className="text-xs text-slate-500 pt-3">
+                Sets all active subscriptions to <span className="text-white font-bold">cancelled</span> with an immediate end date. Users lose Dev Tier pricing instantly. Cannot be undone.
+              </p>
+
+              {/* Exclusion toggles */}
+              <div className="space-y-2">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Exclude from revoke:</p>
+                <label className="flex items-center gap-2.5 cursor-pointer select-none group">
+                  <div
+                    onClick={() => {
+                      const next = !revokeExcludeAdmins
+                      setRevokeExcludeAdmins(next)
+                      fetchRevokePreview(next, revokeExcludeAudit, revokeExcludeIds)
+                    }}
+                    className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${revokeExcludeAdmins ? 'bg-cyan-500' : 'bg-slate-700'}`}
+                  >
+                    <div className={`w-3 h-3 rounded-full bg-white shadow transition-transform ${revokeExcludeAdmins ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </div>
+                  <ShieldCheck size={13} className={revokeExcludeAdmins ? 'text-cyan-400' : 'text-slate-600'} />
+                  <span className="text-xs text-slate-400 group-hover:text-slate-300">Admin accounts</span>
+                </label>
+                <label className="flex items-center gap-2.5 cursor-pointer select-none group">
+                  <div
+                    onClick={() => {
+                      const next = !revokeExcludeAudit
+                      setRevokeExcludeAudit(next)
+                      fetchRevokePreview(revokeExcludeAdmins, next, revokeExcludeIds)
+                    }}
+                    className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${revokeExcludeAudit ? 'bg-amber-500' : 'bg-slate-700'}`}
+                  >
+                    <div className={`w-3 h-3 rounded-full bg-white shadow transition-transform ${revokeExcludeAudit ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </div>
+                  <ClipboardCheck size={13} className={revokeExcludeAudit ? 'text-amber-400' : 'text-slate-600'} />
+                  <span className="text-xs text-slate-400 group-hover:text-slate-300">Audit accounts</span>
+                </label>
+              </div>
+
+              {/* Exclude specific users */}
+              <div>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Exclude specific accounts:</p>
+                <div className="relative mb-2">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" size={12} />
+                  <input
+                    value={revokeUserSearch}
+                    onChange={e => setRevokeUserSearch(e.target.value)}
+                    placeholder="Search users to exclude…"
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-purple-500/30"
+                  />
+                </div>
+
+                {revokeExcludeIds.size > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {Array.from(revokeExcludeIds).map(uid => {
+                      const u = users.find(x => x.id === uid)
+                      return u ? (
+                        <span key={uid} className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">
+                          {u.email}
+                          <button onClick={() => toggleRevokeExcludeUser(uid)} className="text-slate-500 hover:text-white ml-0.5"><X size={9} /></button>
+                        </span>
+                      ) : null
+                    })}
+                  </div>
+                )}
+
+                {revokeUserSearch.trim() && (
+                  <div className="max-h-36 overflow-y-auto rounded-lg border border-white/[0.07] bg-black/30 divide-y divide-white/[0.04]">
+                    {users
+                      .filter(u =>
+                        u.hasDevTier &&
+                        (u.email?.toLowerCase().includes(revokeUserSearch.toLowerCase()) ||
+                         u.name?.toLowerCase().includes(revokeUserSearch.toLowerCase())) &&
+                        !revokeExcludeIds.has(u.id)
+                      )
+                      .slice(0, 20)
+                      .map(u => (
+                        <button
+                          key={u.id}
+                          onClick={() => { toggleRevokeExcludeUser(u.id); setRevokeUserSearch("") }}
+                          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.04] text-left"
+                        >
+                          <span className="text-xs text-slate-300 truncate">{u.email}</span>
+                          <span className="text-[10px] text-purple-400/60 ml-2 shrink-0">Dev Tier</span>
+                        </button>
+                      ))}
+                    {users.filter(u =>
+                      u.hasDevTier &&
+                      u.email?.toLowerCase().includes(revokeUserSearch.toLowerCase()) &&
+                      !revokeExcludeIds.has(u.id)
+                    ).length === 0 && (
+                      <p className="text-xs text-slate-600 px-3 py-2">No matching Dev Tier users</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Preview */}
+              {revokePreview && (
+                <div className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-purple-500/[0.06] border border-purple-500/20">
+                  <Ban size={12} className="text-purple-400 shrink-0" />
+                  <span className="text-purple-300">Will revoke <span className="font-bold text-white">{revokePreview.willRevoke}</span> active subscription{revokePreview.willRevoke !== 1 ? 's' : ''}</span>
+                  {revokePreview.excluded > 0 && (
+                    <span className="text-slate-500 ml-auto shrink-0">{revokePreview.excluded} excluded</span>
+                  )}
+                </div>
+              )}
+
+              {/* Success banner */}
+              {revokeDone && (
+                <div className="text-xs px-3 py-2 rounded-lg bg-emerald-500/[0.08] border border-emerald-500/20 text-emerald-400">
+                  Done — <span className="font-bold">{revokeDone.revokedCount}</span> subscription{revokeDone.revokedCount !== 1 ? 's' : ''} revoked, {revokeDone.excludedCount} skipped.
+                </div>
+              )}
+
+              {/* Confirm + execute */}
+              <div className="flex items-center gap-3">
+                <input
+                  value={revokeConfirmText}
+                  onChange={e => setRevokeConfirmText(e.target.value)}
+                  placeholder='Type "REVOKE" to confirm'
+                  className="flex-1 px-3 py-1.5 text-xs bg-white/[0.04] border border-purple-500/20 rounded-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/50"
+                />
+                <button
+                  onClick={handleRevokeSubscriptions}
+                  disabled={revokeConfirmText !== "REVOKE" || revoking}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold bg-purple-500/10 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  {revoking ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
+                  Revoke All
                 </button>
               </div>
             </div>
