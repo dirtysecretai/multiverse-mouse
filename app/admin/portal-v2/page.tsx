@@ -7789,6 +7789,7 @@ export default function PortalV2Page() {
 
   // Queue limits — owner accounts: unlimited, dev tier: 6 image / 2 video, free: 2 image / 1 video
   const isOwner = user?.email === "dirtysecretai@gmail.com" || user?.email === "promptandprotocol@gmail.com"
+  const refLibraryLimit = isAdminAccount ? 250 : hasPromptStudioDev ? 100 : 50
   const maxConcurrent = isOwner ? Infinity : hasPromptStudioDev ? 6 : 2
   const videoMaxConcurrent = isOwner ? Infinity : hasPromptStudioDev ? 2 : 1
   const videoActiveJobCount = videoPendingSlots.length
@@ -7884,18 +7885,18 @@ export default function PortalV2Page() {
     .slice(0, selectedModel.maxReferenceImages)
 
   const handleLibraryUpload = useCallback((items: RefImage[]) => {
-    setRefLibrary((prev) => [...prev, ...items].slice(0, 50))
-  }, [])
+    setRefLibrary((prev) => [...prev, ...items].slice(0, refLibraryLimit))
+  }, [refLibraryLimit])
 
   // Upload from prompt box: add to library + auto-activate up to model limit
   const handleUploadRef = useCallback((items: RefImage[]) => {
-    setRefLibrary((prev) => [...prev, ...items].slice(0, 50))
+    setRefLibrary((prev) => [...prev, ...items].slice(0, refLibraryLimit))
     setActiveRefIds((prev) => {
       const slots = Math.max(0, selectedModel.maxReferenceImages - prev.length)
       const toActivate = items.slice(0, slots).map((i) => i.id)
       return [...prev, ...toActivate]
     })
-  }, [selectedModel.maxReferenceImages])
+  }, [selectedModel.maxReferenceImages, refLibraryLimit])
 
   const handleLibraryDelete = useCallback((id: string) => {
     setRefLibrary((prev) => prev.filter((i) => i.id !== id))
@@ -7921,13 +7922,13 @@ export default function PortalV2Page() {
       id: `preset-${Date.now()}-${Math.random()}`,
       url,
     }))
-    setRefLibrary((prev) => [...prev, ...newItems].slice(0, 50))
+    setRefLibrary((prev) => [...prev, ...newItems].slice(0, refLibraryLimit))
     setActiveRefIds((prev) => {
       const slots = Math.max(0, selectedModel.maxReferenceImages - prev.length)
       const toActivate = newItems.slice(0, slots).map((i) => i.id)
       return [...prev, ...toActivate]
     })
-  }, [selectedModel.maxReferenceImages])
+  }, [selectedModel.maxReferenceImages, refLibraryLimit])
 
   // Storage keys
   const REF_STORAGE_KEY = "pv2-ref-library"
@@ -8278,7 +8279,7 @@ export default function PortalV2Page() {
         url,
       }))
       const limit = modelConfig?.maxReferenceImages ?? 8
-      setRefLibrary((prev) => [...prev, ...newItems].slice(0, 50))
+      setRefLibrary((prev) => [...prev, ...newItems].slice(0, refLibraryLimit))
       setActiveRefIds(newItems.slice(0, limit).map((i) => i.id))
     }
   }, [])
