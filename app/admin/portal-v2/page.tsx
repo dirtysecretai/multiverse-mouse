@@ -6799,6 +6799,7 @@ export default function PortalV2Page() {
   const [refLibrary, setRefLibrary] = useState<RefImage[]>([])
   const [activeRefIds, setActiveRefIds] = useState<string[]>([])
   const [hasPromptStudioDev, setHasPromptStudioDev] = useState(false)
+  const [isAdminAccount, setIsAdminAccount] = useState(false)
   const [isGenerationMaintenance, setIsGenerationMaintenance] = useState(false)
   const [promptOverride, setPromptOverride] = useState<{ text: string; version: number }>({ text: "", version: 0 })
   const [videoPromptOverride, setVideoPromptOverride] = useState<{ text: string; version: number }>({ text: "", version: 0 })
@@ -8056,6 +8057,7 @@ export default function PortalV2Page() {
           // Audit accounts bypass maintenance
           const verifyRes = await fetch("/api/admin/verify")
           const verifyData = await verifyRes.json()
+          if (verifyData.isAdmin) setIsAdminAccount(true)
           if (verifyData.isAuditAccount) setIsGenerationMaintenance(false)
 
           // Reconcile in-flight DB jobs with locally-persisted pending slots.
@@ -8385,7 +8387,7 @@ export default function PortalV2Page() {
               onActivate={handleActivateRef}
               onDeactivate={handleDeactivateRef}
               disabled={scannerMode === "video"}
-              libraryLimit={hasPromptStudioDev ? 100 : 50}
+              libraryLimit={isAdminAccount ? 250 : hasPromptStudioDev ? 100 : 50}
             />
             <ShopDropdown
               open={openDropdown === "shop"}
