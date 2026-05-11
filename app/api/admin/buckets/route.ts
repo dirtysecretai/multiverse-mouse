@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+const VIDEO_RE = /\.(mp4|webm|mov|avi|mkv)$/i
+
 function checkAuth(req: Request) {
   const pass = process.env.ADMIN_PASSWORD
   if (!pass) return true
   return req.headers.get('x-admin-password') === pass
 }
 
-// GET — list all buckets with image counts
+// GET — list all buckets with image counts and direct preview URLs (no proxy)
 export async function GET(req: Request) {
   if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -16,8 +18,30 @@ export async function GET(req: Request) {
     include: { _count: { select: { images: true } } },
   })
 
+  // Fetch up to 4 preview URLs per bucket concurrently (avoids slow N+1 serial queries)
+  const previewMap = new Map<number, string[]>()
+  if (buckets.length > 0) {
+    await Promise.all(buckets.map(async b => {
+      const rows = await prisma.datasetBucketImage.findMany({
+        where: { bucketId: b.id },
+        select: { image: { select: { imageUrl: true } } },
+        orderBy: { imageId: 'asc' },
+        take: 8,
+      })
+      const urls = rows
+        .map(r => r.image.imageUrl)
+        .filter(url => !VIDEO_RE.test(url))
+        .slice(0, 4)
+      previewMap.set(b.id, urls)
+    }))
+  }
+
   return NextResponse.json(
-    buckets.map(b => ({ id: b.id, name: b.name, description: b.description, color: b.color, folderId: b.folderId ?? null, count: b._count.images, createdAt: b.createdAt })),
+    buckets.map(b => ({
+      id: b.id, name: b.name, description: b.description, color: b.color,
+      folderId: b.folderId ?? null, count: b._count.images, createdAt: b.createdAt,
+      previewUrls: previewMap.get(b.id) ?? [],
+    })),
     { headers: { 'Cache-Control': 'no-store' } }
   )
 }

@@ -193,8 +193,8 @@ interface ImageRecord {
   } | null
 }
 
-interface Bucket { id: number; name: string; description: string | null; color: string | null; folderId: number | null; count: number; createdAt: string }
-interface BucketFolder { id: number; name: string; parentId?: number | null; createdAt: string }
+interface Bucket { id: number; name: string; description: string | null; color: string | null; folderId: number | null; count: number; createdAt: string; previewUrls: string[] }
+interface BucketFolder { id: number; name: string; parentId?: number | null; createdAt: string; previewUrls: string[] }
 
 interface Pagination { page: number; limit: number; total: number; totalPages: number }
 interface Facets {
@@ -1756,95 +1756,230 @@ function AutoFillPanel({ selected, imageUrlById, onClose, onItemSaved, onJobChan
 
 // ─── Add-to-bucket modal ──────────────────────────────────────────────────────
 
-function AddToBucketModal({ count, buckets, onClose, onAdd, onCreateAndAdd }: {
-  count:          number
-  buckets:        Bucket[]
-  onClose:        () => void
-  onAdd:          (bucketId: number) => Promise<void>
-  onCreateAndAdd: (name: string) => Promise<void>
+function AddToBucketModal({ count, buckets, folders, recentBucketIds, onClose, onAdd, onCreateAndAdd }: {
+  count:            number
+  buckets:          Bucket[]
+  folders:          BucketFolder[]
+  recentBucketIds:  number[]
+  onClose:          () => void
+  onAdd:            (bucketId: number) => Promise<void>
+  onCreateAndAdd:   (name: string) => Promise<void>
 }) {
-  const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [newName,    setNewName]    = useState("")
-  const [creating,   setCreating]   = useState(false)
-  const [saving,     setSaving]     = useState(false)
+  const [browsePath,   setBrowsePath]   = useState<number[]>([])
+  const [creating,     setCreating]     = useState(false)
+  const [newName,      setNewName]      = useState("")
+  const [saving,       setSaving]       = useState(false)
+  const [modalSearch,  setModalSearch]  = useState("")
 
-  async function handleApply() {
-    if (creating) {
-      if (!newName.trim()) return
-      setSaving(true)
-      await onCreateAndAdd(newName.trim())
-      setSaving(false)
-      onClose()
-    } else {
-      if (selectedId === null) return
-      setSaving(true)
-      await onAdd(selectedId)
-      setSaving(false)
-      onClose()
-    }
+  const currentFolderId = browsePath.length > 0 ? browsePath[browsePath.length - 1] : null
+
+  const q = modalSearch.trim().toLowerCase()
+  const visibleFolders = folders.filter(f =>
+    (currentFolderId === null ? !f.parentId : f.parentId === currentFolderId) &&
+    (!q || f.name.toLowerCase().includes(q))
+  )
+  const visibleBuckets = buckets.filter(b =>
+    b.folderId === currentFolderId &&
+    (!q || b.name.toLowerCase().includes(q))
+  )
+
+  async function handleAdd(bucketId: number) {
+    setSaving(true)
+    await onAdd(bucketId)
+    setSaving(false)
+    onClose()
+  }
+
+  async function handleCreateAndAdd() {
+    if (!newName.trim()) return
+    setSaving(true)
+    await onCreateAndAdd(newName.trim())
+    setSaving(false)
+    onClose()
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl bg-[#0f0f1a] border border-white/[0.1] shadow-2xl p-5" onClick={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <p className="text-sm font-semibold text-white">Add to Bucket</p>
-            <p className="text-[11px] text-slate-600 mt-0.5">{count} image{count !== 1 ? "s" : ""}</p>
-          </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-white/[0.06] text-slate-600 hover:text-slate-300 transition-colors"><X size={14} /></button>
-        </div>
+      <div className="w-full max-w-2xl rounded-2xl bg-[#0f0f1a] border border-white/[0.1] shadow-2xl flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
 
-        {/* Existing buckets */}
-        {buckets.length > 0 && !creating && (
-          <div className="space-y-1 max-h-52 overflow-y-auto mb-3">
-            {buckets.map(b => (
-              <button key={b.id} onClick={() => setSelectedId(b.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border text-left transition-all
-                  ${selectedId === b.id
-                    ? "bg-violet-500/15 border-violet-500/30 text-white"
-                    : "bg-white/[0.03] border-white/[0.06] text-slate-400 hover:text-white hover:border-white/15"}`}>
-                <div className="w-7 h-7 rounded-lg bg-violet-500/20 flex items-center justify-center shrink-0">
-                  <FolderOpen size={13} className="text-violet-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate">{b.name}</p>
-                  <p className="text-[10px] text-slate-600">{b.count} image{b.count !== 1 ? "s" : ""}</p>
-                </div>
-                {selectedId === b.id && <CheckSquare size={13} className="text-violet-400 shrink-0" />}
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07] shrink-0">
+          <div className="flex items-center gap-2">
+            {browsePath.length > 0 && (
+              <button onClick={() => { setBrowsePath(p => p.slice(0, -1)); setModalSearch("") }}
+                className="p-1 rounded hover:bg-white/[0.06] text-slate-500 hover:text-white transition-colors">
+                <ChevronLeft size={14} />
               </button>
-            ))}
+            )}
+            <div>
+              <p className="text-sm font-semibold text-white">Add to Bucket</p>
+              <p className="text-[11px] text-slate-600 mt-0.5">
+                {count} image{count !== 1 ? "s" : ""}
+                {browsePath.length > 0 && (
+                  <span> · {browsePath.map(id => folders.find(f => f.id === id)?.name ?? '…').join(' / ')}</span>
+                )}
+              </p>
+            </div>
           </div>
-        )}
-
-        {/* New bucket input */}
-        {creating ? (
-          <div className="space-y-2 mb-3">
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Bucket name…" autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleApply()}
-              className="w-full px-3 py-2 rounded-lg bg-white/[0.05] border border-white/[0.08] text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/40" />
-            <button onClick={() => { setCreating(false); setNewName("") }} className="text-[11px] text-slate-600 hover:text-slate-400 transition-colors">
-              ← Back to existing
-            </button>
-          </div>
-        ) : (
-          <button onClick={() => setCreating(true)}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-white/[0.1] text-slate-600 hover:text-slate-300 hover:border-white/25 text-xs transition-all mb-3">
-            <FolderPlus size={12} /> Create new bucket
-          </button>
-        )}
-
-        <div className="flex gap-2">
-          <button onClick={handleApply}
-            disabled={saving || (creating ? !newName.trim() : selectedId === null)}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-medium hover:bg-violet-500/25 transition-all disabled:opacity-50">
-            {saving && <Loader2 size={11} className="animate-spin" />}
-            {creating ? "Create & Add" : "Add to Bucket"}
-          </button>
-          <button onClick={onClose} className="px-4 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-500 hover:text-white text-xs transition-all">
-            Cancel
+          <button onClick={onClose} className="p-1 rounded hover:bg-white/[0.06] text-slate-600 hover:text-slate-300 transition-colors">
+            <X size={14} />
           </button>
         </div>
+
+        {/* Search bar */}
+        {!creating && (
+          <div className="px-4 pt-3 pb-0 shrink-0">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.07] focus-within:border-white/15 transition-colors">
+              <Search size={11} className="text-slate-600 shrink-0" />
+              <input
+                value={modalSearch}
+                onChange={e => setModalSearch(e.target.value)}
+                placeholder="Search buckets & folders…"
+                className="flex-1 bg-transparent text-xs text-white placeholder:text-slate-600 focus:outline-none"
+              />
+              {modalSearch && (
+                <button onClick={() => setModalSearch("")} className="text-slate-600 hover:text-slate-400 transition-colors">
+                  <X size={10} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Grid */}
+        <div className="overflow-y-auto flex-1 p-4">
+          {creating ? (
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Bucket name…" autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleCreateAndAdd()}
+              className="w-full px-3 py-2 rounded-lg bg-white/[0.05] border border-white/[0.08] text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/40" />
+          ) : (
+            <>
+            {/* Recent buckets row — root level only, hidden during search */}
+            {browsePath.length === 0 && !q && recentBucketIds.length > 0 && (() => {
+              const recentBuckets = recentBucketIds.map(id => buckets.find(b => b.id === id)).filter(Boolean) as Bucket[]
+              if (recentBuckets.length === 0) return null
+              return (
+                <div className="mb-4">
+                  <p className="text-[9px] font-mono uppercase tracking-wider text-slate-600 mb-2">Recent</p>
+                  <div className="flex items-end gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    {recentBuckets.map(b => (
+                      <div key={b.id} onClick={() => !saving && handleAdd(b.id)} className="shrink-0 w-[72px] cursor-pointer group">
+                        <div className="w-full h-[46px] rounded-t-lg overflow-hidden relative border-t border-l border-r border-violet-500/20 group-hover:border-violet-500/50 transition-colors">
+                          <div className="w-full h-full flex items-center justify-center bg-white/[0.03]">
+                            <FolderOpen size={14} className="text-slate-700" />
+                          </div>
+                          {b.previewUrls[0] && (
+                            <img src={b.previewUrls[0]} alt="" className="absolute inset-0 w-full h-full object-cover"
+                              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                          )}
+                          <div className="absolute inset-0 flex items-center justify-center bg-violet-500/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Plus size={14} className="text-violet-300" />
+                          </div>
+                        </div>
+                        <div className="px-1.5 py-1 rounded-b-lg border-b border-l border-r bg-white/[0.03] border-violet-500/20 group-hover:border-violet-500/40 transition-colors">
+                          <p className="text-[9px] truncate leading-tight text-slate-400 group-hover:text-white transition-colors">{b.name}</p>
+                          <p className="text-[8px] text-slate-600">{b.count}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="border-b border-white/[0.05] mb-4" />
+                </div>
+              )
+            })()}
+
+            {visibleFolders.length === 0 && visibleBuckets.length === 0 ? (
+              <p className="text-xs text-slate-600 text-center py-10">No buckets here</p>
+            ) : (
+            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+
+              {/* Folder cards */}
+              {visibleFolders.map(folder => {
+                const directCount = folders.filter(f => f.parentId === folder.id).length
+                                  + buckets.filter(b => b.folderId === folder.id).length
+                return (
+                  <div key={folder.id} onClick={() => { setBrowsePath(p => [...p, folder.id]); setModalSearch("") }} className="cursor-pointer group">
+                    <div className="w-full aspect-square rounded-t-lg overflow-hidden relative border-t border-l border-r border-amber-500/20 group-hover:border-amber-500/50 transition-colors">
+                      <div className="grid grid-cols-2 grid-rows-2 w-full h-full gap-px bg-black/30">
+                        {[0,1,2,3].map(i => (
+                          <div key={i} className="overflow-hidden bg-white/[0.02] relative">
+                            {folder.previewUrls?.[i] && (
+                              <img src={folder.previewUrls[i]} alt="" className="absolute inset-0 w-full h-full object-cover"
+                                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="absolute inset-0 flex items-center justify-center bg-amber-500/10 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <ChevronRight size={18} className="text-amber-300" />
+                      </div>
+                    </div>
+                    <div className="px-1.5 py-1 rounded-b-lg border-b border-l border-r bg-amber-500/5 border-amber-500/20 group-hover:border-amber-500/40 transition-colors">
+                      <p className="text-[9px] truncate leading-tight text-amber-400">{folder.name}</p>
+                      <p className="text-[8px] text-slate-600">{directCount} item{directCount !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* Bucket cards */}
+              {visibleBuckets.map(b => (
+                <div key={b.id} onClick={() => !saving && handleAdd(b.id)} className="cursor-pointer group">
+                  <div className="w-full aspect-square rounded-t-lg overflow-hidden relative border-t border-l border-r border-violet-500/20 group-hover:border-violet-500/50 transition-colors">
+                    <div className="w-full h-full flex items-center justify-center bg-white/[0.03]">
+                      <FolderOpen size={20} className="text-slate-700" />
+                    </div>
+                    {b.previewUrls[0] && (
+                      <img src={b.previewUrls[0]} alt="" className="absolute inset-0 w-full h-full object-cover"
+                        onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center bg-violet-500/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Plus size={18} className="text-violet-300" />
+                    </div>
+                  </div>
+                  <div className="px-1.5 py-1 rounded-b-lg border-b border-l border-r bg-white/[0.03] border-violet-500/20 group-hover:border-violet-500/40 transition-colors">
+                    <p className="text-[9px] truncate leading-tight text-slate-400 group-hover:text-white transition-colors">{b.name}</p>
+                    <p className="text-[8px] text-slate-600">{b.count}</p>
+                  </div>
+                </div>
+              ))}
+
+            </div>
+            )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-white/[0.07] flex items-center gap-2 shrink-0">
+          {creating ? (
+            <>
+              <button onClick={handleCreateAndAdd}
+                disabled={saving || !newName.trim()}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-medium hover:bg-violet-500/25 transition-all disabled:opacity-50">
+                {saving && <Loader2 size={11} className="animate-spin" />}
+                Create & Add
+              </button>
+              <button onClick={() => { setCreating(false); setNewName("") }}
+                className="px-4 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.07] text-slate-500 hover:text-white text-xs transition-all">
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setCreating(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-dashed border-white/[0.1] text-slate-600 hover:text-slate-300 hover:border-white/25 text-xs transition-all">
+                <FolderPlus size={12} /> Create new bucket
+              </button>
+              {saving && (
+                <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <Loader2 size={11} className="animate-spin" /> Adding…
+                </span>
+              )}
+            </>
+          )}
+        </div>
+
       </div>
     </div>
   )
@@ -1863,7 +1998,7 @@ function PageNav({ pagination, page, loading, setPage, className = "" }: {
   const mid   = Math.min(Math.max(page, 4), total - 3)
   const pages = total <= 7
     ? Array.from({ length: total }, (_, i) => i + 1)
-    : [...new Set([1, 2, 3, mid - 1, mid, mid + 1, total].filter(v => v > 0 && v <= total))].sort((a, b) => a - b)
+    : [...new Set([1, 2, 3, mid - 1, mid, mid + 1, total - 2, total - 1, total].filter(v => v > 0 && v <= total))].sort((a, b) => a - b)
 
   return (
     <div className={`flex items-center justify-center gap-2 flex-wrap ${className}`}>
@@ -1960,7 +2095,7 @@ const ImageCard = memo(function ImageCard({ img, selected, selectMode, onSelect,
           </div>
         ) : (
           <img
-            src={`/api/admin/dataset/thumb/${img.id}`}
+            src={img.imageUrl}
             alt=""
             className="w-full h-full object-cover"
             onError={() => setImgError(true)}
@@ -2098,7 +2233,7 @@ export default function DatasetPage() {
   const [uploadModalOpen,  setUploadModalOpen]  = useState(false)
   const [renameValue,   setRenameValue]   = useState("")
   const [folders,      setFolders]      = useState<BucketFolder[]>([])
-  const [folderPath,   setFolderPath]   = useState<number[]>([])
+  const [folderPath,   setFolderPath]   = useState<number[]>(() => _p.folderPath ?? [])
   const [folderMenuId, setFolderMenuId] = useState<number | null>(null)
   const [menuAnchor,   setMenuAnchor]   = useState<{ x: number; y: number } | null>(null)
   const activeFolderId = folderPath.length > 0 ? folderPath[folderPath.length - 1] : null
@@ -2118,6 +2253,8 @@ export default function DatasetPage() {
   const [markedOnly,   setMarkedOnly]   = useState<boolean>(() => _p.markedOnly   ?? false)
   const [sort,         setSort]         = useState<string>(() => _p.sort          ?? "newest")
   const [pageSize,     setPageSize]     = useState<number>(() => _p.pageSize      ?? 20)
+  const [cols,         setCols]         = useState<number>(() => _p.cols           ?? 4)
+  const [recentBucketIds, setRecentBucketIds] = useState<number[]>(() => _p.recentBucketIds ?? [])
   const [page,         setPage]         = useState<number>(() => _p.page          ?? 1)
   const [filtersOpen,  setFiltersOpen]  = useState<boolean>(() => _p.filtersOpen  ?? false)
 
@@ -2211,11 +2348,11 @@ export default function DatasetPage() {
     savePrefs(PAGE_PREFS_KEY, {
       search, models, aspectRatios, qualities, hasRefs, hasRating, hasCaption, hasTag,
       tagFilter, userFilters, mediaType, markedOnly, sort, pageSize, page,
-      bucketFilter, filtersOpen, autoFillOpen,
+      bucketFilter, filtersOpen, autoFillOpen, folderPath, cols, recentBucketIds,
     })
   }, [search, models, aspectRatios, qualities, hasRefs, hasRating, hasCaption, hasTag,
       tagFilter, userFilters, mediaType, markedOnly, sort, pageSize, page,
-      bucketFilter, filtersOpen, autoFillOpen])
+      bucketFilter, filtersOpen, autoFillOpen, folderPath, cols, recentBucketIds])
 
   // ── Search debounce ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -2449,6 +2586,7 @@ export default function DatasetPage() {
       body: JSON.stringify({ imageIds: ids }),
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    setRecentBucketIds(prev => [bucketId, ...prev.filter(id => id !== bucketId)].slice(0, 20))
     await loadBuckets()
     setSelected(new Set())
   }
@@ -2690,6 +2828,8 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
         <AddToBucketModal
           count={selected.size}
           buckets={buckets}
+          folders={folders}
+          recentBucketIds={recentBucketIds}
           onClose={() => setAddToBucketOpen(false)}
           onAdd={addToBucket}
           onCreateAndAdd={createAndAddToBucket}
@@ -2735,6 +2875,17 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
             {[12, 24, 48, 96].map(n => (
               <button key={n} onClick={() => setPageSize(n)}
                 className={`px-2 py-1.5 text-[11px] transition-colors ${pageSize === n ? 'bg-white/[0.08] text-white' : 'text-slate-500 hover:text-white'}`}>
+                {n}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center rounded-lg border border-white/[0.07] overflow-hidden">
+            <span className="px-1.5 py-1.5 border-r border-white/[0.07] flex items-center">
+              <Layers size={9} className="text-slate-600" />
+            </span>
+            {[1,2,3,4,5,6].map(n => (
+              <button key={n} onClick={() => setCols(n)}
+                className={`px-2 py-1.5 text-[11px] transition-colors ${cols === n ? 'bg-white/[0.08] text-white' : 'text-slate-500 hover:text-white'}`}>
                 {n}
               </button>
             ))}
@@ -2873,65 +3024,117 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
 
         {/* ── Bucket bar ── */}
         {(buckets.length > 0 || folders.length > 0) && (
-          <div className="mb-1 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            {/* All buckets */}
-            <button
+          <div className="mb-3 flex items-end gap-2 overflow-x-auto pb-2 scrollbar-hide">
+
+            {/* All buckets card */}
+            <div
               onClick={() => { setBucketFilter(""); setFolderPath([]) }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs whitespace-nowrap shrink-0 transition-all
-                ${!bucketFilter && folderPath.length === 0
-                  ? "bg-violet-500/15 border-violet-500/30 text-violet-300"
-                  : "bg-white/[0.03] border-white/[0.07] text-slate-500 hover:text-white"}`}
+              className="relative shrink-0 w-[76px] cursor-pointer"
             >
-              <Database size={11} /> All buckets
-            </button>
-
-            {/* Uploads bucket — always pinned */}
-            {buckets.filter(b => b.name === UPLOADS_BUCKET_NAME).map(b => (
-              <div key={b.id} className="relative shrink-0 group flex items-center">
-                <button
-                  onClick={() => { setBucketFilter(v => v === String(b.id) ? "" : String(b.id)); setFolderPath([]) }}
-                  className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-lg border text-xs whitespace-nowrap transition-all
-                    ${bucketFilter === String(b.id)
-                      ? "bg-violet-600/20 border-violet-500/40 text-violet-300"
-                      : "bg-violet-500/8 border-violet-500/20 text-violet-400 hover:text-violet-300 hover:border-violet-500/40"}`}
-                >
-                  <UploadCloud size={11} />
-                  Uploads
-                  <span className="ml-1 text-[9px] opacity-60">{b.count}</span>
-                </button>
-                <button
-                  onClick={e => { e.stopPropagation(); setUploadModalOpen(true); setBucketFilter(String(b.id)) }}
-                  className="ml-0.5 p-1 rounded-md text-violet-600 hover:text-violet-400 transition-all"
-                  title="Upload images"
-                ><Plus size={11} /></button>
+              <div className={`w-full h-[52px] rounded-t-lg flex items-center justify-center border-t border-l border-r transition-colors
+                ${!bucketFilter && folderPath.length === 0
+                  ? 'bg-violet-500/10 border-violet-500/40'
+                  : 'bg-white/[0.03] border-white/[0.08] hover:border-white/15'}`}>
+                <Database size={20} className={!bucketFilter && folderPath.length === 0 ? 'text-violet-400' : 'text-slate-600'} />
               </div>
-            ))}
+              <div className={`px-1.5 py-1 rounded-b-lg border-b border-l border-r transition-colors
+                ${!bucketFilter && folderPath.length === 0
+                  ? 'bg-violet-500/15 border-violet-500/40'
+                  : 'bg-white/[0.03] border-white/[0.08]'}`}>
+                <p className={`text-[9px] truncate leading-tight font-medium
+                  ${!bucketFilter && folderPath.length === 0 ? 'text-violet-300' : 'text-slate-500'}`}>
+                  All
+                </p>
+              </div>
+            </div>
 
-            {/* Folder tabs — top-level only (parentId === null) */}
+            {/* Uploads bucket card */}
+            {buckets.filter(b => b.name === UPLOADS_BUCKET_NAME).map(b => {
+              const addMode = selectMode && selected.size > 0
+              return (
+              <div key={b.id} className="relative shrink-0 w-[76px] group">
+                <div
+                  onClick={() => addMode ? addToBucket(b.id) : (setBucketFilter(v => v === String(b.id) ? "" : String(b.id)), setFolderPath([]))}
+                  className={`w-full h-[52px] rounded-t-lg overflow-hidden relative border-t border-l border-r cursor-pointer transition-colors
+                    ${addMode ? 'border-emerald-500/40 hover:border-emerald-500/70' : bucketFilter === String(b.id) ? 'border-violet-500/50' : 'border-violet-500/20 hover:border-violet-500/40'}`}
+                >
+                  <div className={`w-full h-full flex items-center justify-center
+                    ${addMode ? 'bg-emerald-500/10' : bucketFilter === String(b.id) ? 'bg-violet-600/20' : 'bg-violet-500/8'}`}>
+                    <UploadCloud size={18} className={addMode ? 'text-emerald-500' : 'text-violet-500'} />
+                  </div>
+                  {b.previewUrls[0] && (
+                    <img src={b.previewUrls[0]} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy"
+                      onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                  )}
+                  {addMode ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Plus size={16} className="text-emerald-300" />
+                    </div>
+                  ) : (
+                    <button
+                      onClick={e => { e.stopPropagation(); setUploadModalOpen(true); setBucketFilter(String(b.id)) }}
+                      className="absolute top-1 right-1 p-0.5 rounded bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Upload"
+                    >
+                      <Plus size={9} className="text-violet-300" />
+                    </button>
+                  )}
+                </div>
+                <div
+                  onClick={() => addMode ? addToBucket(b.id) : (setBucketFilter(v => v === String(b.id) ? "" : String(b.id)), setFolderPath([]))}
+                  className={`px-1.5 py-1 rounded-b-lg border-b border-l border-r cursor-pointer transition-colors
+                    ${addMode ? 'bg-emerald-500/8 border-emerald-500/30' : bucketFilter === String(b.id) ? 'bg-violet-600/20 border-violet-500/50' : 'bg-violet-500/5 border-violet-500/15'}`}
+                >
+                  <p className={`text-[9px] truncate leading-tight
+                    ${addMode ? 'text-emerald-400' : bucketFilter === String(b.id) ? 'text-violet-300' : 'text-violet-400'}`}>
+                    Uploads
+                  </p>
+                  <p className="text-[8px] text-slate-600">{b.count}</p>
+                </div>
+              </div>
+            )})}
+
+            {/* Top-level folder cards */}
             {folders.filter(f => !f.parentId).map(folder => {
               const isActive = folderPath[0] === folder.id
               const descendants = getDescendantIds(folder.id)
               const totalBuckets = buckets.filter(b => b.folderId !== null && descendants.has(b.folderId)).length
               const movableTargets = folders.filter(f => !f.parentId && f.id !== folder.id)
               return (
-                <div key={folder.id} className="relative shrink-0 group flex items-center">
-                  <button
+                <div key={folder.id} className="relative shrink-0 w-[76px] group">
+                  <div
                     onClick={() => setFolderPath(isActive ? [] : [folder.id])}
-                    className={`flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-lg border text-xs whitespace-nowrap transition-all
-                      ${isActive
-                        ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
-                        : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white hover:border-white/15"}`}
+                    className={`w-full h-[52px] rounded-t-lg overflow-hidden relative border-t border-l border-r cursor-pointer transition-colors
+                      ${isActive ? 'border-amber-500/50' : 'border-white/[0.08] hover:border-white/15'}`}
                   >
-                    <FolderOpen size={11} />
-                    {folder.name}
-                    <span className="text-[9px] opacity-50">{totalBuckets}</span>
-                    <ChevronDown size={9} className={`transition-transform ${isActive ? "rotate-180" : ""}`} />
-                  </button>
-                  <button
-                    onClick={e => openFolderMenu(e, folder.id)}
-                    className="ml-0.5 p-1 rounded-md text-slate-500 hover:text-slate-300 transition-all"
-                    data-menu-btn
-                  ><MoreHorizontal size={11} /></button>
+                    <div className="grid grid-cols-2 grid-rows-2 w-full h-full gap-px bg-black/30">
+                      {[0,1,2,3].map(i => (
+                        <div key={i} className="overflow-hidden bg-white/[0.02] relative">
+                          {folder.previewUrls?.[i] && (
+                            <img src={folder.previewUrls[i]} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy"
+                              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={e => { e.stopPropagation(); openFolderMenu(e, folder.id) }}
+                      className="absolute top-1 right-1 p-0.5 rounded bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity"
+                      data-menu-btn
+                    >
+                      <MoreHorizontal size={9} className="text-white" />
+                    </button>
+                  </div>
+                  <div
+                    onClick={() => setFolderPath(isActive ? [] : [folder.id])}
+                    className={`px-1.5 py-1 rounded-b-lg border-b border-l border-r cursor-pointer transition-colors
+                      ${isActive ? 'bg-amber-500/15 border-amber-500/50' : 'bg-white/[0.03] border-white/[0.08]'}`}
+                  >
+                    <p className={`text-[9px] truncate leading-tight ${isActive ? 'text-amber-300' : 'text-slate-400'}`}>
+                      {folder.name}
+                    </p>
+                    <p className="text-[8px] text-slate-600">{totalBuckets}</p>
+                  </div>
                   {folderMenuId === folder.id && menuAnchor && (
                     <div data-menu-btn className="fixed z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[160px]" style={{ top: menuAnchor.y, left: menuAnchor.x }}>
                       <button onClick={() => { renameFolder(folder.id); setFolderMenuId(null) }}
@@ -2967,11 +3170,13 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
               )
             })}
 
-            {/* Ungrouped regular buckets (no folder, not uploads) */}
-            {buckets.filter(b => !b.folderId && b.name !== UPLOADS_BUCKET_NAME).map(b => (
-              <div key={b.id} className="relative shrink-0">
+            {/* Ungrouped bucket cards (no folder, not uploads) */}
+            {buckets.filter(b => !b.folderId && b.name !== UPLOADS_BUCKET_NAME).map(b => {
+              const addMode = selectMode && selected.size > 0
+              return (
+              <div key={b.id} className="relative shrink-0 w-[76px]">
                 {renamingId === b.id ? (
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 py-1">
                     <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') renameBucket(b.id); if (e.key === 'Escape') { setRenamingId(null); setRenameValue("") } }}
                       className="px-2 py-1 rounded-lg bg-white/[0.08] border border-violet-500/40 text-xs text-white outline-none w-32" />
@@ -2979,23 +3184,44 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
                     <button onClick={() => { setRenamingId(null); setRenameValue("") }} className="text-[10px] text-slate-600 hover:text-slate-400 px-1">✕</button>
                   </div>
                 ) : (
-                  <div className="group flex items-center">
-                    <button
-                      onClick={() => { setBucketFilter(v => v === String(b.id) ? "" : String(b.id)); setFolderPath([]) }}
-                      className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-lg border text-xs whitespace-nowrap transition-all
-                        ${bucketFilter === String(b.id)
-                          ? "bg-violet-500/15 border-violet-500/30 text-violet-300"
-                          : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white hover:border-white/15"}`}
+                  <div className="group">
+                    <div
+                      onClick={() => addMode ? addToBucket(b.id) : (setBucketFilter(v => v === String(b.id) ? "" : String(b.id)), setFolderPath([]))}
+                      className={`w-full h-[52px] rounded-t-lg overflow-hidden relative border-t border-l border-r cursor-pointer transition-colors
+                        ${addMode ? 'border-emerald-500/40 hover:border-emerald-500/70' : bucketFilter === String(b.id) ? 'border-violet-500/50' : 'border-white/[0.08] hover:border-white/15'}`}
                     >
-                      <FolderOpen size={11} />
-                      {b.name}
-                      <span className="ml-1 text-[9px] opacity-60">{b.count}</span>
-                    </button>
-                    <button onClick={e => openBucketMenu(e, b.id)}
-                      className="ml-0.5 p-1 rounded-md text-slate-500 hover:text-slate-300 transition-all"
-                      data-menu-btn>
-                      <MoreHorizontal size={11} />
-                    </button>
+                      <div className={`w-full h-full flex items-center justify-center ${addMode ? 'bg-emerald-500/10' : 'bg-white/[0.03]'}`}>
+                        <FolderOpen size={16} className={addMode ? 'text-emerald-700' : 'text-slate-700'} />
+                      </div>
+                      {b.previewUrls[0] && (
+                        <img src={b.previewUrls[0]} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy"
+                          onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                      )}
+                      {addMode ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Plus size={16} className="text-emerald-300" />
+                        </div>
+                      ) : (
+                        <button
+                          onClick={e => { e.stopPropagation(); openBucketMenu(e, b.id) }}
+                          className="absolute top-1 right-1 p-0.5 rounded bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity"
+                          data-menu-btn
+                        >
+                          <MoreHorizontal size={9} className="text-white" />
+                        </button>
+                      )}
+                    </div>
+                    <div
+                      onClick={() => addMode ? addToBucket(b.id) : (setBucketFilter(v => v === String(b.id) ? "" : String(b.id)), setFolderPath([]))}
+                      className={`px-1.5 py-1 rounded-b-lg border-b border-l border-r cursor-pointer transition-colors
+                        ${addMode ? 'bg-emerald-500/8 border-emerald-500/30' : bucketFilter === String(b.id) ? 'bg-violet-500/15 border-violet-500/50' : 'bg-white/[0.03] border-white/[0.08]'}`}
+                    >
+                      <p className={`text-[9px] truncate leading-tight
+                        ${addMode ? 'text-emerald-400' : bucketFilter === String(b.id) ? 'text-violet-300' : 'text-slate-400'}`}>
+                        {b.name}
+                      </p>
+                      <p className="text-[8px] text-slate-600">{b.count}</p>
+                    </div>
                     {bucketMenuId === b.id && menuAnchor && (
                       <div data-menu-btn className="fixed z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[160px]" style={{ top: menuAnchor.y, left: menuAnchor.x }}>
                         <button onClick={() => { setRenamingId(b.id); setRenameValue(b.name); setBucketMenuId(null); setMenuAnchor(null) }}
@@ -3034,7 +3260,7 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
                   </div>
                 )}
               </div>
-            ))}
+            )})}
 
             <button onClick={() => createBucket()}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-white/[0.08] text-slate-600 hover:text-slate-300 hover:border-white/20 text-xs whitespace-nowrap shrink-0 transition-all">
@@ -3071,33 +3297,49 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
             </div>
 
             {/* Sub-folders + buckets in current folder */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            <div className="flex items-end gap-2 overflow-x-auto pb-2 scrollbar-hide">
 
-              {/* Sub-folders of activeFolderId */}
+              {/* Sub-folder cards */}
               {folders.filter(f => (f.parentId ?? null) === activeFolderId).map(sf => {
                 const sfDescendants = getDescendantIds(sf.id)
                 const sfBucketCount = buckets.filter(b => b.folderId !== null && sfDescendants.has(b.folderId)).length
                 const isSubActive = folderPath.includes(sf.id)
                 const movableTargets = folders.filter(f => !sfDescendants.has(f.id))
                 return (
-                  <div key={sf.id} className="relative shrink-0 group flex items-center">
-                    <button
+                  <div key={sf.id} className="relative shrink-0 w-[72px] group">
+                    <div
                       onClick={() => setFolderPath(prev => [...prev, sf.id])}
-                      className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1 rounded-lg border text-[11px] whitespace-nowrap transition-all
-                        ${isSubActive
-                          ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
-                          : "bg-amber-500/5 border-amber-500/15 text-amber-600 hover:text-amber-400 hover:border-amber-500/30"}`}
+                      className={`w-full h-[46px] rounded-t-lg overflow-hidden relative border-t border-l border-r cursor-pointer transition-colors
+                        ${isSubActive ? 'border-amber-500/50' : 'border-amber-500/15 hover:border-amber-500/30'}`}
                     >
-                      <FolderOpen size={10} />
-                      {sf.name}
-                      <span className="text-[9px] opacity-50">{sfBucketCount}</span>
-                      <ChevronRight size={8} className="opacity-40" />
-                    </button>
-                    <button onClick={e => openFolderMenu(e, sf.id)}
-                      className="ml-0.5 p-1 rounded-md text-amber-700 hover:text-amber-400 transition-all"
-                      data-menu-btn>
-                      <MoreHorizontal size={10} />
-                    </button>
+                      <div className="grid grid-cols-2 grid-rows-2 w-full h-full gap-px bg-black/30">
+                        {[0,1,2,3].map(i => (
+                          <div key={i} className="overflow-hidden bg-white/[0.02] relative">
+                            {sf.previewUrls?.[i] && (
+                              <img src={sf.previewUrls[i]} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy"
+                                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        onClick={e => { e.stopPropagation(); openFolderMenu(e, sf.id) }}
+                        className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity"
+                        data-menu-btn
+                      >
+                        <MoreHorizontal size={8} className="text-white" />
+                      </button>
+                    </div>
+                    <div
+                      onClick={() => setFolderPath(prev => [...prev, sf.id])}
+                      className={`px-1.5 py-1 rounded-b-lg border-b border-l border-r cursor-pointer transition-colors
+                        ${isSubActive ? 'bg-amber-500/15 border-amber-500/50' : 'bg-amber-500/5 border-amber-500/15'}`}
+                    >
+                      <p className={`text-[9px] truncate leading-tight ${isSubActive ? 'text-amber-300' : 'text-amber-600'}`}>
+                        {sf.name}
+                      </p>
+                      <p className="text-[8px] text-slate-600">{sfBucketCount}</p>
+                    </div>
                     {folderMenuId === sf.id && menuAnchor && (
                       <div data-menu-btn className="fixed z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[160px]" style={{ top: menuAnchor.y, left: menuAnchor.x }}>
                         <button onClick={() => { renameFolder(sf.id); setFolderMenuId(null) }}
@@ -3133,11 +3375,13 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
                 )
               })}
 
-              {/* Buckets directly in activeFolderId */}
-              {buckets.filter(b => b.folderId === activeFolderId).map(b => (
-                <div key={b.id} className="relative shrink-0">
+              {/* Bucket cards directly in activeFolderId */}
+              {buckets.filter(b => b.folderId === activeFolderId).map(b => {
+                const addMode = selectMode && selected.size > 0
+                return (
+                <div key={b.id} className="relative shrink-0 w-[72px]">
                   {renamingId === b.id ? (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 py-1">
                       <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') renameBucket(b.id); if (e.key === 'Escape') { setRenamingId(null); setRenameValue("") } }}
                         className="px-2 py-1 rounded-lg bg-white/[0.08] border border-violet-500/40 text-xs text-white outline-none w-32" />
@@ -3145,23 +3389,46 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
                       <button onClick={() => { setRenamingId(null); setRenameValue("") }} className="text-[10px] text-slate-600 hover:text-slate-400 px-1">✕</button>
                     </div>
                   ) : (
-                    <div className="group flex items-center">
-                      <button
-                        onClick={() => setBucketFilter(v => v === String(b.id) ? "" : String(b.id))}
-                        className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-lg border text-xs whitespace-nowrap transition-all
-                          ${bucketFilter === String(b.id)
-                            ? "bg-violet-500/15 border-violet-500/30 text-violet-300"
-                            : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:text-white hover:border-white/15"}`}
+                    <div className="group">
+                      <div
+                        onClick={() => addMode ? addToBucket(b.id) : setBucketFilter(v => v === String(b.id) ? "" : String(b.id))}
+                        className={`w-full h-[46px] rounded-t-lg overflow-hidden relative border-t border-l border-r cursor-pointer transition-colors
+                          ${addMode ? 'border-emerald-500/40 hover:border-emerald-500/70' : bucketFilter === String(b.id) ? 'border-violet-500/50' : 'border-white/[0.08] hover:border-white/15'}`}
                       >
-                        <FolderOpen size={11} />
-                        {b.name}
-                        <span className="ml-1 text-[9px] opacity-60">{b.count}</span>
-                      </button>
-                      <button onClick={e => openBucketMenu(e, b.id)}
-                        className="ml-0.5 p-1 rounded-md text-slate-500 hover:text-slate-300 transition-all"
-                        data-menu-btn>
-                        <MoreHorizontal size={11} />
-                      </button>
+                        <div className={`w-full h-full flex items-center justify-center ${addMode ? 'bg-emerald-500/10' : 'bg-white/[0.03]'}`}>
+                          <FolderOpen size={14} className={addMode ? 'text-emerald-700' : 'text-slate-700'} />
+                        </div>
+                        {b.previewUrls[0] && (
+                          <img src={b.previewUrls[0]} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy"
+                            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                        )}
+                        {addMode ? (
+                          <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Plus size={14} className="text-emerald-300" />
+                          </div>
+                        ) : (
+                          <button
+                            onClick={e => { e.stopPropagation(); openBucketMenu(e, b.id) }}
+                            className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity"
+                            data-menu-btn
+                          >
+                            <MoreHorizontal size={8} className="text-white" />
+                          </button>
+                        )}
+                      </div>
+                      <div
+                        onClick={() => addMode ? addToBucket(b.id) : setBucketFilter(v => v === String(b.id) ? "" : String(b.id))}
+                        className={`px-1.5 py-1 rounded-b-lg border-b border-l border-r cursor-pointer transition-colors
+                          ${addMode ? 'bg-emerald-500/8 border-emerald-500/30' : bucketFilter === String(b.id)
+                            ? 'bg-violet-500/15 border-violet-500/50'
+                            : 'bg-white/[0.03] border-white/[0.08]'}`}
+                      >
+                        <p className={`text-[9px] truncate leading-tight
+                          ${addMode ? 'text-emerald-400' : bucketFilter === String(b.id) ? 'text-violet-300' : 'text-slate-400'}`}>
+                          {b.name}
+                        </p>
+                        <p className="text-[8px] text-slate-600">{b.count}</p>
+                      </div>
                       {bucketMenuId === b.id && menuAnchor && (
                         <div data-menu-btn className="fixed z-50 rounded-xl bg-[#131320] border border-white/[0.1] shadow-2xl overflow-hidden py-1 min-w-[160px]" style={{ top: menuAnchor.y, left: menuAnchor.x }}>
                           <button onClick={() => { setRenamingId(b.id); setRenameValue(b.name); setBucketMenuId(null) }}
@@ -3197,7 +3464,7 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
                     </div>
                   )}
                 </div>
-              ))}
+              )})}
 
               {folders.filter(f => (f.parentId ?? null) === activeFolderId).length === 0 && buckets.filter(b => b.folderId === activeFolderId).length === 0 && (
                 <span className="text-[11px] text-slate-700 italic">Empty folder</span>
@@ -3278,7 +3545,7 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
               <PageNav pagination={pagination} page={page} loading={loading} setPage={setPage} className="mb-4" />
             )}
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-1.5 sm:gap-2.5">
+            <div className={`grid gap-2 ${{1:'grid-cols-1',2:'grid-cols-2',3:'grid-cols-3',4:'grid-cols-4',5:'grid-cols-5',6:'grid-cols-6'}[cols] ?? 'grid-cols-4'}`}>
               {deferredImages.map((img, i) => (
                 <ImageCard
                   key={img.id}
