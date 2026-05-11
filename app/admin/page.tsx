@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import {
   Terminal, MessageSquare, Wrench, Image as ImageIcon, Sparkles, Tag,
   Users, CreditCard, ListOrdered, FlaskConical, Home, LayoutDashboard,
-  LogOut, ChevronRight, ShieldOff, Loader2, Shield, FileText, HardDrive, Database, Brain, ClipboardCheck
+  LogOut, ChevronRight, ShieldOff, Loader2, Shield, FileText, HardDrive, Database, Brain, ClipboardCheck, PackageOpen, Telescope
 } from "lucide-react"
 
 const TOOL_PAGES = [
@@ -24,8 +24,10 @@ const TOOL_PAGES = [
       { name: "News & Notifications", description: "Articles, notifications & pages", href: "/admin/news",     icon: FileText,      color: "bg-fuchsia-500/15 text-fuchsia-400", border: "hover:border-fuchsia-500/30" },
       { name: "Images",            description: "Generated images & carousel",    href: "/admin/images",        icon: ImageIcon,     color: "bg-pink-500/15 text-pink-400",       border: "hover:border-pink-500/30" },
       { name: "Scanner",           description: "Admin scanner & testing tools",  href: "/admin/scanner",       icon: Sparkles,      color: "bg-violet-500/15 text-violet-400",   border: "hover:border-violet-500/30" },
-      { name: "Dataset",           description: "Browse & curate training data",  href: "/admin/dataset",       icon: Database,      color: "bg-cyan-500/15 text-cyan-400",       border: "hover:border-cyan-500/30" },
-      { name: "LoRA Training",     description: "Train LoRA models from dataset", href: "/admin/lora-training", icon: Brain,         color: "bg-indigo-500/15 text-indigo-400",   border: "hover:border-indigo-500/30" },
+      { name: "Dataset",            description: "Browse & curate training data",     href: "/admin/dataset",      icon: Database,     color: "bg-cyan-500/15 text-cyan-400",       border: "hover:border-cyan-500/30" },
+      { name: "Dataset Prep",      description: "Build export templates & datasets",  href: "/admin/dataset-prep", icon: PackageOpen,  color: "bg-teal-500/15 text-teal-400",       border: "hover:border-teal-500/30" },
+      { name: "OneTrainer",        description: "Fine-tune models with OneTrainer",    href: "/admin/onetrainer",    icon: Brain,       color: "bg-indigo-500/15 text-indigo-400",   border: "hover:border-indigo-500/30" },
+      { name: "Upscaler Training", description: "Train ESRGAN / DRCT upscalers",       href: "/admin/upscaler",      icon: Telescope,   color: "bg-sky-500/15 text-sky-400",         border: "hover:border-sky-500/30" },
       { name: "Prototype",         description: "Experimental features",          href: "/admin/prototype",     icon: FlaskConical,  color: "bg-amber-500/15 text-amber-400",     border: "hover:border-amber-500/30" },
     ]
   },
