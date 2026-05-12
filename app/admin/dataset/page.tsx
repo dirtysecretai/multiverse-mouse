@@ -2342,6 +2342,7 @@ export default function DatasetPage() {
   const searchTimer         = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isMountedRef        = useRef(false)
   const bucketStatsAbortRef = useRef<AbortController | null>(null)
+  const fetchAbortRef       = useRef<AbortController | null>(null)
   const [debouncedSearch, setDebouncedSearch] = useState<string>(() => _p.search ?? "")
 
   const [bulkLoading,        setBulkLoading]        = useState(false)
@@ -2463,6 +2464,13 @@ export default function DatasetPage() {
   // ── Fetch ────────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     if (!isAuthenticated) return
+
+    // Cancel any in-flight request — prevents stale data from the first of a
+    // double-fetch (e.g. filter change + filterResetDeps page-reset firing separately)
+    fetchAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    fetchAbortRef.current = ctrl
+
     setLoading(true); setError(""); setSelected(new Set())
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(pageSize), sort })
@@ -2479,14 +2487,18 @@ export default function DatasetPage() {
       if (bucketFilter)   params.set('bucketId',   bucketFilter)
       if (markedOnly)     params.set('markedOnly', 'true')
       if (debouncedSearch) params.set('search',    debouncedSearch)
-      const res  = await fetch(`/api/admin/dataset?${params}`, { headers: authHeaders() })
+      const res  = await fetch(`/api/admin/dataset?${params}`, { headers: authHeaders(), signal: ctrl.signal })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setImages(data.images); setPagination(data.pagination); setFacets(data.facets)
       setOverallStats(data.overallStats ?? null)
-    } catch (e: any) { setError(e.message) }
-    finally { setLoading(false) }
-  }, [isAuthenticated, page, pageSize, sort, models, aspectRatios, qualities, userFilters, hasRefs, hasRating, hasCaption, hasTag, tagFilter, bucketFilter, markedOnly, debouncedSearch])
+      setLoading(false)
+    } catch (e: any) {
+      if (ctrl.signal.aborted) return // silently drop — a newer fetch is already running
+      setError(e.message)
+      setLoading(false)
+    }
+  }, [isAuthenticated, page, pageSize, sort, models, aspectRatios, qualities, userFilters, hasRefs, hasRating, hasCaption, hasTag, tagFilter, mediaType, bucketFilter, markedOnly, debouncedSearch])
 
   useEffect(() => { fetchData() }, [fetchData])
 
