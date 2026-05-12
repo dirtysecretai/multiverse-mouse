@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import ChatWidget from "@/components/ChatWidget"
-import { Image, Video, Type, ChevronDown, Ticket, User, BookMarked, ImagePlus, X, Plus, Check, Copy, Download, RotateCcw, ShoppingBag, SlidersHorizontal, Bell, AlertTriangle, CheckCircle, Info, Sparkles, Music, BookOpen, Star, Trash2, Loader2, Eye } from "lucide-react"
+import { Image, Video, Type, ChevronDown, Ticket, User, BookMarked, ImagePlus, X, Plus, Check, Copy, Download, RotateCcw, ShoppingBag, SlidersHorizontal, Bell, AlertTriangle, CheckCircle, Info, Sparkles, Music, BookOpen, Star, Trash2, Loader2, Eye, RefreshCw } from "lucide-react"
 
 // --- TYPES ---
 interface UserData {
@@ -47,6 +47,7 @@ interface ImageModelConfig {
   isFal: boolean   // true = async FAL queue; false = sync Gemini
   maxImages?: number               // if > 1, shows image count picker
   isUpscaler?: boolean             // special upscaler UI — takes image URL + params instead of prompt
+  isLocalModel?: boolean           // admin-only: runs on local GPU via upscaler-server.py
 }
 
 const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
@@ -69,6 +70,7 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
   { id: "esrgan",               apiId: "esrgan",                   name: "ESRGAN",              aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true,  isUpscaler: true },
   { id: "drct",                 apiId: "drct",                     name: "DRCT",                aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true,  isUpscaler: true },
   { id: "supir",                apiId: "supir",                    name: "SUPIR",               aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: false, isUpscaler: true },
+  { id: "local-realesrgan",    apiId: "local-realesrgan",         name: "Real-ESRGAN (Local)",  aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: false, isUpscaler: true, isLocalModel: true },
 ]
 
 // --- HELPERS ---
@@ -442,6 +444,7 @@ const IMAGE_MODEL_COST: Record<string, "$" | "$$" | "$$$" | "$$$+"> = {
   "esrgan":              "$",
   "drct":                "$",
   "supir":               "$$",
+  "local-realesrgan":    "$",
 }
 const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$" | "$$$+"> = {
   "lipsync-v3":         "$",
@@ -478,6 +481,9 @@ const IMAGE_MODEL_GROUPS = [
   { label: "OpenAI",            type: "text to image",             accent: "text-green-400",   dot: "bg-green-400",   items: ["ChatGPT Images 2.0"] },
   { label: "Z-Image",           type: "text to image",             accent: "text-cyan-400",    dot: "bg-cyan-400",    items: ["Z-Image Base", "Z-Image Turbo"] },
   { label: "Upscalers",         type: "enhance & enlarge images",  accent: "text-slate-400",   dot: "bg-slate-500",   items: ["Clarity Upscaler", "AuraSR", "ESRGAN", "DRCT", "SUPIR"] },
+]
+const ADMIN_IMAGE_MODEL_GROUPS = [
+  { label: "Admin Models", type: "local · PC must be running", accent: "text-cyan-400", dot: "bg-cyan-500", items: ["Real-ESRGAN (Local)"] },
 ]
 const VIDEO_MODEL_COST_BY_NAME: Record<string, "$" | "$$" | "$$$" | "$$$+"> = Object.fromEntries(
   VIDEO_MODEL_CONFIGS.map(m => [m.name, VIDEO_MODEL_COST[m.id] ?? "$$"])
@@ -3136,6 +3142,7 @@ function PromptBox({
   promptOverride,
   configOverride,
   isGenerationMaintenance = false,
+  isAdminAccount = false,
 }: {
   model: ImageModelConfig
   onModelChange: (m: ImageModelConfig) => void
@@ -3160,6 +3167,7 @@ function PromptBox({
   promptOverride?: { text: string; version: number }
   configOverride?: { aspectRatio?: string; quality?: string; outputFormat?: string; imageCount?: number; version: number }
   isGenerationMaintenance?: boolean
+  isAdminAccount?: boolean
 }) {
   const PROMPT_STORAGE_KEY = "pv2-prompt-state"
   const [prompt, setPrompt] = useState<string>("")
@@ -3220,6 +3228,69 @@ function PromptBox({
   const [supirColorFix, setSupirColorFix] = useState<"Wavelet" | "AdaIn" | "None">("Wavelet")
   const [supirNegPrompt, setSupirNegPrompt] = useState("blurry, noisy, low quality, oversmoothed, jpeg artifacts, deformed")
   const [supirConfigOpen, setSupirConfigOpen] = useState(false)
+  // Local admin model state
+  const [localCheckpoints, setLocalCheckpoints] = useState<{ name: string; path: string; iter: number; experiment: string }[]>([])
+  const [selectedLocalCheckpoint, setSelectedLocalCheckpoint] = useState<string>("")
+  const [checkpointLoading, setCheckpointLoading] = useState(false)
+  const [showCheckpointPicker, setShowCheckpointPicker] = useState(false)
+  const checkpointPickerRef = useRef<HTMLDivElement>(null)
+  const localJobPollRefs = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
+  const LOCAL_JOBS_KEY = "pv2-local-esrgan-jobs"
+
+  const stopLocalJobPoll = useCallback((jobId: string) => {
+    const iv = localJobPollRefs.current.get(jobId)
+    if (iv) { clearInterval(iv); localJobPollRefs.current.delete(jobId) }
+    try {
+      const stored: { jobId: string; slotId: string; label: string }[] = JSON.parse(localStorage.getItem(LOCAL_JOBS_KEY) || "[]")
+      localStorage.setItem(LOCAL_JOBS_KEY, JSON.stringify(stored.filter(j => j.jobId !== jobId)))
+    } catch { /* ignore */ }
+  }, [])
+
+  const startLocalJobPoll = useCallback((jobId: string, slotId: string, label: string) => {
+    const iv = setInterval(async () => {
+      try {
+        const res  = await fetch(`/api/admin/upscaler/infer?jobId=${jobId}`)
+        const data = await res.json()
+        if (data.status === 'done' && data.imageUrl) {
+          stopLocalJobPoll(jobId)
+          onRemovePending(slotId)
+          onPrependImage({ id: data.dbId ?? Date.now(), imageUrl: data.imageUrl, prompt: label, model: "local-realesrgan" })
+        } else if (data.status === 'error' || data.status === 'not_found') {
+          stopLocalJobPoll(jobId)
+          onUpdatePending(slotId, { status: "failed", error: data.error || "Inference failed" })
+        }
+      } catch { /* keep polling */ }
+    }, 3000)
+    localJobPollRefs.current.set(jobId, iv)
+  }, [onRemovePending, onPrependImage, onUpdatePending, stopLocalJobPoll])
+
+  // Restore pending local jobs on mount
+  useEffect(() => {
+    try {
+      const stored: { jobId: string; slotId: string; label: string }[] = JSON.parse(localStorage.getItem(LOCAL_JOBS_KEY) || "[]")
+      for (const { jobId, slotId, label } of stored) {
+        onAddPending({ slotId, status: "loading", prompt: label, modelId: "local-realesrgan", aspectRatio: "1:1", quality: "4x" as Quality })
+        startLocalJobPoll(jobId, slotId, label)
+      }
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const refreshCheckpoints = useCallback(async () => {
+    setCheckpointLoading(true)
+    try {
+        const r  = await fetch("/api/admin/upscaler/scan-checkpoints")
+      const data = await r.json()
+      if (Array.isArray(data)) {
+        setLocalCheckpoints(data)
+        if (data.length > 0) setSelectedLocalCheckpoint(prev => prev || data[data.length - 1].path)
+      }
+    } catch { /* ignore */ }
+    finally { setCheckpointLoading(false) }
+  }, [])
+  useEffect(() => {
+    if (model.isLocalModel) refreshCheckpoints()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model.isLocalModel])
   // Restore saved prompt state after mount to avoid SSR/client hydration mismatch
   useEffect(() => {
     try {
@@ -3302,7 +3373,7 @@ function PromptBox({
   const slotsNeeded = (model.isFal || model.id === "nano-banana-pro-2" || model.id === "gpt-image-2") ? imageCount : 1
   const queueFull = activeJobCount + slotsNeeded > maxConcurrent
   const canGenerate = model.isUpscaler
-    ? !isGenerationMaintenance && !!userId && upscaleSourceUrl.trim().startsWith("http") && !generating && !queueFull
+    ? !isGenerationMaintenance && !!userId && upscaleSourceUrl.trim().startsWith("http") && !generating && !queueFull && (!model.isLocalModel || !!selectedLocalCheckpoint)
     : !isGenerationMaintenance && !!userId && prompt.trim().length > 0 && !generating && !needsRefImage && !queueFull
 
   const handleGenerate = async () => {
@@ -3316,6 +3387,40 @@ function PromptBox({
       ? `${triggerWord} ${rawPrompt}`
       : rawPrompt
     const count = model.maxImages ? imageCount : 1
+
+    // --- Local admin models: submit to background job, poll for result ---
+    if (model.isLocalModel) {
+      const slotId = `slot-${Date.now()}-0`
+      const ckName = localCheckpoints.find(c => c.path === selectedLocalCheckpoint)
+      const ckLabel = ckName
+        ? ckName.experiment === 'pretrained'
+          ? ckName.name.replace(/\.(pth|safetensors)$/, '')
+          : `${(ckName.iter / 1000).toFixed(0)}k`
+        : 'local'
+      const label  = `${upscaleFactor}x Real-ESRGAN · ${ckLabel}`
+      onAddPending({ slotId, status: "loading", prompt: label, modelId: model.apiId, aspectRatio: "1:1", quality: `${upscaleFactor}x` as Quality })
+      setGenerating(false)
+      try {
+        const res  = await fetch("/api/admin/upscaler/infer", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ imageUrl: upscaleSourceUrl, modelPath: selectedLocalCheckpoint, scale: upscaleFactor, prompt: label }),
+        })
+        const data = await res.json()
+        if (!res.ok || !data.jobId) {
+          onUpdatePending(slotId, { status: "failed", error: data.error || "Failed to start job" })
+          return
+        }
+        // Persist so page refresh can resume polling
+        const stored: { jobId: string; slotId: string; label: string }[] = JSON.parse(localStorage.getItem(LOCAL_JOBS_KEY) || "[]")
+        localStorage.setItem(LOCAL_JOBS_KEY, JSON.stringify([...stored, { jobId: data.jobId, slotId, label }]))
+        startLocalJobPoll(data.jobId, slotId, label)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Network error"
+        onUpdatePending(slotId, { status: "failed", error: msg })
+      }
+      return
+    }
 
     // --- Upscaler models: completely different flow ---
     if (model.isUpscaler) {
@@ -3998,6 +4103,17 @@ function PromptBox({
     return () => document.removeEventListener("mousedown", handleClick)
   }, [showModelPicker])
 
+  useEffect(() => {
+    if (!showCheckpointPicker) return
+    function handleClick(e: MouseEvent) {
+      if (checkpointPickerRef.current && !checkpointPickerRef.current.contains(e.target as Node)) {
+        setShowCheckpointPicker(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [showCheckpointPicker])
+
   return (
     <div className="fixed bottom-0 left-0 right-0 px-6 pb-6 pt-3 bg-gradient-to-t from-[#050810] via-[#050810]/80 to-transparent pointer-events-none">
       <div className="max-w-3xl mx-auto pointer-events-auto space-y-2">
@@ -4464,7 +4580,7 @@ function PromptBox({
 
                   {/* 2-col grid of company sections */}
                   <div className="p-2.5 grid grid-cols-2 gap-x-2 gap-y-2 overflow-y-auto max-h-[360px]">
-                    {IMAGE_MODEL_GROUPS.map((group) => (
+                    {(isAdminAccount ? [...IMAGE_MODEL_GROUPS, ...ADMIN_IMAGE_MODEL_GROUPS] : IMAGE_MODEL_GROUPS).map((group) => (
                       <div key={group.label}>
                         <div className="flex items-center gap-1.5 px-1.5 pb-1">
                           <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${group.dot}`} />
@@ -4563,6 +4679,79 @@ function PromptBox({
                 </div>
               </>
             )}
+
+            {/* Checkpoint selector — local admin models only */}
+            {model.isLocalModel && (() => {
+              const ckLabel = localCheckpoints.find(c => c.path === selectedLocalCheckpoint)
+              const [ckOpen, setCkOpen] = [showCheckpointPicker, setShowCheckpointPicker]
+              return (
+                <>
+                  <div className="w-px h-3 bg-white/10 shrink-0 hidden sm:block" />
+                  <div className="relative shrink-0" ref={checkpointPickerRef}>
+                    <button
+                      onClick={() => setCkOpen(v => !v)}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-cyan-500/30 bg-cyan-500/[0.06] text-[11px] text-cyan-300 hover:border-cyan-500/50 hover:bg-cyan-500/10 transition-all max-w-[160px]"
+                    >
+                      <span className="truncate">
+                        {localCheckpoints.length === 0
+                          ? "No checkpoints"
+                          : ckLabel ? `${ckLabel.experiment} · ${(ckLabel.iter / 1000).toFixed(0)}k` : "Select checkpoint"}
+                      </span>
+                      <ChevronDown size={10} className={`shrink-0 transition-transform ${ckOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {ckOpen && localCheckpoints.length > 0 && (() => {
+                      const pretrained = localCheckpoints.filter(c => c.experiment === 'pretrained')
+                      const trained    = localCheckpoints.filter(c => c.experiment !== 'pretrained')
+                      const renderCk = (ck: typeof localCheckpoints[0]) => (
+                        <button
+                          key={ck.path}
+                          onClick={() => { setSelectedLocalCheckpoint(ck.path); setCkOpen(false) }}
+                          className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center justify-between gap-2 ${
+                            selectedLocalCheckpoint === ck.path
+                              ? "bg-cyan-500/10 text-cyan-300"
+                              : "text-slate-400 hover:text-white hover:bg-white/5"
+                          }`}
+                        >
+                          <span className="truncate">
+                            {ck.experiment === 'pretrained'
+                              ? ck.name.replace(/\.(pth|safetensors)$/, '')
+                              : ck.experiment}
+                          </span>
+                          {ck.experiment !== 'pretrained' && (
+                            <span className="font-mono text-[10px] shrink-0 text-slate-500">{(ck.iter / 1000).toFixed(0)}k</span>
+                          )}
+                        </button>
+                      )
+                      return (
+                        <div className="absolute bottom-full mb-1.5 left-0 z-50 min-w-[220px] rounded-xl bg-[#0e1018] border border-white/10 shadow-2xl overflow-hidden py-1">
+                          {pretrained.length > 0 && (
+                            <>
+                              <div className="px-3 pt-1.5 pb-0.5 text-[10px] text-slate-500 uppercase tracking-wider">Pre-trained</div>
+                              {pretrained.map(renderCk)}
+                            </>
+                          )}
+                          {trained.length > 0 && (
+                            <>
+                              {pretrained.length > 0 && <div className="my-1 border-t border-white/5" />}
+                              <div className="px-3 pt-1.5 pb-0.5 text-[10px] text-slate-500 uppercase tracking-wider">Your checkpoints</div>
+                              {trained.map(renderCk)}
+                            </>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                  <button
+                    onClick={refreshCheckpoints}
+                    disabled={checkpointLoading}
+                    title="Refresh checkpoint list"
+                    className="flex items-center justify-center w-6 h-6 rounded border border-white/10 bg-white/5 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/30 transition-colors disabled:opacity-40 shrink-0"
+                  >
+                    <RefreshCw size={10} className={checkpointLoading ? "animate-spin" : ""} />
+                  </button>
+                </>
+              )
+            })()}
 
             {/* LoRA picker — z-image-base / z-image-turbo only */}
             {isZImageModel && !model.isUpscaler && (
@@ -4845,7 +5034,7 @@ function PromptBox({
                   <Ticket size={12} />
                 )}
                 {isGenerationMaintenance ? "Temporarily Offline" : queueFull ? "Queue Full" : "Generate"}
-                {!isGenerationMaintenance && !queueFull && <span className="opacity-70">{totalCost}</span>}
+                {!isGenerationMaintenance && !queueFull && !model.isLocalModel && <span className="opacity-70">{totalCost}</span>}
               </button>
             </div>
           </div>
@@ -8346,7 +8535,7 @@ export default function PortalV2Page() {
             <GroupedTaskbarDropdown
               label="Image"
               icon={Image}
-              groups={IMAGE_MODEL_GROUPS}
+              groups={isAdminAccount ? [...IMAGE_MODEL_GROUPS, ...ADMIN_IMAGE_MODEL_GROUPS] : IMAGE_MODEL_GROUPS}
               open={openDropdown === "image"}
               onToggle={() => toggle("image")}
               onSelect={handleSelectImageModel}
@@ -8479,6 +8668,7 @@ export default function PortalV2Page() {
             promptOverride={promptOverride}
             configOverride={configOverride}
             isGenerationMaintenance={isGenerationMaintenance && !['dirtysecretai@gmail.com', 'promptandprotocol@gmail.com'].includes(user?.email ?? '')}
+            isAdminAccount={isAdminAccount}
           />
         </>
       ) : !user ? (

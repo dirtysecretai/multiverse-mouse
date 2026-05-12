@@ -1774,14 +1774,38 @@ function AddToBucketModal({ count, buckets, folders, recentBucketIds, onClose, o
   const currentFolderId = browsePath.length > 0 ? browsePath[browsePath.length - 1] : null
 
   const q = modalSearch.trim().toLowerCase()
-  const visibleFolders = folders.filter(f =>
-    (currentFolderId === null ? !f.parentId : f.parentId === currentFolderId) &&
-    (!q || f.name.toLowerCase().includes(q))
+  const isSearching = !!q
+
+  // Returns the chain of folder names from root down to (but not including) folderId
+  function getFolderAncestorNames(folderId: number | null): string[] {
+    if (!folderId) return []
+    const f = folders.find(x => x.id === folderId)
+    if (!f) return []
+    return [...getFolderAncestorNames(f.parentId ?? null), f.name]
+  }
+
+  // Returns the full browsePath array needed to navigate into folderId
+  function buildPathToFolder(folderId: number): number[] {
+    const path: number[] = []
+    let cur: BucketFolder | undefined = folders.find(x => x.id === folderId)
+    while (cur) {
+      path.unshift(cur.id)
+      cur = cur.parentId ? folders.find(x => x.id === cur!.parentId) : undefined
+    }
+    return path
+  }
+
+  // Browse mode — items at the current level only
+  const visibleFolders = isSearching ? [] : folders.filter(f =>
+    currentFolderId === null ? !f.parentId : f.parentId === currentFolderId
   )
-  const visibleBuckets = buckets.filter(b =>
-    b.folderId === currentFolderId &&
-    (!q || b.name.toLowerCase().includes(q))
+  const visibleBuckets = isSearching ? [] : buckets.filter(b =>
+    b.folderId === currentFolderId
   )
+
+  // Search mode — all levels, flat
+  const searchFolders = isSearching ? folders.filter(f => f.name.toLowerCase().includes(q)) : []
+  const searchBuckets = isSearching ? buckets.filter(b => b.name.toLowerCase().includes(q)) : []
 
   async function handleAdd(bucketId: number) {
     setSaving(true)
@@ -1855,7 +1879,7 @@ function AddToBucketModal({ count, buckets, folders, recentBucketIds, onClose, o
           ) : (
             <>
             {/* Recent buckets row — root level only, hidden during search */}
-            {browsePath.length === 0 && !q && recentBucketIds.length > 0 && (() => {
+            {!isSearching && browsePath.length === 0 && recentBucketIds.length > 0 && (() => {
               const recentBuckets = recentBucketIds.map(id => buckets.find(b => b.id === id)).filter(Boolean) as Bucket[]
               if (recentBuckets.length === 0) return null
               return (
@@ -1888,63 +1912,120 @@ function AddToBucketModal({ count, buckets, folders, recentBucketIds, onClose, o
               )
             })()}
 
-            {visibleFolders.length === 0 && visibleBuckets.length === 0 ? (
-              <p className="text-xs text-slate-600 text-center py-10">No buckets here</p>
-            ) : (
-            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-
-              {/* Folder cards */}
-              {visibleFolders.map(folder => {
-                const directCount = folders.filter(f => f.parentId === folder.id).length
-                                  + buckets.filter(b => b.folderId === folder.id).length
-                return (
-                  <div key={folder.id} onClick={() => { setBrowsePath(p => [...p, folder.id]); setModalSearch("") }} className="cursor-pointer group">
-                    <div className="w-full aspect-square rounded-t-lg overflow-hidden relative border-t border-l border-r border-amber-500/20 group-hover:border-amber-500/50 transition-colors">
-                      <div className="grid grid-cols-2 grid-rows-2 w-full h-full gap-px bg-black/30">
-                        {[0,1,2,3].map(i => (
-                          <div key={i} className="overflow-hidden bg-white/[0.02] relative">
-                            {folder.previewUrls?.[i] && (
-                              <img src={folder.previewUrls[i]} alt="" className="absolute inset-0 w-full h-full object-cover"
-                                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
-                            )}
-                          </div>
-                        ))}
+            {isSearching ? (
+              /* ── Flat search results across all levels ── */
+              searchFolders.length === 0 && searchBuckets.length === 0 ? (
+                <p className="text-xs text-slate-600 text-center py-10">No results for &ldquo;{modalSearch}&rdquo;</p>
+              ) : (
+                <div className="flex flex-col gap-0.5">
+                  {searchFolders.map(folder => {
+                    const path = getFolderAncestorNames(folder.parentId ?? null)
+                    return (
+                      <div key={folder.id}
+                        onClick={() => { setBrowsePath(buildPathToFolder(folder.id)); setModalSearch("") }}
+                        className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer hover:bg-white/[0.04] transition-colors group">
+                        <div className="w-8 h-8 rounded-md bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                          <FolderOpen size={14} className="text-amber-400" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs text-amber-400 truncate">{folder.name}</p>
+                          {path.length > 0 && (
+                            <p className="text-[10px] text-slate-600 truncate">{path.join(' / ')}</p>
+                          )}
+                        </div>
+                        <ChevronRight size={12} className="text-slate-700 group-hover:text-amber-400 transition-colors shrink-0" />
                       </div>
-                      <div className="absolute inset-0 flex items-center justify-center bg-amber-500/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <ChevronRight size={18} className="text-amber-300" />
+                    )
+                  })}
+                  {searchBuckets.map(b => {
+                    const path = getFolderAncestorNames(b.folderId)
+                    return (
+                      <div key={b.id}
+                        onClick={() => !saving && handleAdd(b.id)}
+                        className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer hover:bg-white/[0.04] transition-colors group">
+                        <div className="w-8 h-8 rounded-md bg-violet-500/10 border border-violet-500/20 shrink-0 overflow-hidden relative flex items-center justify-center">
+                          {b.previewUrls[0] ? (
+                            <img src={b.previewUrls[0]} alt="" className="absolute inset-0 w-full h-full object-cover"
+                              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                          ) : (
+                            <FolderOpen size={14} className="text-violet-400" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs text-slate-300 truncate group-hover:text-white transition-colors">{b.name}</p>
+                          {path.length > 0
+                            ? <p className="text-[10px] text-slate-600 truncate">{path.join(' / ')}</p>
+                            : <p className="text-[10px] text-slate-600">{b.count} image{b.count !== 1 ? 's' : ''}</p>
+                          }
+                        </div>
+                        <div className="w-6 h-6 rounded-md bg-violet-500/10 border border-violet-500/20 flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Plus size={11} className="text-violet-300" />
+                        </div>
                       </div>
-                    </div>
-                    <div className="px-1.5 py-1 rounded-b-lg border-b border-l border-r bg-amber-500/5 border-amber-500/20 group-hover:border-amber-500/40 transition-colors">
-                      <p className="text-[9px] truncate leading-tight text-amber-400">{folder.name}</p>
-                      <p className="text-[8px] text-slate-600">{directCount} item{directCount !== 1 ? 's' : ''}</p>
-                    </div>
-                  </div>
-                )
-              })}
-
-              {/* Bucket cards */}
-              {visibleBuckets.map(b => (
-                <div key={b.id} onClick={() => !saving && handleAdd(b.id)} className="cursor-pointer group">
-                  <div className="w-full aspect-square rounded-t-lg overflow-hidden relative border-t border-l border-r border-violet-500/20 group-hover:border-violet-500/50 transition-colors">
-                    <div className="w-full h-full flex items-center justify-center bg-white/[0.03]">
-                      <FolderOpen size={20} className="text-slate-700" />
-                    </div>
-                    {b.previewUrls[0] && (
-                      <img src={b.previewUrls[0]} alt="" className="absolute inset-0 w-full h-full object-cover"
-                        onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
-                    )}
-                    <div className="absolute inset-0 flex items-center justify-center bg-violet-500/20 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Plus size={18} className="text-violet-300" />
-                    </div>
-                  </div>
-                  <div className="px-1.5 py-1 rounded-b-lg border-b border-l border-r bg-white/[0.03] border-violet-500/20 group-hover:border-violet-500/40 transition-colors">
-                    <p className="text-[9px] truncate leading-tight text-slate-400 group-hover:text-white transition-colors">{b.name}</p>
-                    <p className="text-[8px] text-slate-600">{b.count}</p>
-                  </div>
+                    )
+                  })}
                 </div>
-              ))}
+              )
+            ) : (
+              /* ── Normal browse grid ── */
+              visibleFolders.length === 0 && visibleBuckets.length === 0 ? (
+                <p className="text-xs text-slate-600 text-center py-10">No buckets here</p>
+              ) : (
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
 
-            </div>
+                {/* Folder cards */}
+                {visibleFolders.map(folder => {
+                  const directCount = folders.filter(f => f.parentId === folder.id).length
+                                    + buckets.filter(b => b.folderId === folder.id).length
+                  return (
+                    <div key={folder.id} onClick={() => { setBrowsePath(p => [...p, folder.id]); setModalSearch("") }} className="cursor-pointer group">
+                      <div className="w-full aspect-square rounded-t-lg overflow-hidden relative border-t border-l border-r border-amber-500/20 group-hover:border-amber-500/50 transition-colors">
+                        <div className="grid grid-cols-2 grid-rows-2 w-full h-full gap-px bg-black/30">
+                          {[0,1,2,3].map(i => (
+                            <div key={i} className="overflow-hidden bg-white/[0.02] relative">
+                              {folder.previewUrls?.[i] && (
+                                <img src={folder.previewUrls[i]} alt="" className="absolute inset-0 w-full h-full object-cover"
+                                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="absolute inset-0 flex items-center justify-center bg-amber-500/10 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ChevronRight size={18} className="text-amber-300" />
+                        </div>
+                      </div>
+                      <div className="px-1.5 py-1 rounded-b-lg border-b border-l border-r bg-amber-500/5 border-amber-500/20 group-hover:border-amber-500/40 transition-colors">
+                        <p className="text-[9px] truncate leading-tight text-amber-400">{folder.name}</p>
+                        <p className="text-[8px] text-slate-600">{directCount} item{directCount !== 1 ? 's' : ''}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {/* Bucket cards */}
+                {visibleBuckets.map(b => (
+                  <div key={b.id} onClick={() => !saving && handleAdd(b.id)} className="cursor-pointer group">
+                    <div className="w-full aspect-square rounded-t-lg overflow-hidden relative border-t border-l border-r border-violet-500/20 group-hover:border-violet-500/50 transition-colors">
+                      <div className="w-full h-full flex items-center justify-center bg-white/[0.03]">
+                        <FolderOpen size={20} className="text-slate-700" />
+                      </div>
+                      {b.previewUrls[0] && (
+                        <img src={b.previewUrls[0]} alt="" className="absolute inset-0 w-full h-full object-cover"
+                          onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                      )}
+                      <div className="absolute inset-0 flex items-center justify-center bg-violet-500/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Plus size={18} className="text-violet-300" />
+                      </div>
+                    </div>
+                    <div className="px-1.5 py-1 rounded-b-lg border-b border-l border-r bg-white/[0.03] border-violet-500/20 group-hover:border-violet-500/40 transition-colors">
+                      <p className="text-[9px] truncate leading-tight text-slate-400 group-hover:text-white transition-colors">{b.name}</p>
+                      <p className="text-[8px] text-slate-600">{b.count}</p>
+                    </div>
+                  </div>
+                ))}
+
+              </div>
+              )
             )}
             </>
           )}
