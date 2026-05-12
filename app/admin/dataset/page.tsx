@@ -343,6 +343,8 @@ function UploadModal({ bucketId, suggestions, onClose, onUploaded }: {
   }
 
   function removeFile(i: number) {
+    const url = previews[i]?.url
+    if (url) URL.revokeObjectURL(url)
     setFiles(f => f.filter((_, j) => j !== i))
     setPreviews(p => p.filter((_, j) => j !== i))
     setMetas(m => m.filter((_, j) => j !== i))
@@ -2338,7 +2340,12 @@ export default function DatasetPage() {
   const [mediaType,    setMediaType]    = useState<string>(() => _p.mediaType     ?? "")
   const [markedOnly,   setMarkedOnly]   = useState<boolean>(() => _p.markedOnly   ?? false)
   const [sort,         setSort]         = useState<string>(() => _p.sort          ?? "newest")
-  const [pageSize,     setPageSize]     = useState<number>(() => _p.pageSize      ?? 20)
+  const [pageSize,     setPageSize]     = useState<number>(() => {
+    const saved = _p.pageSize ?? 12
+    // iPad/mobile: cap at 12 to avoid iOS tab eviction from too many large images in GPU memory
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) return Math.min(saved, 12)
+    return saved
+  })
   const [cols,         setCols]         = useState<number>(() => _p.cols           ?? 4)
   const [recentBucketIds, setRecentBucketIds] = useState<number[]>(() => _p.recentBucketIds ?? [])
   const [page,         setPage]         = useState<number>(() => _p.page          ?? 1)
@@ -2978,7 +2985,7 @@ const modelOptions      = useMemo(() => (facets?.models    ?? []).map(m => ({ va
         {/* Action buttons — flex-wrap so they never overflow on any screen */}
         <div className="border-t border-white/[0.04] px-3 py-1.5 flex flex-wrap gap-1.5">
           <div className="flex items-center rounded-lg border border-white/[0.07] overflow-hidden">
-            {[12, 24, 48, 96].map(n => (
+            {[8, 12, 24, 48, 96].map(n => (
               <button key={n} onClick={() => setPageSize(n)}
                 className={`px-2 py-1.5 text-[11px] transition-colors ${pageSize === n ? 'bg-white/[0.08] text-white' : 'text-slate-500 hover:text-white'}`}>
                 {n}
