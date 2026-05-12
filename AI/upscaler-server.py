@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Upscaler training server (ESRGAN / DRCT) — port 8766"""
 
-import os, sys, json, time, threading, subprocess, re
+import os, sys, json, time, threading, subprocess, re, shutil, base64, tempfile
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -76,7 +76,20 @@ def arch_info(arch_id):
 def _cfg(c, key, default):
     return c.get(key, default)
 
-def make_esrgan_config(c):
+def generate_meta_info(hr_dir, work_dir):
+    """Generate meta_info.txt listing all images — required by RealESRGANDataset."""
+    hr_path   = Path(hr_dir)
+    meta_path = Path(work_dir) / 'meta_info.txt'
+    exts      = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff'}
+    images    = sorted(f.name for f in hr_path.iterdir()
+                       if f.is_file() and f.suffix.lower() in exts)
+    with open(meta_path, 'w') as f:
+        for img in images:
+            f.write(f'{img} 1\n')
+    return str(meta_path).replace('\\', '/'), len(images)
+
+
+def make_esrgan_config(c, meta_info_path):
     scale     = int(_cfg(c, 'scale', 4))
     patch     = int(_cfg(c, 'patchSize', 256))
     batch     = int(_cfg(c, 'batchSize', 4))
@@ -87,6 +100,7 @@ def make_esrgan_config(c):
     out       = c['outputPath'].replace('\\', '/')
     name      = _cfg(c, 'name', 'custom_esrgan')
     milestone = iters // 2
+    meta      = meta_info_path.replace('\\', '/')
 
     return f"""name: {name}
 model_type: RealESRGANModel
@@ -94,11 +108,36 @@ scale: {scale}
 num_gpu: 1
 manual_seed: 0
 
+l1_gt_usm: True
+percep_gt_usm: True
+gan_gt_usm: False
+
+resize_prob: [0.2, 0.7, 0.1]
+resize_range: [0.15, 1.5]
+gaussian_noise_prob: 0.5
+noise_range: [1, 30]
+poisson_scale_range: [0.05, 3]
+gray_noise_prob: 0.4
+jpeg_range: [30, 95]
+
+second_blur_prob: 0.8
+resize_prob2: [0.3, 0.4, 0.3]
+resize_range2: [0.3, 1.2]
+gaussian_noise_prob2: 0.5
+noise_range2: [1, 25]
+poisson_scale_range2: [0.05, 2.5]
+gray_noise_prob2: 0.4
+jpeg_range2: [30, 95]
+
+gt_size: {patch}
+queue_size: 180
+
 datasets:
   train:
     name: CustomHR
     type: RealESRGANDataset
     dataroot_gt: {hr}
+    meta_info: {meta}
     io_backend:
       type: disk
     blur_kernel_size: 21
@@ -404,6 +443,27 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(dict(_state))
         if self.path == '/architectures':
             return self._send([arch_info(aid) for aid in ARCHS])
+        if self.path == '/checkpoints':
+            checkpoints = []
+            exp_root = AI_DIR / 'Real-ESRGAN' / 'experiments'
+            if exp_root.exists():
+                for exp_dir in sorted(exp_root.iterdir()):
+                    if not exp_dir.is_dir() or 'archived' in exp_dir.name:
+                        continue
+                    models_dir = exp_dir / 'models'
+                    if not models_dir.exists():
+                        continue
+                    for pth in sorted(models_dir.glob('net_g_*.pth'),
+                                      key=lambda p: int(re.search(r'\d+', p.stem).group() or '0')):
+                        m = re.search(r'net_g_(\d+)', pth.name)
+                        if m:
+                            checkpoints.append({
+                                'name':       pth.name,
+                                'path':       str(pth).replace('\\', '/'),
+                                'iter':       int(m.group(1)),
+                                'experiment': exp_dir.name,
+                            })
+            return self._send(checkpoints)
         self._send({'error': 'not found'}, 404)
 
     def do_POST(self):
@@ -439,7 +499,12 @@ class Handler(BaseHTTPRequestHandler):
             work_dir.mkdir(parents=True, exist_ok=True)
 
             if arch_id == 'esrgan':
-                config_text = make_esrgan_config(cfg)
+                actual_out = ARCHS[arch_id]['dir'] / 'experiments' / cfg.get('name', 'run')
+                _log(f'Models will save to: {actual_out / "models"}')
+                _log('Scanning HR dataset and generating meta_info.txt...')
+                meta_path, img_count = generate_meta_info(cfg['datasetPath'], work_dir)
+                _log(f'Found {img_count} images → {meta_path}')
+                config_text = make_esrgan_config(cfg, meta_path)
             else:
                 scale  = int(cfg.get('scale', 4))
                 lr_dir = str(work_dir / 'lr_auto')
@@ -458,6 +523,59 @@ class Handler(BaseHTTPRequestHandler):
                 daemon=True,
             ).start()
             return self._send({'ok': True, 'arch': arch_id})
+
+        if self.path == '/infer':
+            import urllib.request
+            cfg        = self._body()
+            image_url  = cfg.get('imageUrl', '')
+            model_path = cfg.get('modelPath', '')
+            scale      = int(cfg.get('scale', 4))
+
+            if not image_url or not model_path:
+                return self._send({'error': 'imageUrl and modelPath required'}, 400)
+            if not Path(model_path).exists():
+                return self._send({'error': f'Model not found: {model_path}'}, 400)
+
+            tmp_in  = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+            tmp_in.close()
+            tmp_out = Path(tempfile.mkdtemp())
+            try:
+                urllib.request.urlretrieve(image_url, tmp_in.name)
+
+                python_exe = _find_python('esrgan')
+                script     = AI_DIR / 'Real-ESRGAN' / 'inference_realesrgan.py'
+                cmd = [
+                    python_exe, str(script),
+                    '--model_path', model_path,
+                    '-i', tmp_in.name,
+                    '-o', str(tmp_out),
+                    '--outscale', str(scale),
+                    '--fp32',
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True,
+                                        cwd=str(AI_DIR / 'Real-ESRGAN'), timeout=300)
+
+                if result.returncode != 0:
+                    err = (result.stderr or result.stdout or 'Inference failed')[-600:]
+                    return self._send({'error': err}, 500)
+
+                out_files = list(tmp_out.glob('*'))
+                if not out_files:
+                    return self._send({'error': 'No output file generated'}, 500)
+
+                with open(out_files[0], 'rb') as f:
+                    out_b64 = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
+
+                return self._send({'output': out_b64})
+
+            except subprocess.TimeoutExpired:
+                return self._send({'error': 'Inference timed out (5-min limit)'}, 504)
+            except Exception as e:
+                return self._send({'error': str(e)}, 500)
+            finally:
+                try: os.unlink(tmp_in.name)
+                except: pass
+                shutil.rmtree(tmp_out, ignore_errors=True)
 
         self._send({'error': 'not found'}, 404)
 

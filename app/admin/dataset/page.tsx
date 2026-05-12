@@ -1809,17 +1809,21 @@ function AddToBucketModal({ count, buckets, folders, recentBucketIds, onClose, o
 
   async function handleAdd(bucketId: number) {
     setSaving(true)
-    await onAdd(bucketId)
-    setSaving(false)
-    onClose()
+    try {
+      await onAdd(bucketId)
+      onClose()
+    } catch { /* network error — modal stays open so user can retry */ }
+    finally { setSaving(false) }
   }
 
   async function handleCreateAndAdd() {
     if (!newName.trim()) return
     setSaving(true)
-    await onCreateAndAdd(newName.trim())
-    setSaving(false)
-    onClose()
+    try {
+      await onCreateAndAdd(newName.trim())
+      onClose()
+    } catch { /* network error — modal stays open so user can retry */ }
+    finally { setSaving(false) }
   }
 
   return (
@@ -2591,10 +2595,11 @@ export default function DatasetPage() {
 
   // ── Selection helpers ────────────────────────────────────────────────────────
   const toggleSelect = useCallback((id: number) => {
+    if (loading) return
     setSelected(prev => {
       const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
     })
-  }, [])
+  }, [loading])
 
   function selectAll() { setSelected(new Set(images.map(i => i.id))) }
 
