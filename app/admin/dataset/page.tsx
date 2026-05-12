@@ -2146,6 +2146,7 @@ const ImageCard = memo(function ImageCard({ img, selected, selectMode, onSelect,
   return (
     <div
       onClick={handleClick}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 200px' }}
       className={`group relative rounded-xl overflow-hidden border transition-all cursor-pointer
         ${selected
           ? "border-cyan-500/60 ring-1 ring-cyan-500/30"
@@ -2353,6 +2354,13 @@ export default function DatasetPage() {
   useEffect(() => {
     setIsAuthenticated(localStorage.getItem("multiverse-admin-auth") === "true" && !!sessionStorage.getItem("admin-password"))
     setSessionChecked(true)
+  }, [])
+
+  // ── Prevent iOS Safari pull-to-refresh (causes full tab reload on iPad) ────────
+  useEffect(() => {
+    const prev = document.body.style.overscrollBehavior
+    document.body.style.overscrollBehavior = 'none'
+    return () => { document.body.style.overscrollBehavior = prev }
   }, [])
 
   // ── Close bucket/folder menus on outside click ───────────────────────────────
