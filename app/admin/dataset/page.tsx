@@ -1,5 +1,6 @@
 ﻿"use client"
 
+import NextImage from "next/image"
 import { useState, useEffect, useCallback, useRef, useMemo, memo, useDeferredValue } from "react"
 import {
   Database, Download, ChevronLeft, ChevronRight, Search,
@@ -2165,7 +2166,15 @@ const ImageCard = memo(function ImageCard({ img, selected, selectMode, onSelect,
         {isVideo ? (
           <>
             {img.videoMetadata?.thumbnailUrl ? (
-              <img src={img.videoMetadata.thumbnailUrl} alt="" className="w-full h-full object-cover" loading={priority ? 'eager' : 'lazy'} decoding="async" fetchPriority={priority ? 'high' : 'low'} />
+              <NextImage
+                src={img.videoMetadata.thumbnailUrl}
+                alt=""
+                fill
+                sizes="(max-width: 768px) 33vw, (max-width: 1280px) 25vw, 20vw"
+                className="object-cover"
+                loading={priority ? 'eager' : 'lazy'}
+                priority={priority}
+              />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center bg-violet-950/30">
                 <Sparkles size={24} className="text-violet-400" />
@@ -2182,14 +2191,15 @@ const ImageCard = memo(function ImageCard({ img, selected, selectMode, onSelect,
             <ImageIcon size={20} className="text-slate-700" />
           </div>
         ) : (
-          <img
+          <NextImage
             src={img.imageUrl}
             alt=""
-            className="w-full h-full object-cover"
+            fill
+            sizes="(max-width: 768px) 33vw, (max-width: 1280px) 25vw, 20vw"
+            className="object-cover"
             onError={() => setImgError(true)}
             loading={priority ? 'eager' : 'lazy'}
-            decoding="async"
-            fetchPriority={priority ? 'high' : 'low'}
+            priority={priority}
           />
         )}
 
