@@ -69,28 +69,48 @@ export async function POST(req: Request) {
   return NextResponse.json({ started: false, message: 'Server did not respond in time' }, { status: 500 })
 }
 
+async function killByPort(): Promise<void> {
+  const { execSync } = await import('child_process')
+  try {
+    // Windows: find the PID of whatever is listening on PORT
+    const out = execSync(`netstat -ano | findstr ":${PORT}.*LISTENING"`, { encoding: 'utf8' })
+    const pid = out.trim().split(/\s+/).pop()
+    if (pid && /^\d+$/.test(pid) && pid !== '0') {
+      execSync(`taskkill /F /PID ${pid}`, { encoding: 'utf8' })
+    }
+  } catch {}
+}
+
 export async function DELETE(req: Request) {
   if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Graceful shutdown via HTTP — works even when we lost the process reference
+  // 1. Graceful shutdown request (works on new server instances that have /shutdown)
   try {
     await fetch(`http://localhost:${PORT}/shutdown`, {
       method: 'POST',
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(2000),
     })
   } catch {}
 
-  // Also kill our tracked reference if we have it
+  // 2. Kill our tracked child process if we have the reference
   if (serverProcess && !serverProcess.killed) {
     serverProcess.kill()
     serverProcess = null
   }
 
-  // Wait for the port to clear (up to 3 s)
+  // 3. Give graceful exit a moment
+  await new Promise(r => setTimeout(r, 600))
+
+  // 4. Still up? Force-kill by port (catches old/unmanaged instances)
+  if (await ping()) {
+    await killByPort()
+  }
+
+  // 5. Wait for port to clear
   for (let i = 0; i < 10; i++) {
     await new Promise(r => setTimeout(r, 300))
     if (!(await ping())) return NextResponse.json({ stopped: true })
   }
 
-  return NextResponse.json({ stopped: false, message: 'Server still responding after shutdown request' })
+  return NextResponse.json({ stopped: false, message: 'Process did not exit in time' })
 }

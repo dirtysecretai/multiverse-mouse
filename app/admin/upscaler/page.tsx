@@ -366,9 +366,9 @@ export default function UpscalerPage() {
                   Only <span className="text-white/60">RRDBNet 4x</span> models transfer directly — others still load but skip non-matching layers.
                 </p>
                 <div className="grid grid-cols-1 gap-2">
-                  {weights.map(w => {
+                  {weights.filter(w => w.arch === 'RRDBNet').map(w => {
                     const isSelected = selectedWeight?.path === w.path
-                    const isRRDB     = w.arch === 'RRDBNet' && w.scale === 4
+                    const isDirect   = w.scale === 4
                     return (
                       <button key={w.path} onClick={() => setSelectedWeight(isSelected ? null : w)}
                         className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-left transition-all ${
@@ -378,14 +378,20 @@ export default function UpscalerPage() {
                         }`}>
                         <div>
                           <p className="text-[11px] font-medium text-white leading-tight">{w.name.replace(/\.pth$/, '')}</p>
-                          <p className={`text-[10px] mt-0.5 font-mono ${isRRDB ? 'text-emerald-400/70' : 'text-amber-400/70'}`}>
-                            {w.arch} · {w.scale}x {isRRDB ? '✓ direct compat' : '⚠ partial load'}
+                          <p className={`text-[10px] mt-0.5 font-mono ${isDirect ? 'text-emerald-400/70' : 'text-amber-400/70'}`}>
+                            {w.scale}x · {isDirect ? 'full weight transfer' : 'partial — scale mismatch'}
                           </p>
                         </div>
                         {isSelected && <CheckCircle size={13} className="text-cyan-400 shrink-0 ml-3" />}
                       </button>
                     )
                   })}
+                  {weights.some(w => w.arch !== 'RRDBNet') && (
+                    <p className="text-[10px] text-slate-600 px-1 pt-1">
+                      {weights.filter(w => w.arch !== 'RRDBNet').map(w => w.name.replace(/\.pth$/, '')).join(', ')} —
+                      SPAN/DAT architectures, not usable as ESRGAN pretrain (would load 0 weights).
+                    </p>
+                  )}
                 </div>
               </div>
             )}
