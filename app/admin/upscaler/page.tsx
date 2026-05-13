@@ -372,7 +372,7 @@ export default function UpscalerPage() {
 
                     let badge: string, badgeColor: string
                     if (isRRDB4)        { badge = 'Full transfer · trains 4x';  badgeColor = 'text-emerald-400/80' }
-                    else if (isRRDB8)   { badge = 'Full transfer · trains 8x';  badgeColor = 'text-cyan-400/80'   }
+                    else if (isRRDB8)   { badge = 'Full transfer · trains 8x';  badgeColor = 'text-emerald-400/80' }
                     else                { badge = `${w.arch} · incompatible — 0 weights transfer`; badgeColor = 'text-slate-600' }
 
                     return (
