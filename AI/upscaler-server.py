@@ -89,7 +89,23 @@ def generate_meta_info(hr_dir, work_dir):
     return str(meta_path).replace('\\', '/'), len(images)
 
 
-def make_esrgan_config(c, meta_info_path):
+def latest_state_for(exp_name):
+    """Return (iter, abs_path) of the highest-numbered .state file, or (0, None)."""
+    states_dir = AI_DIR / 'Real-ESRGAN' / 'experiments' / exp_name / 'training_states'
+    if not states_dir.exists():
+        return 0, None
+    best_iter, best_path = 0, None
+    for f in states_dir.glob('*.state'):
+        try:
+            i = int(f.stem)
+            if i > best_iter:
+                best_iter, best_path = i, f
+        except ValueError:
+            pass
+    return best_iter, (str(best_path).replace('\\', '/') if best_path else None)
+
+
+def make_esrgan_config(c, meta_info_path, resume_state_path=None):
     scale     = int(_cfg(c, 'scale', 4))
     patch     = int(_cfg(c, 'patchSize', 256))
     batch     = int(_cfg(c, 'batchSize', 4))
@@ -101,6 +117,7 @@ def make_esrgan_config(c, meta_info_path):
     name      = _cfg(c, 'name', 'custom_esrgan')
     milestone = iters // 2
     meta      = meta_info_path.replace('\\', '/')
+    resume    = resume_state_path.replace('\\', '/') if resume_state_path else '~'
 
     return f"""name: {name}
 model_type: RealESRGANModel
@@ -181,7 +198,7 @@ network_d:
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  resume_state: ~
+  resume_state: {resume}
   experiments_root: {out}
 
 train:
@@ -443,6 +460,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(dict(_state))
         if self.path == '/architectures':
             return self._send([arch_info(aid) for aid in ARCHS])
+        if self.path.startswith('/latest-state'):
+            from urllib.parse import urlparse, parse_qs
+            qs   = parse_qs(urlparse(self.path).query)
+            name = (qs.get('name') or [''])[0]
+            if not name:
+                return self._send({'error': 'name required'}, 400)
+            it, path = latest_state_for(name)
+            return self._send({'iter': it, 'path': path, 'found': path is not None})
         if self.path == '/checkpoints':
             checkpoints = []
             exp_root = AI_DIR / 'Real-ESRGAN' / 'experiments'
@@ -501,10 +526,15 @@ class Handler(BaseHTTPRequestHandler):
             if arch_id == 'esrgan':
                 actual_out = ARCHS[arch_id]['dir'] / 'experiments' / cfg.get('name', 'run')
                 _log(f'Models will save to: {actual_out / "models"}')
+                resume_path = cfg.get('resumeStatePath') or None
+                if resume_path:
+                    _log(f'Resuming from state: {resume_path}')
+                else:
+                    _log('Starting fresh (no resume state)')
                 _log('Scanning HR dataset and generating meta_info.txt...')
                 meta_path, img_count = generate_meta_info(cfg['datasetPath'], work_dir)
                 _log(f'Found {img_count} images → {meta_path}')
-                config_text = make_esrgan_config(cfg, meta_path)
+                config_text = make_esrgan_config(cfg, meta_path, resume_path)
             else:
                 scale  = int(cfg.get('scale', 4))
                 lr_dir = str(work_dir / 'lr_auto')

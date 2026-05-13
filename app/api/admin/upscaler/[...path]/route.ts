@@ -10,7 +10,8 @@ function checkAuth(req: Request) {
 }
 
 async function proxy(req: Request, segments: string[]) {
-  const url  = `${BASE}/${segments.join('/')}`
+  const qs   = new URL(req.url).search        // forward query string (?name=..., etc.)
+  const url  = `${BASE}/${segments.join('/')}${qs}`
   const init: RequestInit = { method: req.method }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     init.body    = await req.text()

@@ -79,6 +79,10 @@ export default function UpscalerPage() {
   const [lr,           setLr]           = useState('1e-4')
   const [saveFreq,     setSaveFreq]     = useState(5000)
 
+  // Resume support
+  const [latestState,    setLatestState]    = useState<{ iter: number; path: string } | null>(null)
+  const [resumeEnabled,  setResumeEnabled]  = useState(false)
+
   // Training state
   const [status, setStatus]         = useState<TrainStatus | null>(null)
   const logEndRef                   = useRef<HTMLDivElement>(null)
@@ -102,6 +106,18 @@ export default function UpscalerPage() {
     } catch {}
   }, [api])
 
+  const checkLatestState = useCallback(async (name: string) => {
+    if (!name.trim()) { setLatestState(null); return }
+    try {
+      const r = await fetch(api(`latest-state?name=${encodeURIComponent(name.trim())}`), { headers: ah() })
+      if (r.ok) {
+        const d = await r.json()
+        if (d.found) { setLatestState({ iter: d.iter, path: d.path }); setResumeEnabled(true) }
+        else { setLatestState(null); setResumeEnabled(false) }
+      }
+    } catch { setLatestState(null) }
+  }, [api])
+
   const pollStatus = useCallback(async () => {
     try {
       const r = await fetch(api('status'), { headers: ah() })
@@ -119,9 +135,15 @@ export default function UpscalerPage() {
     checkServer()
     loadArchs()
     pollStatus()
+    checkLatestState(runName)
     pollRef.current = setInterval(pollStatus, 2000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [checkServer, loadArchs, pollStatus])
+  }, [checkServer, loadArchs, pollStatus, checkLatestState, runName])
+
+  // Re-check for previous checkpoints whenever run name changes (after server is up)
+  useEffect(() => {
+    if (serverRunning) checkLatestState(runName)
+  }, [runName, serverRunning, checkLatestState])
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -150,7 +172,7 @@ export default function UpscalerPage() {
 
   async function startTraining() {
     if (!datasetPath.trim() || !outputPath.trim()) return
-    const body = {
+    const body: Record<string, unknown> = {
       arch,
       name:        runName.trim() || 'my_upscaler',
       datasetPath: datasetPath.trim(),
@@ -161,6 +183,9 @@ export default function UpscalerPage() {
       totalIter,
       lr:          parseFloat(lr) || 1e-4,
       saveFreq,
+    }
+    if (resumeEnabled && latestState?.path) {
+      body.resumeStatePath = latestState.path
     }
     await fetch(api('train'), {
       method: 'POST',
@@ -338,6 +363,26 @@ export default function UpscalerPage() {
                   placeholder="my_upscaler"
                   className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-slate-700 focus:outline-none focus:border-cyan-500/40 font-mono" />
               </div>
+
+              {/* Resume banner — only shown when a previous checkpoint exists */}
+              {latestState && (
+                <button
+                  onClick={() => setResumeEnabled(v => !v)}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${
+                    resumeEnabled
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                      : 'border-white/[0.08] bg-white/[0.03] text-slate-400 hover:text-white'
+                  }`}>
+                  <span className="text-[11px] font-medium">
+                    Resume from checkpoint — iter {latestState.iter.toLocaleString()}
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
+                    resumeEnabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/[0.06] text-slate-500'
+                  }`}>
+                    {resumeEnabled ? 'ON' : 'OFF'}
+                  </span>
+                </button>
+              )}
             </div>
 
             {/* Training params */}
