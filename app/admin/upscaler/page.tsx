@@ -203,6 +203,7 @@ export default function UpscalerPage() {
     }
     if (selectedWeight && !resumeEnabled) {
       body.pretrainNetworkG = selectedWeight.path
+      body.scale = selectedWeight.scale  // match config scale to the pretrained model's scale
     }
     await fetch(api('train'), {
       method: 'POST',
@@ -361,37 +362,39 @@ export default function UpscalerPage() {
                     </button>
                   )}
                 </div>
-                <p className="text-[10px] text-slate-600 leading-relaxed">
-                  Fine-tune from a pre-trained model instead of starting from random weights.
-                  Only <span className="text-white/60">RRDBNet 4x</span> models transfer directly — others still load but skip non-matching layers.
-                </p>
-                <div className="grid grid-cols-1 gap-2">
-                  {weights.filter(w => w.arch === 'RRDBNet').map(w => {
-                    const isSelected = selectedWeight?.path === w.path
-                    const isDirect   = w.scale === 4
+                <div className="grid grid-cols-1 gap-1.5">
+                  {weights.map(w => {
+                    const isSelected   = selectedWeight?.path === w.path
+                    const isRRDB4      = w.arch === 'RRDBNet' && w.scale === 4
+                    const isRRDB8      = w.arch === 'RRDBNet' && w.scale === 8
+                    const isRRDB       = w.arch === 'RRDBNet'
+                    const canSelect    = isRRDB
+
+                    let badge: string, badgeColor: string
+                    if (isRRDB4)        { badge = 'Full transfer · trains 4x';  badgeColor = 'text-emerald-400/80' }
+                    else if (isRRDB8)   { badge = 'Full transfer · trains 8x';  badgeColor = 'text-cyan-400/80'   }
+                    else                { badge = `${w.arch} · incompatible — 0 weights transfer`; badgeColor = 'text-slate-600' }
+
                     return (
-                      <button key={w.path} onClick={() => setSelectedWeight(isSelected ? null : w)}
+                      <div key={w.path}
+                        onClick={() => canSelect && setSelectedWeight(isSelected ? null : w)}
                         className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-left transition-all ${
-                          isSelected
-                            ? 'border-cyan-500/50 bg-cyan-500/10'
-                            : 'border-white/[0.07] bg-white/[0.02] hover:border-white/15'
+                          !canSelect
+                            ? 'border-white/[0.04] bg-white/[0.01] opacity-50 cursor-not-allowed'
+                            : isSelected
+                            ? 'border-cyan-500/50 bg-cyan-500/10 cursor-pointer'
+                            : 'border-white/[0.07] bg-white/[0.02] hover:border-white/15 cursor-pointer'
                         }`}>
                         <div>
-                          <p className="text-[11px] font-medium text-white leading-tight">{w.name.replace(/\.pth$/, '')}</p>
-                          <p className={`text-[10px] mt-0.5 font-mono ${isDirect ? 'text-emerald-400/70' : 'text-amber-400/70'}`}>
-                            {w.scale}x · {isDirect ? 'full weight transfer' : 'partial — scale mismatch'}
+                          <p className={`text-[11px] font-medium leading-tight ${canSelect ? 'text-white' : 'text-slate-500'}`}>
+                            {w.name.replace(/\.pth$/, '')}
                           </p>
+                          <p className={`text-[10px] mt-0.5 font-mono ${badgeColor}`}>{badge}</p>
                         </div>
                         {isSelected && <CheckCircle size={13} className="text-cyan-400 shrink-0 ml-3" />}
-                      </button>
+                      </div>
                     )
                   })}
-                  {weights.some(w => w.arch !== 'RRDBNet') && (
-                    <p className="text-[10px] text-slate-600 px-1 pt-1">
-                      {weights.filter(w => w.arch !== 'RRDBNet').map(w => w.name.replace(/\.pth$/, '')).join(', ')} —
-                      SPAN/DAT architectures, not usable as ESRGAN pretrain (would load 0 weights).
-                    </p>
-                  )}
                 </div>
               </div>
             )}
