@@ -105,7 +105,7 @@ def latest_state_for(exp_name):
     return best_iter, (str(best_path).replace('\\', '/') if best_path else None)
 
 
-def make_esrgan_config(c, meta_info_path, resume_state_path=None):
+def make_esrgan_config(c, meta_info_path, resume_state_path=None, pretrain_g_path=None):
     scale     = int(_cfg(c, 'scale', 4))
     patch     = int(_cfg(c, 'patchSize', 256))
     batch     = int(_cfg(c, 'batchSize', 4))
@@ -118,6 +118,8 @@ def make_esrgan_config(c, meta_info_path, resume_state_path=None):
     milestone = iters // 2
     meta      = meta_info_path.replace('\\', '/')
     resume    = resume_state_path.replace('\\', '/') if resume_state_path else '~'
+    pretrain  = pretrain_g_path.replace('\\', '/')   if pretrain_g_path   else '~'
+    strict    = 'false' if pretrain_g_path else 'true'
 
     return f"""name: {name}
 model_type: RealESRGANModel
@@ -196,8 +198,8 @@ network_d:
   skip_connection: True
 
 path:
-  pretrain_network_g: ~
-  strict_load_g: true
+  pretrain_network_g: {pretrain}
+  strict_load_g: {strict}
   resume_state: {resume}
   experiments_root: {out}
 
@@ -435,6 +437,17 @@ def _train_thread(arch_id, config_text, work_dir, python_exe):
     finally:
         _process = None
 
+def _guess_weight_arch(name: str) -> str:
+    n = name.lower()
+    if any(x in n for x in ['clearreality', 'span']):        return 'SPAN'
+    if any(x in n for x in ['nomos8kdat', 'dat']):           return 'DAT'
+    if any(x in n for x in ['swinir', 'hat', 'drct']):       return 'Transformer'
+    return 'RRDBNet'
+
+def _guess_weight_scale(name: str) -> int:
+    m = re.search(r'^(\d)x', name, re.IGNORECASE)
+    return int(m.group(1)) if m else 4
+
 # ── HTTP handler ──────────────────────────────────────────────────────────────
 
 class Handler(BaseHTTPRequestHandler):
@@ -468,6 +481,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send({'error': 'name required'}, 400)
             it, path = latest_state_for(name)
             return self._send({'iter': it, 'path': path, 'found': path is not None})
+        if self.path == '/weights':
+            weights_dir = AI_DIR / 'Real-ESRGAN' / 'weights'
+            result = []
+            if weights_dir.exists():
+                for f in sorted(weights_dir.glob('*.pth')):
+                    result.append({
+                        'name':  f.name,
+                        'path':  str(f).replace('\\', '/'),
+                        'arch':  _guess_weight_arch(f.name),
+                        'scale': _guess_weight_scale(f.name),
+                    })
+            return self._send(result)
         if self.path == '/checkpoints':
             checkpoints = []
             exp_root = AI_DIR / 'Real-ESRGAN' / 'experiments'
@@ -526,15 +551,18 @@ class Handler(BaseHTTPRequestHandler):
             if arch_id == 'esrgan':
                 actual_out = ARCHS[arch_id]['dir'] / 'experiments' / cfg.get('name', 'run')
                 _log(f'Models will save to: {actual_out / "models"}')
-                resume_path = cfg.get('resumeStatePath') or None
+                resume_path  = cfg.get('resumeStatePath')  or None
+                pretrain_path = cfg.get('pretrainNetworkG') or None
                 if resume_path:
-                    _log(f'Resuming from state: {resume_path}')
+                    _log(f'Resuming from state:     {resume_path}')
+                elif pretrain_path:
+                    _log(f'Fine-tuning from:        {pretrain_path}')
                 else:
-                    _log('Starting fresh (no resume state)')
+                    _log('Starting fresh (random init)')
                 _log('Scanning HR dataset and generating meta_info.txt...')
                 meta_path, img_count = generate_meta_info(cfg['datasetPath'], work_dir)
                 _log(f'Found {img_count} images → {meta_path}')
-                config_text = make_esrgan_config(cfg, meta_path, resume_path)
+                config_text = make_esrgan_config(cfg, meta_path, resume_path, pretrain_path)
             else:
                 scale  = int(cfg.get('scale', 4))
                 lr_dir = str(work_dir / 'lr_auto')

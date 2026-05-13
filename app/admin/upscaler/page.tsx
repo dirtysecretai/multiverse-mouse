@@ -83,6 +83,11 @@ export default function UpscalerPage() {
   const [latestState,    setLatestState]    = useState<{ iter: number; path: string } | null>(null)
   const [resumeEnabled,  setResumeEnabled]  = useState(false)
 
+  // Pretrain weights
+  interface WeightFile { name: string; path: string; arch: string; scale: number }
+  const [weights,         setWeights]        = useState<WeightFile[]>([])
+  const [selectedWeight,  setSelectedWeight] = useState<WeightFile | null>(null)
+
   // Training state
   const [status, setStatus]         = useState<TrainStatus | null>(null)
   const logEndRef                   = useRef<HTMLDivElement>(null)
@@ -103,6 +108,13 @@ export default function UpscalerPage() {
     try {
       const r = await fetch(api('architectures'), { headers: ah() })
       if (r.ok) setArchs(await r.json())
+    } catch {}
+  }, [api])
+
+  const loadWeights = useCallback(async () => {
+    try {
+      const r = await fetch(api('weights'), { headers: ah() })
+      if (r.ok) setWeights(await r.json())
     } catch {}
   }, [api])
 
@@ -134,11 +146,12 @@ export default function UpscalerPage() {
   useEffect(() => {
     checkServer()
     loadArchs()
+    loadWeights()
     pollStatus()
     checkLatestState(runName)
     pollRef.current = setInterval(pollStatus, 2000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [checkServer, loadArchs, pollStatus, checkLatestState, runName])
+  }, [checkServer, loadArchs, loadWeights, pollStatus, checkLatestState, runName])
 
   // Re-check for previous checkpoints whenever run name changes (after server is up)
   useEffect(() => {
@@ -186,6 +199,9 @@ export default function UpscalerPage() {
     }
     if (resumeEnabled && latestState?.path) {
       body.resumeStatePath = latestState.path
+    }
+    if (selectedWeight && !resumeEnabled) {
+      body.pretrainNetworkG = selectedWeight.path
     }
     await fetch(api('train'), {
       method: 'POST',
@@ -332,9 +348,50 @@ export default function UpscalerPage() {
               )}
             </div>
 
+            {/* Pre-trained starting checkpoint */}
+            {weights.length > 0 && (
+              <div className="rounded-2xl border border-white/[0.08] bg-[#0f0f1a] p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">2 · Starting Checkpoint</p>
+                  {selectedWeight && (
+                    <button onClick={() => setSelectedWeight(null)}
+                      className="text-[10px] text-slate-500 hover:text-white transition-colors">
+                      Clear (start random)
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-600 leading-relaxed">
+                  Fine-tune from a pre-trained model instead of starting from random weights.
+                  Only <span className="text-white/60">RRDBNet 4x</span> models transfer directly — others still load but skip non-matching layers.
+                </p>
+                <div className="grid grid-cols-1 gap-2">
+                  {weights.map(w => {
+                    const isSelected = selectedWeight?.path === w.path
+                    const isRRDB     = w.arch === 'RRDBNet' && w.scale === 4
+                    return (
+                      <button key={w.path} onClick={() => setSelectedWeight(isSelected ? null : w)}
+                        className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-left transition-all ${
+                          isSelected
+                            ? 'border-cyan-500/50 bg-cyan-500/10'
+                            : 'border-white/[0.07] bg-white/[0.02] hover:border-white/15'
+                        }`}>
+                        <div>
+                          <p className="text-[11px] font-medium text-white leading-tight">{w.name.replace(/\.pth$/, '')}</p>
+                          <p className={`text-[10px] mt-0.5 font-mono ${isRRDB ? 'text-emerald-400/70' : 'text-amber-400/70'}`}>
+                            {w.arch} · {w.scale}x {isRRDB ? '✓ direct compat' : '⚠ partial load'}
+                          </p>
+                        </div>
+                        {isSelected && <CheckCircle size={13} className="text-cyan-400 shrink-0 ml-3" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Dataset + output */}
             <div className="rounded-2xl border border-white/[0.08] bg-[#0f0f1a] p-5 space-y-4">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">2 · Paths</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{weights.length > 0 ? '3' : '2'} · Paths</p>
 
               <div className="space-y-1.5">
                 <label className="text-[10px] text-slate-600 uppercase tracking-wider font-mono">HR dataset folder</label>
@@ -387,7 +444,7 @@ export default function UpscalerPage() {
 
             {/* Training params */}
             <div className="rounded-2xl border border-white/[0.08] bg-[#0f0f1a] p-5 space-y-4">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">3 · Training Config</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{weights.length > 0 ? '4' : '3'} · Training Config</p>
 
               <div className="grid grid-cols-2 gap-4">
 
