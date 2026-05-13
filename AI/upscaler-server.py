@@ -517,6 +517,11 @@ class Handler(BaseHTTPRequestHandler):
         self._send({'error': 'not found'}, 404)
 
     def do_POST(self):
+        if self.path == '/shutdown':
+            _log('Shutdown requested — exiting.')
+            threading.Thread(target=lambda: (time.sleep(0.3), os._exit(0)), daemon=True).start()
+            return self._send({'ok': True})
+
         if self.path == '/cancel':
             global _process
             if _process and _process.poll() is None:

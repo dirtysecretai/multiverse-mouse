@@ -71,10 +71,26 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Graceful shutdown via HTTP — works even when we lost the process reference
+  try {
+    await fetch(`http://localhost:${PORT}/shutdown`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(3000),
+    })
+  } catch {}
+
+  // Also kill our tracked reference if we have it
   if (serverProcess && !serverProcess.killed) {
     serverProcess.kill()
     serverProcess = null
-    return NextResponse.json({ stopped: true })
   }
-  return NextResponse.json({ stopped: false, message: 'No managed process found' })
+
+  // Wait for the port to clear (up to 3 s)
+  for (let i = 0; i < 10; i++) {
+    await new Promise(r => setTimeout(r, 300))
+    if (!(await ping())) return NextResponse.json({ stopped: true })
+  }
+
+  return NextResponse.json({ stopped: false, message: 'Server still responding after shutdown request' })
 }

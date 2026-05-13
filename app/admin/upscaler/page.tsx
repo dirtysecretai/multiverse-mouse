@@ -113,10 +113,11 @@ export default function UpscalerPage() {
 
   const loadWeights = useCallback(async () => {
     try {
-      const r = await fetch(api('weights'), { headers: ah() })
+      // Uses a direct filesystem scan — no Python server required
+      const r = await fetch('/api/admin/upscaler/scan-weights', { headers: ah() })
       if (r.ok) setWeights(await r.json())
     } catch {}
-  }, [api])
+  }, [])
 
   const checkLatestState = useCallback(async (name: string) => {
     if (!name.trim()) { setLatestState(null); return }
