@@ -200,6 +200,10 @@ export default function OneTrainerPage() {
   const [launching, setLaunching] = useState(false)
   const [tab, setTab]             = useState<'config' | 'monitor'>('config')
 
+  // Live log polling (cloud mode)
+  const [liveLogs, setLiveLogs]     = useState<string[]>([])
+  const liveLogPollRef              = useRef<ReturnType<typeof setInterval> | null>(null)
+
   // File input refs for dataset upload
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -372,6 +376,26 @@ export default function OneTrainerPage() {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
   }
 
+  const fetchLiveLogs = useCallback(async (jobId: string) => {
+    try {
+      const res = await fetch(`/api/admin/onetrainer/cloud/logs?job_id=${jobId}`, { headers: ah() })
+      if (res.ok) {
+        const { logs } = await res.json()
+        if (logs.length > 0) setLiveLogs(logs)
+      }
+    } catch {}
+  }, [])
+
+  function startLiveLogPoll(jobId: string) {
+    if (liveLogPollRef.current) return
+    fetchLiveLogs(jobId)
+    liveLogPollRef.current = setInterval(() => fetchLiveLogs(jobId), 15000)
+  }
+
+  function stopLiveLogPoll() {
+    if (liveLogPollRef.current) { clearInterval(liveLogPollRef.current); liveLogPollRef.current = null }
+  }
+
   const activeStatus  = mode === 'local' ? trainStatus.status  : (cloudStatus?.status  ?? 'idle')
   const isTraining    = activeStatus === 'running'
 
@@ -379,6 +403,15 @@ export default function OneTrainerPage() {
     if (isTraining) { startPoll(); setTab('monitor') }
     return stopPoll
   }, [isTraining]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (mode === 'cloud' && isTraining && cloudJobId) {
+      startLiveLogPoll(cloudJobId)
+    } else {
+      stopLiveLogPoll()
+    }
+    return stopLiveLogPoll
+  }, [mode, isTraining, cloudJobId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [
     trainStatus.logs, cloudStatus?.logs,
@@ -389,6 +422,7 @@ export default function OneTrainerPage() {
   async function startTraining() {
     if (!selectedPreset) return
     setLaunching(true)
+    setLiveLogs([])
     try {
       const config: Record<string, unknown> = { ...selectedPreset.config }
       if (lr)         config.learning_rate            = parseFloat(lr)
@@ -499,7 +533,9 @@ export default function OneTrainerPage() {
     ? (serverRunning && !!selectedPreset && concepts.some(c => c.path.trim()) && !isTraining)
     : (!!selectedPreset && !!selectedCheckpoint && concepts.some(c => c.r2DatasetKey) && !isTraining)
 
-  const activeLogs    = mode === 'local' ? trainStatus.logs    : (cloudStatus?.logs ?? [])
+  const activeLogs    = mode === 'local' ? trainStatus.logs
+    : cloudStatus?.status === 'running' ? liveLogs
+    : (cloudStatus?.logs ?? [])
   const activeRunName = mode === 'local' ? trainStatus.run_name : cloudStatus?.run_name
   const activeStarted = mode === 'local' ? trainStatus.started_at : cloudStatus?.started_at
 
@@ -1031,7 +1067,7 @@ export default function OneTrainerPage() {
               </div>
               {activeLogs.length === 0 ? (
                 <p className="text-xs text-slate-700 font-mono text-center py-8">
-                  {mode === 'cloud' && isTraining ? 'Training running on RunPod — logs appear when the job completes.' : 'No logs yet — start a training run.'}
+                  {mode === 'cloud' && isTraining ? 'Waiting for first log update — logs flush from RunPod every 30 seconds.' : 'No logs yet — start a training run.'}
                 </p>
               ) : (
                 <div className="space-y-0.5 font-mono text-[11px]">

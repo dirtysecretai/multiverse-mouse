@@ -46,6 +46,18 @@ def _r2():
     )
 
 
+def _flush_logs(r2, bucket: str, job_id: str, logs: list) -> None:
+    try:
+        r2.put_object(
+            Bucket=bucket,
+            Key=f'training/logs/{job_id}.txt',
+            Body='\n'.join(logs).encode('utf-8'),
+            ContentType='text/plain',
+        )
+    except Exception:
+        pass
+
+
 def _download(r2, key: str, dest: str, label: str, logs: list) -> bool:
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     logs.append(f'[runpod] Downloading {label}...')
@@ -71,8 +83,10 @@ def handler(job):
     concepts = inp['concepts']
     ckpt_key = inp['checkpoint_r2_key']
     out_key  = inp.get('output_r2_key') or f'training/loras/{run_name.replace(" ", "_")}.safetensors'
+    bucket   = os.environ['R2_BUCKET_NAME']
 
     logs.append(f"[runpod] Starting '{run_name}' (job {job_id})")
+    _flush_logs(r2, bucket, job_id, logs)
 
     # ── workspace dirs ──────────────────────────────────────────────────────
     run_dir      = os.path.join(WORK_DIR, job_id)
@@ -84,7 +98,9 @@ def handler(job):
 
     # ── 1. checkpoint ───────────────────────────────────────────────────────
     if not _download(r2, ckpt_key, ckpt_path, 'checkpoint', logs):
+        _flush_logs(r2, bucket, job_id, logs)
         return {'success': False, 'error': 'Checkpoint download failed', 'logs': logs}
+    _flush_logs(r2, bucket, job_id, logs)
 
     # ── 2. shared model files (cached across runs in MODELS_DIR) ────────────
     model_files = [
@@ -97,7 +113,9 @@ def handler(job):
             logs.append(f'[runpod] {label} already cached')
             continue
         if not _download(r2, key, path, label, logs):
+            _flush_logs(r2, bucket, job_id, logs)
             return {'success': False, 'error': f'{label} download failed', 'logs': logs}
+        _flush_logs(r2, bucket, job_id, logs)
 
     # tell FluxModelLoader where the model files are
     os.environ['CLIP_MODEL_DIR'] = MODELS_DIR
@@ -109,7 +127,9 @@ def handler(job):
         zip_path    = os.path.join(run_dir, f"{c['name']}.zip")
         extract_dir = os.path.join(dataset_root, c['name'])
         if not _download(r2, c['r2_dataset_key'], zip_path, f"dataset '{c['name']}'", logs):
+            _flush_logs(r2, bucket, job_id, logs)
             return {'success': False, 'error': f"Dataset download failed: {c['name']}", 'logs': logs}
+        _flush_logs(r2, bucket, job_id, logs)
         os.makedirs(extract_dir, exist_ok=True)
         with zipfile.ZipFile(zip_path, 'r') as z:
             z.extractall(extract_dir)
@@ -145,6 +165,7 @@ def handler(job):
 
     # ── 5. train ────────────────────────────────────────────────────────────
     logs.append('[runpod] Starting OneTrainer...')
+    _flush_logs(r2, bucket, job_id, logs)
     env = {**os.environ, 'CUDA_VISIBLE_DEVICES': '0'}
 
     proc = subprocess.Popen(
@@ -156,14 +177,19 @@ def handler(job):
         cwd=OT_DIR,
         env=env,
     )
+    flush_counter = 0
     for line in proc.stdout:
         line = line.rstrip()
         if line:
             logs.append(line)
+            flush_counter += 1
+            if flush_counter % 30 == 0:
+                _flush_logs(r2, bucket, job_id, logs)
     proc.wait()
 
     elapsed = round((time.time() - t0) / 60, 1)
     logs.append(f'[runpod] Training finished in {elapsed} min (exit {proc.returncode})')
+    _flush_logs(r2, bucket, job_id, logs)
 
     if proc.returncode != 0:
         return {'success': False, 'error': f'Training exited {proc.returncode}', 'logs': logs}
