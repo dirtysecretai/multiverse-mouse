@@ -16,7 +16,7 @@ WORKDIR /workspace/OneTrainer
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install worker deps
-RUN pip install --no-cache-dir runpod boto3
+RUN pip install --no-cache-dir runpod boto3 tensorboard
 
 # Override with our customized files (all paths relative to AI/runpod-worker context)
 COPY FluxModelLoader.py /workspace/OneTrainer/modules/modelLoader/flux/FluxModelLoader.py
