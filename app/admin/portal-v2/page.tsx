@@ -3247,126 +3247,239 @@ function CustomFluxPanel() {
     }
   }
 
-  const inputCls = "w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-white/30"
-  const labelCls = "block text-[11px] font-medium text-slate-400 mb-1"
+  const [configOpen, setConfigOpen]     = useState(false)
+  const [loraOpen, setLoraOpen]         = useState(false)
+  const [ckptOpen, setCkptOpen]         = useState(false)
+  const ckptRef  = useRef<HTMLDivElement>(null)
+  const loraRef  = useRef<HTMLDivElement>(null)
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ckptRef.current && !ckptRef.current.contains(e.target as Node)) setCkptOpen(false)
+      if (loraRef.current && !loraRef.current.contains(e.target as Node)) setLoraOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const checkpointLabel = checkpoint
+    ? (checkpoints.find(c => c.key === checkpoint)?.name ?? checkpoint.split('/').pop() ?? checkpoint)
+    : 'Checkpoint'
+  const activeLoras = loras.filter(l => l.key)
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-30 bg-[#0a0a0f]/95 backdrop-blur-xl border-t border-white/10">
-      <div className="max-w-4xl mx-auto px-4 py-4 space-y-3">
+    <div className="fixed bottom-0 left-0 right-0 px-6 pb-6 pt-3 bg-gradient-to-t from-[#050810] via-[#050810]/80 to-transparent pointer-events-none">
+      <div className="max-w-3xl mx-auto pointer-events-auto space-y-2">
 
-        {/* Header row */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">Custom Flux LoRA</span>
-          <div className="flex rounded-lg overflow-hidden border border-white/10 text-[11px]">
-            {(['local', 'runpod'] as FluxMode[]).map(m => (
-              <button key={m} onClick={() => { setMode(m); setCheckpoint(''); setLoras([]); setResultUrl(null); setError(null) }}
-                className={`px-3 py-1 font-medium transition-colors ${mode === m ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-white'}`}>
-                {m === 'local' ? 'Local (ComfyUI)' : 'RunPod'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto]">
-          {/* Checkpoint picker */}
-          <div>
-            <label className={labelCls}>Checkpoint</label>
-            {!modelsLoaded ? (
-              <div className="text-xs text-slate-500 py-2">Loading...</div>
-            ) : checkpoints.length === 0 ? (
-              <div className="text-xs text-slate-500 py-2">
-                {mode === 'local' ? 'ComfyUI not running or no checkpoints found' : 'No checkpoints found in R2 training/checkpoints/'}
-              </div>
-            ) : (
-              <select value={checkpoint} onChange={e => setCheckpoint(e.target.value)}
-                className={inputCls + ' cursor-pointer'}>
-                <option value="">— select checkpoint —</option>
-                {checkpoints.map(c => <option key={c.key} value={c.key}>{c.name}</option>)}
-              </select>
-            )}
-          </div>
-
-          {/* Prompt */}
-          <div>
-            <label className={labelCls}>Prompt</label>
-            <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={2}
-              placeholder="Describe the image..."
-              className={inputCls + ' resize-none'} />
-          </div>
-
-          {/* Generate button */}
-          <div className="flex items-end">
-            <button onClick={handleGenerate} disabled={!canGenerate}
-              className="w-full md:w-auto px-5 py-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed text-black text-sm font-bold transition-colors whitespace-nowrap">
-              {generating ? (mode === 'runpod' ? `${status}…` : 'Generating…') : 'Generate'}
-            </button>
-          </div>
-        </div>
-
-        {/* LoRA list */}
-        <div className="space-y-2">
-          {loras.map(lora => (
-            <div key={lora.id} className="flex items-center gap-2">
-              <select value={lora.key}
-                onChange={e => {
-                  const opt = loraOptions.find(o => o.key === e.target.value)
-                  updateLora(lora.id, { key: e.target.value, name: opt?.name ?? e.target.value })
-                }}
-                className="flex-1 bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-white/30 cursor-pointer">
-                <option value="">— select LoRA —</option>
-                {loraOptions.map(o => <option key={o.key} value={o.key}>{o.name}</option>)}
-              </select>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-slate-500 w-14">str {lora.strength.toFixed(2)}</span>
-                <input type="range" min={0} max={2} step={0.05} value={lora.strength}
-                  onChange={e => updateLora(lora.id, { strength: parseFloat(e.target.value) })}
-                  className="w-24 accent-cyan-400" />
-              </div>
-              <button onClick={() => removeLora(lora.id)} className="text-slate-500 hover:text-red-400 transition-colors text-xs px-1">×</button>
-            </div>
-          ))}
-          <button onClick={addLora} className="text-[11px] text-slate-500 hover:text-cyan-400 transition-colors">
-            + Add LoRA
-          </button>
-        </div>
-
-        {/* Params row */}
-        <div className="flex flex-wrap gap-4 text-[11px]">
-          {[
-            { label: 'Steps',    value: steps,    min: 1,  max: 50,   step: 1,   set: setSteps,    fmt: (v: number) => v },
-            { label: 'Guidance', value: guidance, min: 1,  max: 10,   step: 0.5, set: setGuidance, fmt: (v: number) => v.toFixed(1) },
-            { label: 'Width',    value: width,    min: 512, max: 2048, step: 64,  set: setWidth,    fmt: (v: number) => v },
-            { label: 'Height',   value: height,   min: 512, max: 2048, step: 64,  set: setHeight,   fmt: (v: number) => v },
-          ].map(({ label, value, min, max, step, set, fmt }) => (
-            <div key={label} className="flex items-center gap-2">
-              <span className="text-slate-500 w-14">{label}: <span className="text-white">{fmt(value)}</span></span>
-              <input type="range" min={min} max={max} step={step} value={value}
-                onChange={e => set(parseFloat(e.target.value) as never)}
-                className="w-24 accent-cyan-400" />
-            </div>
-          ))}
-          <div className="flex items-center gap-2">
-            <span className="text-slate-500">Seed:</span>
-            <input type="number" value={seed === -1 ? '' : seed} placeholder="random"
-              onChange={e => setSeed(e.target.value === '' ? -1 : parseInt(e.target.value))}
-              className="w-24 bg-black/40 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none" />
-          </div>
-        </div>
-
-        {/* Error */}
-        {error && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</div>}
-
-        {/* Result */}
+        {/* Result image — floats above the card */}
         {resultUrl && (
-          <div className="flex items-start gap-3">
-            <img src={resultUrl} alt="Generated" className="rounded-lg max-h-64 border border-white/10 object-contain" />
-            <div className="flex flex-col gap-2">
+          <div className="flex items-end gap-3 px-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={resultUrl} alt="Generated" className="rounded-xl max-h-56 border border-white/10 object-contain shadow-2xl" />
+            <div className="flex flex-col gap-1.5 pb-1">
               <a href={resultUrl} download="flux-output.png" target="_blank" rel="noreferrer"
-                className="text-xs text-cyan-400 hover:text-cyan-300 underline">Download</a>
-              <button onClick={() => setResultUrl(null)} className="text-xs text-slate-500 hover:text-white">Clear</button>
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-white/10 bg-white/5 text-[11px] text-slate-300 hover:text-white hover:border-white/20 transition-all">
+                <Download size={10} /> Save
+              </a>
+              <button onClick={() => setResultUrl(null)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-white/10 bg-white/5 text-[11px] text-slate-400 hover:text-white hover:border-white/20 transition-all">
+                <X size={10} /> Clear
+              </button>
             </div>
           </div>
         )}
+
+        {/* Error banner */}
+        {error && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-red-500/20 bg-red-500/[0.06] text-[11px] text-red-400">
+            <AlertTriangle size={11} className="shrink-0" />
+            {error}
+            <button onClick={() => setError(null)} className="ml-auto text-red-500/60 hover:text-red-400"><X size={10} /></button>
+          </div>
+        )}
+
+        {/* Config panel — collapsible */}
+        {configOpen && (
+          <div className="rounded-xl border border-white/[0.08] bg-slate-900/90 backdrop-blur-md px-4 py-3 space-y-2.5">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">Config</span>
+              <button onClick={() => { setSteps(20); setGuidance(3.5); setWidth(1024); setHeight(1024); setSeed(-1) }}
+                className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors">reset</button>
+            </div>
+            {[
+              { label: 'Steps',    value: steps,    min: 1,   max: 50,   step: 1,    set: setSteps,    fmt: (v: number) => String(v) },
+              { label: 'Guidance', value: guidance, min: 0.5, max: 10,   step: 0.5,  set: setGuidance, fmt: (v: number) => v.toFixed(1) },
+              { label: 'Width',    value: width,    min: 512, max: 2048, step: 64,   set: setWidth,    fmt: (v: number) => String(v) },
+              { label: 'Height',   value: height,   min: 512, max: 2048, step: 64,   set: setHeight,   fmt: (v: number) => String(v) },
+            ].map(({ label, value, min, max, step, set, fmt }) => (
+              <div key={label} className="grid grid-cols-[5rem_1fr_2.5rem] items-center gap-3">
+                <span className="text-[10px] font-mono text-slate-500">{label}</span>
+                <input type="range" min={min} max={max} step={step} value={value}
+                  onChange={e => set(parseFloat(e.target.value) as never)}
+                  className="w-full accent-cyan-400 cursor-pointer h-0.5" />
+                <span className="text-[11px] font-mono text-cyan-300 tabular-nums text-right">{fmt(value)}</span>
+              </div>
+            ))}
+            <div className="grid grid-cols-[5rem_1fr] items-center gap-3 pt-0.5">
+              <span className="text-[10px] font-mono text-slate-500">Seed</span>
+              <input type="number" value={seed === -1 ? '' : seed} placeholder="random"
+                onChange={e => setSeed(e.target.value === '' ? -1 : parseInt(e.target.value))}
+                className="w-32 bg-white/5 border border-white/10 rounded px-2 py-1 text-[11px] font-mono text-white placeholder-slate-600 focus:outline-none focus:border-white/20" />
+            </div>
+          </div>
+        )}
+
+        {/* LoRA panel — collapsible */}
+        {loraOpen && (
+          <div className="rounded-xl border border-white/[0.08] bg-slate-900/90 backdrop-blur-md px-4 py-3 space-y-2">
+            <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">LoRAs</span>
+            {loras.map(lora => (
+              <div key={lora.id} className="flex items-center gap-2">
+                <select value={lora.key}
+                  onChange={e => {
+                    const opt = loraOptions.find(o => o.key === e.target.value)
+                    updateLora(lora.id, { key: e.target.value, name: opt?.name ?? e.target.value })
+                  }}
+                  className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none cursor-pointer">
+                  <option value="">— select LoRA —</option>
+                  {loraOptions.map(o => <option key={o.key} value={o.key}>{o.name}</option>)}
+                </select>
+                <div className="grid grid-cols-[2.5rem_1fr] items-center gap-1.5">
+                  <span className="text-[10px] font-mono text-cyan-300 tabular-nums text-right">{lora.strength.toFixed(2)}</span>
+                  <input type="range" min={0} max={2} step={0.05} value={lora.strength}
+                    onChange={e => updateLora(lora.id, { strength: parseFloat(e.target.value) })}
+                    className="w-20 accent-cyan-400 cursor-pointer h-0.5" />
+                </div>
+                <button onClick={() => removeLora(lora.id)}
+                  className="text-slate-600 hover:text-red-400 transition-colors p-1"><X size={10} /></button>
+              </div>
+            ))}
+            <button onClick={addLora}
+              className="text-[11px] text-slate-500 hover:text-cyan-400 transition-colors flex items-center gap-1">
+              <Plus size={10} /> Add LoRA
+            </button>
+          </div>
+        )}
+
+        {/* Main card */}
+        <div className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-md shadow-2xl">
+
+          {/* Textarea */}
+          <textarea
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleGenerate() }}
+            placeholder="Describe what you want to create..."
+            rows={1}
+            onInput={e => {
+              const el = e.currentTarget
+              el.style.height = 'auto'
+              el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+            }}
+            className="w-full resize-none bg-transparent px-5 pt-4 pb-3 text-sm text-white placeholder-slate-500 focus:outline-none leading-relaxed"
+          />
+
+          {/* Controls strip */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3 pb-3 pt-1 border-t border-white/5">
+
+            {/* Mode toggle */}
+            <div className="flex rounded-md overflow-hidden border border-white/10 shrink-0">
+              {(['local', 'runpod'] as FluxMode[]).map(m => (
+                <button key={m}
+                  onClick={() => { setMode(m); setCheckpoint(''); setLoras([]); setResultUrl(null); setError(null) }}
+                  className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${mode === m ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+                  {m === 'local' ? 'Local' : 'RunPod'}
+                </button>
+              ))}
+            </div>
+
+            <div className="w-px h-3 bg-white/10 shrink-0" />
+
+            {/* Checkpoint picker */}
+            <div ref={ckptRef} className="relative shrink-0">
+              <button onClick={() => setCkptOpen(v => !v)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-medium transition-all ${
+                  checkpoint
+                    ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                    : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-white'
+                }`}>
+                {checkpointLabel}
+                <ChevronDown size={10} className={`transition-transform ${ckptOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {ckptOpen && (
+                <div className="absolute bottom-full mb-1.5 left-0 z-50 min-w-[260px] rounded-xl bg-[#0e1018] border border-white/10 shadow-2xl overflow-hidden py-1 max-h-64 overflow-y-auto">
+                  {!modelsLoaded ? (
+                    <div className="px-3 py-2 text-[11px] text-slate-500">Loading...</div>
+                  ) : checkpoints.length === 0 ? (
+                    <div className="px-3 py-2 text-[11px] text-slate-500">
+                      {mode === 'local' ? 'ComfyUI not running' : 'No checkpoints in R2'}
+                    </div>
+                  ) : checkpoints.map(c => (
+                    <button key={c.key} onClick={() => { setCheckpoint(c.key); setCkptOpen(false) }}
+                      className={`w-full text-left px-3 py-2 text-[11px] transition-colors truncate ${
+                        checkpoint === c.key ? 'text-cyan-300 bg-cyan-500/10' : 'text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                      }`}>
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="w-px h-3 bg-white/10 shrink-0" />
+
+            {/* LoRA toggle */}
+            <div ref={loraRef} className="relative shrink-0">
+              <button onClick={() => setLoraOpen(v => !v)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-all ${
+                  activeLoras.length > 0
+                    ? 'bg-violet-500/15 border-violet-500/40 text-violet-300'
+                    : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-white'
+                }`}>
+                <Sparkles size={11} />
+                {activeLoras.length > 0 ? `${activeLoras.length} LoRA${activeLoras.length > 1 ? 's' : ''}` : 'LoRA'}
+              </button>
+            </div>
+
+            <div className="w-px h-3 bg-white/10 shrink-0" />
+
+            {/* Config toggle */}
+            <button onClick={() => setConfigOpen(v => !v)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-all shrink-0 ${
+                configOpen ? 'border-white/20 bg-white/10 text-white' : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-white'
+              }`}>
+              <SlidersHorizontal size={11} />
+              <span className="font-mono">{steps}s · {guidance.toFixed(1)}g · {width}×{height}</span>
+            </button>
+
+            {/* Spacer */}
+            <div className="hidden sm:block sm:flex-1" />
+
+            {/* Generate */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {!checkpoint && (
+                <span className="text-[10px] text-amber-400/80 shrink-0">Select a checkpoint</span>
+              )}
+              <button onClick={handleGenerate} disabled={!canGenerate}
+                className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-[12px] font-semibold transition-all flex-1 sm:flex-none ${
+                  canGenerate
+                    ? 'bg-gradient-to-r from-cyan-500 to-fuchsia-500 text-black hover:opacity-90'
+                    : 'bg-white/5 text-slate-600 cursor-not-allowed border border-white/10'
+                }`}>
+                {generating ? (
+                  <div className="w-3 h-3 rounded-full border-2 border-black/30 border-t-black animate-spin" />
+                ) : (
+                  <Sparkles size={12} />
+                )}
+                {generating
+                  ? (mode === 'runpod' ? (status || 'Queued') + '…' : 'Generating…')
+                  : 'Generate'}
+              </button>
+            </div>
+
+          </div>
+        </div>
       </div>
     </div>
   )
