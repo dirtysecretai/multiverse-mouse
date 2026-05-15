@@ -154,6 +154,14 @@ def handler(job):
         for i, c in enumerate(concepts)
     ]
 
+    # Ensure component sections have weight_dtype so migration_9 doesn't KeyError
+    # (some OT versions use dict access instead of .get() in migration_9)
+    for _s in ['unet', 'prior', 'effnet_encoder', 'decoder', 'decoder_text_encoder', 'decoder_vqgan']:
+        if _s not in config:
+            config[_s] = {'weight_dtype': 'BFLOAT_16'}
+        elif isinstance(config[_s], dict) and 'weight_dtype' not in config[_s]:
+            config[_s]['weight_dtype'] = 'BFLOAT_16'
+
     config_path   = os.path.join(run_dir, 'config.json')
     concepts_path = os.path.join(run_dir, 'concepts.json')
     config['concept_file_name'] = concepts_path
