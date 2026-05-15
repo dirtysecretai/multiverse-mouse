@@ -48,5 +48,5 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/ot-worker:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/ot-worker:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/ot-worker:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/ot-worker:buildcache,mode=max
