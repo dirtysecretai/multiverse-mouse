@@ -163,6 +163,7 @@ def handler(job):
             config[_s]['weight_dtype'] = 'BFLOAT_16'
     if 'weight_dtype' not in config:
         config['weight_dtype'] = config.get('train_dtype', 'BFLOAT_16')
+    config['tensorboard'] = False
 
     config_path   = os.path.join(run_dir, 'config.json')
     concepts_path = os.path.join(run_dir, 'concepts.json')
