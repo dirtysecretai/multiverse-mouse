@@ -1,0 +1,37 @@
+import { NextResponse } from 'next/server'
+import path from 'path'
+import fs from 'fs'
+
+function checkAuth(req: Request) {
+  const pass = process.env.ADMIN_PASSWORD
+  if (!pass) return true
+  return req.headers.get('x-admin-password') === pass
+}
+
+export async function GET(req: Request) {
+  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const presetsDir = path.join(process.cwd(), 'AI', 'OneTrainer', 'OneTrainer', 'training_presets')
+
+  if (!fs.existsSync(presetsDir)) {
+    return NextResponse.json([])
+  }
+
+  try {
+    const files = fs.readdirSync(presetsDir).filter(f => f.endsWith('.json')).sort()
+    const presets = files
+      .map(fname => {
+        try {
+          const config = JSON.parse(fs.readFileSync(path.join(presetsDir, fname), 'utf-8'))
+          return { filename: fname, name: fname.replace(/\.json$/, ''), config }
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean)
+    return NextResponse.json(presets)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+}

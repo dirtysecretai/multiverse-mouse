@@ -31,7 +31,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: AI/runpod-worker
           file: AI/runpod-worker/Dockerfile
           push: true
           tags: |
