@@ -18,11 +18,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Install worker deps
 RUN pip install --no-cache-dir runpod boto3 tensorboard
 
-# Patch migration_9 in TrainConfig.py to handle missing weight_dtype gracefully
+# Patch OneTrainer code for Docker compatibility
 RUN sed -i \
     -e 's/migrated_data\[part\]\["weight_dtype"\]/migrated_data[part].get("weight_dtype")/g' \
     -e 's/migrated_data\.pop("weight_dtype")/migrated_data.pop("weight_dtype", None)/g' \
-    /workspace/OneTrainer/modules/util/config/TrainConfig.py
+    /workspace/OneTrainer/modules/util/config/TrainConfig.py && \
+    ln -sf $(which tensorboard) /usr/bin/tensorboard && \
+    mkdir -p /workspace/OneTrainer/training_samples && \
+    echo '[]' > /workspace/OneTrainer/training_samples/samples.json
 
 # Override with our customized files (all paths relative to AI/runpod-worker context)
 COPY FluxModelLoader.py /workspace/OneTrainer/modules/modelLoader/flux/FluxModelLoader.py
