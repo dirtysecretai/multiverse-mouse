@@ -168,6 +168,7 @@ export default function OneTrainerPage() {
   const [runName,    setRunName]    = useState('My Training Run')
   const [lr,         setLr]         = useState('')
   const [batchSize,  setBatchSize]  = useState('')
+  const [epochs,     setEpochs]     = useState('')
   const [maxSteps,   setMaxSteps]   = useState('')
   const [resolution, setResolution] = useState('')
   const [outputPath, setOutputPath] = useState('')
@@ -427,6 +428,7 @@ export default function OneTrainerPage() {
       const config: Record<string, unknown> = { ...selectedPreset.config }
       if (lr)         config.learning_rate            = parseFloat(lr)
       if (batchSize)  config.batch_size               = parseInt(batchSize)
+      if (epochs)     config.epochs                   = parseInt(epochs)
       if (maxSteps)   config.max_steps                = parseInt(maxSteps)
       if (resolution) config.resolution               = resolution
       if (outputPath) config.output_model_destination = outputPath
@@ -833,6 +835,7 @@ export default function OneTrainerPage() {
                     {([
                       ['Learning Rate', lr,         setLr,         'e.g. 0.0001',          'number'],
                       ['Batch Size',    batchSize,  setBatchSize,  'e.g. 2',                'number'],
+                      ['Epochs',        epochs,     setEpochs,     'e.g. 1',                'number'],
                       ['Max Steps',     maxSteps,   setMaxSteps,   'e.g. 1000',             'number'],
                       ['Resolution',    resolution, setResolution, 'e.g. 768',              'text'  ],
                       ['LoRA Rank',     loraRank,   setLoraRank,   'e.g. 16',               'number'],
@@ -844,7 +847,8 @@ export default function OneTrainerPage() {
                           <span className="text-slate-700 normal-case font-sans">
                             {val ? '' : `(preset: ${selectedPreset.config[
                               ({ 'Learning Rate': 'learning_rate', 'Batch Size': 'batch_size',
-                                 'Resolution': 'resolution', 'Output Path': 'output_model_destination' } as Record<string, string>)[label] ?? ''
+                                 'Epochs': 'epochs', 'Resolution': 'resolution',
+                                 'Output Path': 'output_model_destination' } as Record<string, string>)[label] ?? ''
                             ] ?? '—'})`}
                           </span>
                         </label>
