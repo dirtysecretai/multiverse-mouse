@@ -71,6 +71,7 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
   { id: "drct",                 apiId: "drct",                     name: "DRCT",                aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: true,  isUpscaler: true },
   { id: "supir",                apiId: "supir",                    name: "SUPIR",               aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: false, isUpscaler: true },
   { id: "local-realesrgan",    apiId: "local-realesrgan",         name: "Real-ESRGAN (Local)",  aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: false, isUpscaler: true, isLocalModel: true },
+  { id: "local-neosr",         apiId: "local-neosr",              name: "DAT-2 (Local)",         aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: false, isUpscaler: true, isLocalModel: true },
 ]
 
 // --- HELPERS ---
@@ -445,6 +446,7 @@ const IMAGE_MODEL_COST: Record<string, "$" | "$$" | "$$$" | "$$$+"> = {
   "drct":                "$",
   "supir":               "$$",
   "local-realesrgan":    "$",
+  "local-neosr":         "$",
 }
 const VIDEO_MODEL_COST: Record<string, "$" | "$$" | "$$$" | "$$$+"> = {
   "lipsync-v3":         "$",
@@ -483,7 +485,7 @@ const IMAGE_MODEL_GROUPS = [
   { label: "Upscalers",         type: "enhance & enlarge images",  accent: "text-slate-400",   dot: "bg-slate-500",   items: ["Clarity Upscaler", "AuraSR", "ESRGAN", "DRCT", "SUPIR"] },
 ]
 const ADMIN_IMAGE_MODEL_GROUPS = [
-  { label: "Admin Models", type: "local · PC must be running", accent: "text-cyan-400", dot: "bg-cyan-500", items: ["Real-ESRGAN (Local)"] },
+  { label: "Admin Models", type: "local · PC must be running", accent: "text-cyan-400", dot: "bg-cyan-500", items: ["Real-ESRGAN (Local)", "DAT-2 (Local)"] },
 ]
 const VIDEO_MODEL_COST_BY_NAME: Record<string, "$" | "$$" | "$$$" | "$$$+"> = Object.fromEntries(
   VIDEO_MODEL_CONFIGS.map(m => [m.name, VIDEO_MODEL_COST[m.id] ?? "$$"])
@@ -3229,7 +3231,7 @@ function PromptBox({
   const [supirNegPrompt, setSupirNegPrompt] = useState("blurry, noisy, low quality, oversmoothed, jpeg artifacts, deformed")
   const [supirConfigOpen, setSupirConfigOpen] = useState(false)
   // Local admin model state
-  const [localCheckpoints, setLocalCheckpoints] = useState<{ name: string; path: string; iter: number; experiment: string }[]>([])
+  const [localCheckpoints, setLocalCheckpoints] = useState<{ name: string; path: string; iter: number; experiment: string; arch: string }[]>([])
   const [selectedLocalCheckpoint, setSelectedLocalCheckpoint] = useState<string>("")
   const [checkpointLoading, setCheckpointLoading] = useState(false)
   const [showCheckpointPicker, setShowCheckpointPicker] = useState(false)
@@ -3291,6 +3293,15 @@ function PromptBox({
     if (model.isLocalModel) refreshCheckpoints()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model.isLocalModel])
+
+  // When switching between local models, auto-select the best checkpoint for that arch
+  useEffect(() => {
+    if (!model.isLocalModel) return
+    const arch = model.id === 'local-neosr' ? 'neosr' : 'esrgan'
+    const filtered = localCheckpoints.filter(c => c.arch === arch)
+    setSelectedLocalCheckpoint(filtered.length > 0 ? filtered[filtered.length - 1].path : '')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model.id])
   // Restore saved prompt state after mount to avoid SSR/client hydration mismatch
   useEffect(() => {
     try {
@@ -3397,7 +3408,7 @@ function PromptBox({
           ? ckName.name.replace(/\.(pth|safetensors)$/, '')
           : `${(ckName.iter / 1000).toFixed(0)}k`
         : 'local'
-      const label  = `${upscaleFactor}x Real-ESRGAN · ${ckLabel}`
+      const label  = `${upscaleFactor}x ${model.name.replace(' (Local)', '')} · ${ckLabel}`
       onAddPending({ slotId, status: "loading", prompt: label, modelId: model.apiId, aspectRatio: "1:1", quality: `${upscaleFactor}x` as Quality })
       setGenerating(false)
       try {
@@ -4682,7 +4693,8 @@ function PromptBox({
 
             {/* Checkpoint selector — local admin models only */}
             {model.isLocalModel && (() => {
-              const ckLabel = localCheckpoints.find(c => c.path === selectedLocalCheckpoint)
+              const visibleCheckpoints = localCheckpoints.filter(c => model.id === 'local-neosr' ? c.arch === 'neosr' : c.arch === 'esrgan')
+              const ckLabel = visibleCheckpoints.find(c => c.path === selectedLocalCheckpoint)
               const [ckOpen, setCkOpen] = [showCheckpointPicker, setShowCheckpointPicker]
               return (
                 <>
@@ -4693,16 +4705,16 @@ function PromptBox({
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-cyan-500/30 bg-cyan-500/[0.06] text-[11px] text-cyan-300 hover:border-cyan-500/50 hover:bg-cyan-500/10 transition-all max-w-[160px]"
                     >
                       <span className="truncate">
-                        {localCheckpoints.length === 0
+                        {visibleCheckpoints.length === 0
                           ? "No checkpoints"
                           : ckLabel ? `${ckLabel.experiment} · ${(ckLabel.iter / 1000).toFixed(0)}k` : "Select checkpoint"}
                       </span>
                       <ChevronDown size={10} className={`shrink-0 transition-transform ${ckOpen ? "rotate-180" : ""}`} />
                     </button>
-                    {ckOpen && localCheckpoints.length > 0 && (() => {
-                      const pretrained = localCheckpoints.filter(c => c.experiment === 'pretrained')
-                      const trained    = localCheckpoints.filter(c => c.experiment !== 'pretrained')
-                      const renderCk = (ck: typeof localCheckpoints[0]) => (
+                    {ckOpen && visibleCheckpoints.length > 0 && (() => {
+                      const pretrained = visibleCheckpoints.filter(c => c.experiment === 'pretrained')
+                      const trained    = visibleCheckpoints.filter(c => c.experiment !== 'pretrained')
+                      const renderCk = (ck: typeof visibleCheckpoints[0]) => (
                         <button
                           key={ck.path}
                           onClick={() => { setSelectedLocalCheckpoint(ck.path); setCkOpen(false) }}
@@ -6989,6 +7001,7 @@ export default function PortalV2Page() {
   const [activeRefIds, setActiveRefIds] = useState<string[]>([])
   const [hasPromptStudioDev, setHasPromptStudioDev] = useState(false)
   const [isAdminAccount, setIsAdminAccount] = useState(false)
+  const [isAuditAccount, setIsAuditAccount] = useState(false)
   const [isGenerationMaintenance, setIsGenerationMaintenance] = useState(false)
   const [promptOverride, setPromptOverride] = useState<{ text: string; version: number }>({ text: "", version: 0 })
   const [videoPromptOverride, setVideoPromptOverride] = useState<{ text: string; version: number }>({ text: "", version: 0 })
@@ -7978,9 +7991,10 @@ export default function PortalV2Page() {
 
   // Queue limits — owner accounts: unlimited, dev tier: 6 image / 2 video, free: 2 image / 1 video
   const isOwner = user?.email === "dirtysecretai@gmail.com" || user?.email === "promptandprotocol@gmail.com"
-  const refLibraryLimit = isAdminAccount ? 250 : hasPromptStudioDev ? 100 : 50
-  const maxConcurrent = isOwner ? Infinity : hasPromptStudioDev ? 6 : 2
-  const videoMaxConcurrent = isOwner ? Infinity : hasPromptStudioDev ? 2 : 1
+  const hasEffectiveDevAccess = hasPromptStudioDev || isAdminAccount || isAuditAccount
+  const refLibraryLimit = isAdminAccount ? 250 : hasEffectiveDevAccess ? 100 : 50
+  const maxConcurrent = isOwner ? Infinity : hasEffectiveDevAccess ? 6 : 2
+  const videoMaxConcurrent = isOwner ? Infinity : hasEffectiveDevAccess ? 2 : 1
   const videoActiveJobCount = videoPendingSlots.length
 
   // Server-authoritative active count — polled every 10s so the counter stays
@@ -8244,11 +8258,10 @@ export default function PortalV2Page() {
           setUser({ id: data.user.id, email: data.user.email, ticketBalance: ticketData.success ? ticketData.balance : 0 })
           if (subData.hasPromptStudioDev) setHasPromptStudioDev(true)
 
-          // Audit accounts bypass maintenance
           const verifyRes = await fetch("/api/admin/verify")
           const verifyData = await verifyRes.json()
           if (verifyData.isAdmin) setIsAdminAccount(true)
-          if (verifyData.isAuditAccount) setIsGenerationMaintenance(false)
+          if (verifyData.isAuditAccount) setIsAuditAccount(true)
 
           // Reconcile in-flight DB jobs with locally-persisted pending slots.
           // The DB is the authoritative source — this keeps the queue accurate
@@ -8559,7 +8572,7 @@ export default function PortalV2Page() {
             <TextDropdown
               open={openDropdown === "text"}
               onToggle={() => toggle("text")}
-              hasDevAccess={hasPromptStudioDev}
+              hasDevAccess={hasEffectiveDevAccess}
               imageModelName={selectedModel.name}
               onUsePrompt={handleUsePrompt}
               signedIn={user !== null}
@@ -8577,7 +8590,7 @@ export default function PortalV2Page() {
               onActivate={handleActivateRef}
               onDeactivate={handleDeactivateRef}
               disabled={scannerMode === "video"}
-              libraryLimit={isAdminAccount ? 250 : hasPromptStudioDev ? 100 : 50}
+              libraryLimit={isAdminAccount ? 250 : hasEffectiveDevAccess ? 100 : 50}
             />
             <ShopDropdown
               open={openDropdown === "shop"}
@@ -8667,7 +8680,7 @@ export default function PortalV2Page() {
             maxConcurrent={maxConcurrent}
             promptOverride={promptOverride}
             configOverride={configOverride}
-            isGenerationMaintenance={isGenerationMaintenance && !['dirtysecretai@gmail.com', 'promptandprotocol@gmail.com'].includes(user?.email ?? '')}
+            isGenerationMaintenance={isGenerationMaintenance && !isAdminAccount && !isAuditAccount}
             isAdminAccount={isAdminAccount}
           />
         </>
@@ -8778,7 +8791,7 @@ export default function PortalV2Page() {
             generating={videoGenerating}
             canGenerate={!videoGenerating && (selectedVideoModel.supportsLipsync ? (!!videoLipsyncVideoUrl && !!videoLipsyncAudioUrl) : (selectedVideoModel.textToVideo || !!videoStartFrameUrl)) && (selectedVideoModel.id !== "kling-v3-motion" || !!videoMotionVideoUrl) && videoActiveJobCount < videoMaxConcurrent}
             queueFull={videoActiveJobCount >= videoMaxConcurrent && videoMaxConcurrent !== Infinity}
-            isGenerationMaintenance={isGenerationMaintenance && !['dirtysecretai@gmail.com', 'promptandprotocol@gmail.com'].includes(user?.email ?? '')}
+            isGenerationMaintenance={isGenerationMaintenance && !isAdminAccount && !isAuditAccount}
             duration={videoDuration}
             resolution={videoResolution}
             aspectRatio={videoAspectRatio}
