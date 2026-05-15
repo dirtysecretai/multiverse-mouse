@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import ChatWidget from "@/components/ChatWidget"
@@ -3126,37 +3126,37 @@ type FluxLoraEntry = { id: string; name: string; key: string; strength: number }
 type FluxMode = 'local' | 'runpod'
 
 function CustomFluxPanel() {
-  const [mode, setMode]               = React.useState<FluxMode>('runpod')
-  const [checkpoint, setCheckpoint]   = React.useState('')
-  const [loras, setLoras]             = React.useState<FluxLoraEntry[]>([])
-  const [prompt, setPrompt]           = React.useState('')
-  const [steps, setSteps]             = React.useState(20)
-  const [guidance, setGuidance]       = React.useState(3.5)
-  const [seed, setSeed]               = React.useState(-1)
-  const [width, setWidth]             = React.useState(1024)
-  const [height, setHeight]           = React.useState(1024)
-  const [generating, setGenerating]   = React.useState(false)
-  const [jobId, setJobId]             = React.useState<string | null>(null)
-  const [resultUrl, setResultUrl]     = React.useState<string | null>(null)
-  const [error, setError]             = React.useState<string | null>(null)
-  const [status, setStatus]           = React.useState('')
+  const [mode, setMode]               = useState<FluxMode>('runpod')
+  const [checkpoint, setCheckpoint]   = useState('')
+  const [loras, setLoras]             = useState<FluxLoraEntry[]>([])
+  const [prompt, setPrompt]           = useState('')
+  const [steps, setSteps]             = useState(20)
+  const [guidance, setGuidance]       = useState(3.5)
+  const [seed, setSeed]               = useState(-1)
+  const [width, setWidth]             = useState(1024)
+  const [height, setHeight]           = useState(1024)
+  const [generating, setGenerating]   = useState(false)
+  const [jobId, setJobId]             = useState<string | null>(null)
+  const [resultUrl, setResultUrl]     = useState<string | null>(null)
+  const [error, setError]             = useState<string | null>(null)
+  const [status, setStatus]           = useState('')
 
   // Available models
-  const [comfyCheckpoints, setComfyCheckpoints] = React.useState<string[]>([])
-  const [comfyLoras, setComfyLoras]             = React.useState<string[]>([])
-  const [r2Checkpoints, setR2Checkpoints]       = React.useState<Array<{key:string;name:string}>>([])
-  const [r2Loras, setR2Loras]                   = React.useState<Array<{key:string;name:string}>>([])
-  const [modelsLoaded, setModelsLoaded]         = React.useState(false)
+  const [comfyCheckpoints, setComfyCheckpoints] = useState<string[]>([])
+  const [comfyLoras, setComfyLoras]             = useState<string[]>([])
+  const [r2Checkpoints, setR2Checkpoints]       = useState<Array<{key:string;name:string}>>([])
+  const [r2Loras, setR2Loras]                   = useState<Array<{key:string;name:string}>>([])
+  const [modelsLoaded, setModelsLoaded]         = useState(false)
 
   const adminPassword = typeof sessionStorage !== 'undefined' ? (sessionStorage.getItem('admin-password') ?? '') : ''
-  const authHeaders = React.useMemo(() => ({
+  const authHeaders = useMemo(() => ({
     'Content-Type': 'application/json',
     ...(adminPassword ? { 'x-admin-password': adminPassword } : {}),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [])
 
   // Load available models
-  React.useEffect(() => {
+  useEffect(() => {
     setModelsLoaded(false)
     fetch('/api/admin/flux-inference/models', { headers: authHeaders })
       .then(r => r.json())
@@ -3171,8 +3171,8 @@ function CustomFluxPanel() {
   }, [authHeaders])
 
   // Poll RunPod status
-  const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
-  React.useEffect(() => {
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  useEffect(() => {
     if (!jobId || mode !== 'runpod') return
     if (pollRef.current) clearInterval(pollRef.current)
     pollRef.current = setInterval(async () => {
