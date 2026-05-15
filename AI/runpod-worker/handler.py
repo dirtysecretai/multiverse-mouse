@@ -119,7 +119,19 @@ def _handle_inference(job_id: str, inp: dict) -> dict:
     # 3. Load pipeline
     logs.append('[inference] Loading Flux pipeline...')
     _flush_logs(r2, bucket, job_id, logs)
-    pipe = FluxPipeline.from_single_file(ckpt_path, torch_dtype=torch.bfloat16).to('cuda')
+    try:
+        pipe = FluxPipeline.from_single_file(ckpt_path, torch_dtype=torch.bfloat16)
+    except Exception as _e:
+        if 'CLIPTextModel' in str(_e):
+            # Some Flux checkpoints don't bundle CLIP — load it separately from HuggingFace
+            logs.append('[inference] CLIP not in checkpoint — loading openai/clip-vit-large-patch14...')
+            _flush_logs(r2, bucket, job_id, logs)
+            from transformers import CLIPTextModel
+            _clip = CLIPTextModel.from_pretrained('openai/clip-vit-large-patch14', torch_dtype=torch.bfloat16)
+            pipe = FluxPipeline.from_single_file(ckpt_path, text_encoder=_clip, torch_dtype=torch.bfloat16)
+        else:
+            raise
+    pipe = pipe.to('cuda')
 
     # 4. Load LoRAs
     for i, li in enumerate(lora_paths):

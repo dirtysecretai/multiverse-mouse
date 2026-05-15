@@ -3125,7 +3125,15 @@ function AspectRatioPicker({
 type FluxLoraEntry = { id: string; name: string; key: string; strength: number }
 type FluxMode = 'local' | 'runpod'
 
-function CustomFluxPanel() {
+function CustomFluxPanel({
+  onAddPending,
+  onStartNb2Polling,
+  onPrependImage,
+}: {
+  onAddPending:      (slot: PendingSlot) => void
+  onStartNb2Polling: (requestId: string, falEndpoint: string, slotIds: string[], prompt: string, outputFormat: string, aspectRatio: string, statusUrl?: string) => void
+  onPrependImage:    (img: ImageItem) => void
+}) {
   const [mode, setMode]               = useState<FluxMode>('runpod')
   const [checkpoint, setCheckpoint]   = useState('')
   const [loras, setLoras]             = useState<FluxLoraEntry[]>([])
@@ -3170,32 +3178,7 @@ function CustomFluxPanel() {
       .catch(() => setModelsLoaded(true))
   }, [authHeaders])
 
-  // Poll RunPod status
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  useEffect(() => {
-    if (!jobId || mode !== 'runpod') return
-    if (pollRef.current) clearInterval(pollRef.current)
-    pollRef.current = setInterval(async () => {
-      try {
-        const res  = await fetch(`/api/admin/flux-inference/status?job_id=${jobId}`, { headers: authHeaders })
-        const data = await res.json() as { status: string; image_url?: string; error?: string; logs?: string[] }
-        setStatus(data.status)
-        if (data.status === 'done') {
-          clearInterval(pollRef.current!)
-          setGenerating(false)
-          setJobId(null)
-          if (data.image_url) setResultUrl(data.image_url)
-          else setError('Job done but no image URL returned')
-        } else if (data.status === 'error' || data.status === 'cancelled') {
-          clearInterval(pollRef.current!)
-          setGenerating(false)
-          setJobId(null)
-          setError(data.error ?? 'Job failed')
-        }
-      } catch { /* keep polling */ }
-    }, 4000)
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [jobId, mode, authHeaders])
+  // RunPod polling is handled by the parent via onStartNb2Polling
 
   const [loraUploading, setLoraUploading] = useState(false)
   const [loraUploadProgress, setLoraUploadProgress] = useState(0)
@@ -3278,11 +3261,32 @@ function CustomFluxPanel() {
       if (!res.ok || data.error) { setError(data.error ?? 'Generation failed'); setGenerating(false); return }
 
       if (data.mode === 'local' && data.image_data_url) {
+        // Local: show inline and also add to session feed
         setResultUrl(data.image_data_url)
+        onPrependImage({ id: Date.now(), imageUrl: data.image_data_url, prompt: prompt.trim(), model: 'custom-flux-lora', createdAt: new Date().toISOString() })
         setGenerating(false)
       } else if (data.mode === 'runpod' && data.job_id) {
-        setJobId(data.job_id)
-        setStatus('running')
+        // RunPod: hand off to parent's polling → image appears in feed when done
+        const slotId = `flux-${Date.now()}`
+        const slot: PendingSlot = {
+          slotId,
+          status:         'loading',
+          prompt:         prompt.trim(),
+          modelId:        'custom-flux-lora',
+          nb2RequestId:   data.job_id,
+          nb2FalEndpoint: '',
+          nb2StatusUrl:   '/api/admin/flux-inference/nb2-status',
+        }
+        onAddPending(slot)
+        // Persist so polling survives a page refresh
+        try {
+          const stored = JSON.parse(localStorage.getItem('pv2-pending-slots') || '[]')
+          stored.unshift(slot)
+          localStorage.setItem('pv2-pending-slots', JSON.stringify(stored))
+        } catch {}
+        onStartNb2Polling(data.job_id, '', [slotId], prompt.trim(), 'png', '1:1', '/api/admin/flux-inference/nb2-status')
+        setGenerating(false)
+        setStatus('')
       }
     } catch (e) {
       setError(String(e))
@@ -3392,9 +3396,9 @@ function CustomFluxPanel() {
                     const opt = loraOptions.find(o => o.key === e.target.value)
                     updateLora(lora.id, { key: e.target.value, name: opt?.name ?? e.target.value })
                   }}
-                  className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none cursor-pointer">
-                  <option value="">— select LoRA —</option>
-                  {loraOptions.map(o => <option key={o.key} value={o.key}>{o.name}</option>)}
+                  className="flex-1 bg-slate-800 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none cursor-pointer">
+                  <option value="" className="bg-slate-800 text-slate-400">— select LoRA —</option>
+                  {loraOptions.map(o => <option key={o.key} value={o.key} className="bg-slate-800 text-white">{o.name}</option>)}
                 </select>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span className="text-[10px] font-mono text-cyan-300 tabular-nums w-8 text-right">{lora.strength.toFixed(2)}</span>
@@ -8798,9 +8802,11 @@ export default function PortalV2Page() {
             // from a FAL request that expired before being written to the DB.
             const allDbRequestIds = new Set(allDbJobs.map((j: any) => j.falRequestId).filter(Boolean))
             const nb2SlotsCompletedWhileClosed = allLocalNb2Slots.filter(s => completedDbByRequestId.has(s.nb2RequestId!))
-            const nb2SlotsDeadOrExpired = allLocalNb2Slots.filter(
-              s => failedDbRequestIds.has(s.nb2RequestId!) || !allDbRequestIds.has(s.nb2RequestId!)
-            )
+            const nb2SlotsDeadOrExpired = allLocalNb2Slots.filter(s => {
+              // Flux RunPod jobs are admin-only and have no DB records — always resume polling
+              if (s.modelId === 'custom-flux-lora') return false
+              return failedDbRequestIds.has(s.nb2RequestId!) || !allDbRequestIds.has(s.nb2RequestId!)
+            })
             const nb2SlotsStillLoading = allLocalNb2Slots.filter(
               s => !completedDbByRequestId.has(s.nb2RequestId!) && !nb2SlotsDeadOrExpired.some(d => d.slotId === s.slotId)
             )
@@ -9100,7 +9106,11 @@ export default function PortalV2Page() {
           </div>
           {/* Custom Flux LoRA panel — replaces PromptBox for that model */}
           {selectedModel.isCustomFlux ? (
-            <CustomFluxPanel />
+            <CustomFluxPanel
+              onAddPending={handleAddPending}
+              onStartNb2Polling={startNb2SlotPolling}
+              onPrependImage={handlePrependImage}
+            />
           ) : (
           <PromptBox
             model={selectedModel}
