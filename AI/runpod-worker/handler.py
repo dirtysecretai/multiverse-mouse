@@ -133,6 +133,7 @@ def handler(job):
         os.makedirs(extract_dir, exist_ok=True)
         with zipfile.ZipFile(zip_path, 'r') as z:
             z.extractall(extract_dir)
+        os.remove(zip_path)  # free space immediately after extraction
         concept_dirs.append(extract_dir)
 
     # ── 4. build config ─────────────────────────────────────────────────────
