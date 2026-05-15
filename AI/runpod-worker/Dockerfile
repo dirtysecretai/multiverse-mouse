@@ -7,8 +7,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /workspace
 
-# Clone OneTrainer
-RUN git clone https://github.com/Nerogar/OneTrainer.git
+# Clone OneTrainer pinned to the same commit as local installation
+RUN git clone https://github.com/Nerogar/OneTrainer.git && \
+    cd OneTrainer && git checkout 423c3b3
 
 # Install OneTrainer deps (torch already in base image, skip reinstall)
 WORKDIR /workspace/OneTrainer
