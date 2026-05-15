@@ -648,9 +648,9 @@ export default function OneTrainerPage() {
                                   {isSelected && <CheckCircle size={9} className="text-violet-400 ml-auto shrink-0" />}
                                 </div>
                                 <div className="flex gap-2 mt-1">
-                                  {cfgRes && <span className="text-[9px] text-slate-600 font-mono">res <span className="text-slate-500">{String(cfgRes)}</span></span>}
-                                  {cfgBs  && <span className="text-[9px] text-slate-600 font-mono">bs <span className="text-slate-500">{String(cfgBs)}</span></span>}
-                                  {cfgLr  && <span className="text-[9px] text-slate-600 font-mono">lr <span className="text-slate-500">{Number(cfgLr).toExponential(0)}</span></span>}
+                                  {!!cfgRes && <span className="text-[9px] text-slate-600 font-mono">res <span className="text-slate-500">{String(cfgRes)}</span></span>}
+                                  {!!cfgBs  && <span className="text-[9px] text-slate-600 font-mono">bs <span className="text-slate-500">{String(cfgBs)}</span></span>}
+                                  {!!cfgLr  && <span className="text-[9px] text-slate-600 font-mono">lr <span className="text-slate-500">{Number(cfgLr).toExponential(0)}</span></span>}
                                 </div>
                               </button>
                             )
