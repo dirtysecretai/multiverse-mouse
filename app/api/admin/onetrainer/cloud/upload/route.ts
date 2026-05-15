@@ -20,12 +20,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing type or filename' }, { status: 400 })
   }
 
-  const prefixMap = {
+  const prefixMap: Record<string, string> = {
     checkpoint: 'training/checkpoints',
     dataset:    'training/datasets',
     model:      'training/models',
+    lora:       'training/loras',
   }
-  const key = `${prefixMap[type]}/${filename}`
+  const key = `${prefixMap[type] ?? 'training/misc'}/${filename}`
 
   const { uploadUrl, publicUrl } = await presignPutUrl(
     key,

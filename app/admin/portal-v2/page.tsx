@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import ChatWidget from "@/components/ChatWidget"
-import { Image, Video, Type, ChevronDown, Ticket, User, BookMarked, ImagePlus, X, Plus, Check, Copy, Download, RotateCcw, ShoppingBag, SlidersHorizontal, Bell, AlertTriangle, CheckCircle, Info, Sparkles, Music, BookOpen, Star, Trash2, Loader2, Eye, RefreshCw } from "lucide-react"
+import { Image, Video, Type, ChevronDown, Ticket, User, BookMarked, ImagePlus, X, Plus, Check, Copy, Download, RotateCcw, ShoppingBag, SlidersHorizontal, Bell, AlertTriangle, CheckCircle, Info, Sparkles, Music, BookOpen, Star, Trash2, Loader2, Eye, RefreshCw, Upload } from "lucide-react"
 
 // --- TYPES ---
 interface UserData {
@@ -3197,12 +3197,55 @@ function CustomFluxPanel() {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [jobId, mode, authHeaders])
 
+  const [loraUploading, setLoraUploading] = useState(false)
+  const [loraUploadProgress, setLoraUploadProgress] = useState(0)
+  const loraFileInputRef = useRef<HTMLInputElement>(null)
+
   const addLora = () => {
     setLoras(prev => [...prev, { id: `lora-${Date.now()}`, name: '', key: '', strength: 1.0 }])
   }
   const removeLora = (id: string) => setLoras(prev => prev.filter(l => l.id !== id))
   const updateLora = (id: string, patch: Partial<FluxLoraEntry>) =>
     setLoras(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l))
+
+  const handleLoraUpload = async (file: File) => {
+    setLoraUploading(true)
+    setLoraUploadProgress(0)
+    try {
+      // Get presigned URL
+      const presignRes = await fetch('/api/admin/onetrainer/cloud/upload', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ type: 'lora', filename: file.name, contentType: 'application/octet-stream' }),
+      })
+      if (!presignRes.ok) { setError('Failed to get upload URL'); return }
+      const { uploadUrl, key } = await presignRes.json() as { uploadUrl: string; key: string }
+
+      // Upload directly to R2
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('PUT', uploadUrl)
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+        xhr.upload.onprogress = e => { if (e.lengthComputable) setLoraUploadProgress(Math.round(e.loaded / e.total * 100)) }
+        xhr.onload  = () => xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`))
+        xhr.onerror = () => reject(new Error('Upload error'))
+        xhr.send(file)
+      })
+
+      // Add to LoRA list
+      setLoras(prev => [...prev, { id: `lora-${Date.now()}`, name: file.name, key, strength: 1.0 }])
+      // Refresh R2 list so it appears in the picker too
+      fetch('/api/admin/flux-inference/models', { headers: authHeaders })
+        .then(r => r.json())
+        .then((d: { r2: { loras: Array<{key:string;name:string}> } }) => setR2Loras(d.r2?.loras ?? []))
+        .catch(() => {})
+    } catch (e) {
+      setError(`LoRA upload failed: ${String(e)}`)
+    } finally {
+      setLoraUploading(false)
+      setLoraUploadProgress(0)
+    }
+  }
 
   const checkpoints = mode === 'local' ? comfyCheckpoints.map(n => ({ key: n, name: n })) : r2Checkpoints
   const loraOptions = mode === 'local' ? comfyLoras.map(n => ({ key: n, name: n }))     : r2Loras
@@ -3250,14 +3293,14 @@ function CustomFluxPanel() {
   const [configOpen, setConfigOpen]     = useState(false)
   const [loraOpen, setLoraOpen]         = useState(false)
   const [ckptOpen, setCkptOpen]         = useState(false)
-  const ckptRef  = useRef<HTMLDivElement>(null)
-  const loraRef  = useRef<HTMLDivElement>(null)
+  const ckptRef      = useRef<HTMLDivElement>(null)
+  const loraRef      = useRef<HTMLDivElement>(null)  // button
+  const loraPanelRef = useRef<HTMLDivElement>(null)  // panel
 
-  // Close dropdowns on outside click
+  // Close checkpoint dropdown on outside click; LoRA panel stays open until explicitly closed
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (ckptRef.current && !ckptRef.current.contains(e.target as Node)) setCkptOpen(false)
-      if (loraRef.current && !loraRef.current.contains(e.target as Node)) setLoraOpen(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -3332,8 +3375,16 @@ function CustomFluxPanel() {
 
         {/* LoRA panel — collapsible */}
         {loraOpen && (
-          <div className="rounded-xl border border-white/[0.08] bg-slate-900/90 backdrop-blur-md px-4 py-3 space-y-2">
-            <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">LoRAs</span>
+          <div ref={loraPanelRef} className="rounded-xl border border-white/[0.08] bg-slate-900/90 backdrop-blur-md px-4 py-3 space-y-2">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">LoRAs</span>
+              <button onClick={() => setLoraOpen(false)} className="text-slate-600 hover:text-slate-300 transition-colors p-0.5">
+                <X size={11} />
+              </button>
+            </div>
+
+            {/* LoRA entries */}
             {loras.map(lora => (
               <div key={lora.id} className="flex items-center gap-2">
                 <select value={lora.key}
@@ -3345,20 +3396,46 @@ function CustomFluxPanel() {
                   <option value="">— select LoRA —</option>
                   {loraOptions.map(o => <option key={o.key} value={o.key}>{o.name}</option>)}
                 </select>
-                <div className="grid grid-cols-[2.5rem_1fr] items-center gap-1.5">
-                  <span className="text-[10px] font-mono text-cyan-300 tabular-nums text-right">{lora.strength.toFixed(2)}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[10px] font-mono text-cyan-300 tabular-nums w-8 text-right">{lora.strength.toFixed(2)}</span>
                   <input type="range" min={0} max={2} step={0.05} value={lora.strength}
                     onChange={e => updateLora(lora.id, { strength: parseFloat(e.target.value) })}
                     className="w-20 accent-cyan-400 cursor-pointer h-0.5" />
                 </div>
                 <button onClick={() => removeLora(lora.id)}
-                  className="text-slate-600 hover:text-red-400 transition-colors p-1"><X size={10} /></button>
+                  className="text-slate-600 hover:text-red-400 transition-colors p-1 shrink-0"><X size={10} /></button>
               </div>
             ))}
-            <button onClick={addLora}
-              className="text-[11px] text-slate-500 hover:text-cyan-400 transition-colors flex items-center gap-1">
-              <Plus size={10} /> Add LoRA
-            </button>
+
+            {/* Upload progress */}
+            {loraUploading && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-slate-500">
+                  <span>Uploading…</span>
+                  <span>{loraUploadProgress}%</span>
+                </div>
+                <div className="h-0.5 w-full rounded-full bg-white/5 overflow-hidden">
+                  <div className="h-full bg-violet-500 transition-all duration-150 rounded-full" style={{ width: `${loraUploadProgress}%` }} />
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 pt-0.5">
+              <button onClick={addLora}
+                className="text-[11px] text-slate-500 hover:text-cyan-400 transition-colors flex items-center gap-1">
+                <Plus size={10} /> Add from list
+              </button>
+              <span className="text-slate-700 text-[10px]">·</span>
+              <button onClick={() => loraFileInputRef.current?.click()} disabled={loraUploading}
+                className="text-[11px] text-slate-500 hover:text-violet-400 transition-colors flex items-center gap-1 disabled:opacity-40">
+                <Upload size={10} /> Upload .safetensors
+              </button>
+            </div>
+
+            {/* Hidden file input */}
+            <input ref={loraFileInputRef} type="file" accept=".safetensors,.ckpt,.pt" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleLoraUpload(f); e.target.value = '' }} />
           </div>
         )}
 
