@@ -27,6 +27,7 @@ RUN ln -sf $(which tensorboard) /usr/bin/tensorboard && \
 COPY FluxModelLoader.py /workspace/OneTrainer/modules/modelLoader/flux/FluxModelLoader.py
 COPY TrainConfig.py /workspace/OneTrainer/modules/util/config/TrainConfig.py
 COPY GenericTrainer.py /workspace/OneTrainer/modules/trainer/GenericTrainer.py
+COPY single_file_utils.py /workspace/OneTrainer/src/diffusers/src/diffusers/loaders/single_file_utils.py
 COPY flux1dev_transformer_config/ /workspace/OneTrainer/flux1dev_transformer_config/
 COPY flux1dev_vae_config/ /workspace/OneTrainer/flux1dev_vae_config/
 
