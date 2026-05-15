@@ -71,12 +71,101 @@ def _download(r2, key: str, dest: str, label: str, logs: list) -> bool:
         return False
 
 
+def _handle_inference(job_id: str, inp: dict) -> dict:
+    """Run Flux image inference with optional LoRAs."""
+    import sys
+    # Use OneTrainer's bundled diffusers (has our QK-norm patch applied)
+    sys.path.insert(0, '/workspace/OneTrainer/src/diffusers/src')
+
+    import torch
+    from diffusers import FluxPipeline
+
+    logs: list = []
+    r2 = _r2()
+    bucket = os.environ['R2_BUCKET_NAME']
+    run_dir = os.path.join(WORK_DIR, job_id)
+    os.makedirs(run_dir, exist_ok=True)
+
+    prompt    = inp.get('prompt', '')
+    ckpt_key  = inp['checkpoint_r2_key']
+    loras     = inp.get('loras', [])          # [{r2_key, strength}]
+    width     = int(inp.get('width', 1024))
+    height    = int(inp.get('height', 1024))
+    steps     = int(inp.get('steps', 20))
+    guidance  = float(inp.get('guidance', 3.5))
+    seed      = inp.get('seed')               # None = random
+    out_key   = inp.get('output_r2_key') or f'inference/outputs/{job_id}.png'
+
+    logs.append(f'[inference] Starting job {job_id}')
+    _flush_logs(r2, bucket, job_id, logs)
+
+    # 1. Download checkpoint
+    ckpt_path = os.path.join(run_dir, 'checkpoint.safetensors')
+    if not _download(r2, ckpt_key, ckpt_path, 'checkpoint', logs):
+        _flush_logs(r2, bucket, job_id, logs)
+        return {'success': False, 'error': 'Checkpoint download failed', 'logs': logs}
+    _flush_logs(r2, bucket, job_id, logs)
+
+    # 2. Download LoRAs
+    lora_paths = []
+    for i, lora in enumerate(loras):
+        lora_path = os.path.join(run_dir, f'lora_{i}.safetensors')
+        if not _download(r2, lora['r2_key'], lora_path, f"LoRA {i+1}", logs):
+            _flush_logs(r2, bucket, job_id, logs)
+            return {'success': False, 'error': f"LoRA {i+1} download failed", 'logs': logs}
+        lora_paths.append({'path': lora_path, 'strength': float(lora.get('strength', 1.0))})
+        _flush_logs(r2, bucket, job_id, logs)
+
+    # 3. Load pipeline
+    logs.append('[inference] Loading Flux pipeline...')
+    _flush_logs(r2, bucket, job_id, logs)
+    pipe = FluxPipeline.from_single_file(ckpt_path, torch_dtype=torch.bfloat16).to('cuda')
+
+    # 4. Load LoRAs
+    for i, li in enumerate(lora_paths):
+        name = f'lora_{i}'
+        logs.append(f'[inference] Loading LoRA {i+1} (strength {li["strength"]})...')
+        pipe.load_lora_weights(li['path'], adapter_name=name)
+    if lora_paths:
+        names   = [f'lora_{i}' for i in range(len(lora_paths))]
+        weights = [li['strength'] for li in lora_paths]
+        pipe.set_adapters(names, adapter_weights=weights)
+        _flush_logs(r2, bucket, job_id, logs)
+
+    # 5. Generate
+    logs.append(f'[inference] Generating {width}×{height} image ({steps} steps)...')
+    _flush_logs(r2, bucket, job_id, logs)
+    gen = torch.Generator('cuda').manual_seed(int(seed)) if seed is not None else None
+    result = pipe(prompt=prompt, width=width, height=height,
+                  num_inference_steps=steps, guidance_scale=guidance, generator=gen)
+    image = result.images[0]
+
+    # 6. Upload result
+    out_path = os.path.join(run_dir, 'output.png')
+    image.save(out_path, format='PNG')
+    logs.append(f'[inference] Uploading result to R2 ({out_key})...')
+    try:
+        r2.upload_file(out_path, bucket, out_key)
+        logs.append('[inference] Done.')
+    except Exception as e:
+        return {'success': False, 'error': f'Upload failed: {e}', 'logs': logs}
+    finally:
+        _flush_logs(r2, bucket, job_id, logs)
+
+    shutil.rmtree(run_dir, ignore_errors=True)
+    return {'success': True, 'output_r2_key': out_key, 'logs': logs}
+
+
 def handler(job):
     inp      = job['input']
     job_id   = job['id']
     logs     = []
     r2       = _r2()
     t0       = time.time()
+
+    # dispatch inference jobs
+    if inp.get('action') == 'inference':
+        return _handle_inference(job['id'], inp)
 
     run_name = inp.get('run_name', 'Training Run')
     config   = dict(inp['config'])

@@ -48,6 +48,7 @@ interface ImageModelConfig {
   maxImages?: number               // if > 1, shows image count picker
   isUpscaler?: boolean             // special upscaler UI — takes image URL + params instead of prompt
   isLocalModel?: boolean           // admin-only: runs on local GPU via upscaler-server.py
+  isCustomFlux?: boolean           // admin-only: custom Flux checkpoint + LoRA inference
 }
 
 const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
@@ -72,6 +73,7 @@ const IMAGE_MODEL_CONFIGS: ImageModelConfig[] = [
   { id: "supir",                apiId: "supir",                    name: "SUPIR",               aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: false, isUpscaler: true },
   { id: "local-realesrgan",    apiId: "local-realesrgan",         name: "Real-ESRGAN (Local)",  aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: false, isUpscaler: true, isLocalModel: true },
   { id: "local-neosr",         apiId: "local-neosr",              name: "DAT-2 (Local)",         aspectRatios: ["1:1"], supportsQuality: false, maxReferenceImages: 0, isFal: false, isUpscaler: true, isLocalModel: true },
+  { id: "custom-flux-lora",    apiId: "custom-flux-lora",         name: "Custom Flux LoRA",      aspectRatios: ["1:1", "9:16", "16:9", "4:3", "3:4"], supportsQuality: false, maxReferenceImages: 0, isFal: false, isCustomFlux: true },
 ]
 
 // --- HELPERS ---
@@ -485,7 +487,7 @@ const IMAGE_MODEL_GROUPS = [
   { label: "Upscalers",         type: "enhance & enlarge images",  accent: "text-slate-400",   dot: "bg-slate-500",   items: ["Clarity Upscaler", "AuraSR", "ESRGAN", "DRCT", "SUPIR"] },
 ]
 const ADMIN_IMAGE_MODEL_GROUPS = [
-  { label: "Admin Models", type: "local · PC must be running", accent: "text-cyan-400", dot: "bg-cyan-500", items: ["Real-ESRGAN (Local)", "DAT-2 (Local)"] },
+  { label: "Admin Models", type: "local · PC must be running", accent: "text-cyan-400", dot: "bg-cyan-500", items: ["Real-ESRGAN (Local)", "DAT-2 (Local)", "Custom Flux LoRA"] },
 ]
 const VIDEO_MODEL_COST_BY_NAME: Record<string, "$" | "$$" | "$$$" | "$$$+"> = Object.fromEntries(
   VIDEO_MODEL_CONFIGS.map(m => [m.name, VIDEO_MODEL_COST[m.id] ?? "$$"])
@@ -3114,6 +3116,258 @@ function AspectRatioPicker({
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// --- CUSTOM FLUX LORA PANEL ---
+
+type FluxLoraEntry = { id: string; name: string; key: string; strength: number }
+type FluxMode = 'local' | 'runpod'
+
+function CustomFluxPanel() {
+  const [mode, setMode]               = React.useState<FluxMode>('runpod')
+  const [checkpoint, setCheckpoint]   = React.useState('')
+  const [loras, setLoras]             = React.useState<FluxLoraEntry[]>([])
+  const [prompt, setPrompt]           = React.useState('')
+  const [steps, setSteps]             = React.useState(20)
+  const [guidance, setGuidance]       = React.useState(3.5)
+  const [seed, setSeed]               = React.useState(-1)
+  const [width, setWidth]             = React.useState(1024)
+  const [height, setHeight]           = React.useState(1024)
+  const [generating, setGenerating]   = React.useState(false)
+  const [jobId, setJobId]             = React.useState<string | null>(null)
+  const [resultUrl, setResultUrl]     = React.useState<string | null>(null)
+  const [error, setError]             = React.useState<string | null>(null)
+  const [status, setStatus]           = React.useState('')
+
+  // Available models
+  const [comfyCheckpoints, setComfyCheckpoints] = React.useState<string[]>([])
+  const [comfyLoras, setComfyLoras]             = React.useState<string[]>([])
+  const [r2Checkpoints, setR2Checkpoints]       = React.useState<Array<{key:string;name:string}>>([])
+  const [r2Loras, setR2Loras]                   = React.useState<Array<{key:string;name:string}>>([])
+  const [modelsLoaded, setModelsLoaded]         = React.useState(false)
+
+  const adminPassword = typeof sessionStorage !== 'undefined' ? (sessionStorage.getItem('admin-password') ?? '') : ''
+  const authHeaders = React.useMemo(() => ({
+    'Content-Type': 'application/json',
+    ...(adminPassword ? { 'x-admin-password': adminPassword } : {}),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [])
+
+  // Load available models
+  React.useEffect(() => {
+    setModelsLoaded(false)
+    fetch('/api/admin/flux-inference/models', { headers: authHeaders })
+      .then(r => r.json())
+      .then((d: { comfy: { checkpoints: string[]; loras: string[] }; r2: { checkpoints: Array<{key:string;name:string}>; loras: Array<{key:string;name:string}> } }) => {
+        setComfyCheckpoints(d.comfy?.checkpoints ?? [])
+        setComfyLoras(d.comfy?.loras ?? [])
+        setR2Checkpoints(d.r2?.checkpoints ?? [])
+        setR2Loras(d.r2?.loras ?? [])
+        setModelsLoaded(true)
+      })
+      .catch(() => setModelsLoaded(true))
+  }, [authHeaders])
+
+  // Poll RunPod status
+  const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
+  React.useEffect(() => {
+    if (!jobId || mode !== 'runpod') return
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = setInterval(async () => {
+      try {
+        const res  = await fetch(`/api/admin/flux-inference/status?job_id=${jobId}`, { headers: authHeaders })
+        const data = await res.json() as { status: string; image_url?: string; error?: string; logs?: string[] }
+        setStatus(data.status)
+        if (data.status === 'done') {
+          clearInterval(pollRef.current!)
+          setGenerating(false)
+          setJobId(null)
+          if (data.image_url) setResultUrl(data.image_url)
+          else setError('Job done but no image URL returned')
+        } else if (data.status === 'error' || data.status === 'cancelled') {
+          clearInterval(pollRef.current!)
+          setGenerating(false)
+          setJobId(null)
+          setError(data.error ?? 'Job failed')
+        }
+      } catch { /* keep polling */ }
+    }, 4000)
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [jobId, mode, authHeaders])
+
+  const addLora = () => {
+    setLoras(prev => [...prev, { id: `lora-${Date.now()}`, name: '', key: '', strength: 1.0 }])
+  }
+  const removeLora = (id: string) => setLoras(prev => prev.filter(l => l.id !== id))
+  const updateLora = (id: string, patch: Partial<FluxLoraEntry>) =>
+    setLoras(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l))
+
+  const checkpoints = mode === 'local' ? comfyCheckpoints.map(n => ({ key: n, name: n })) : r2Checkpoints
+  const loraOptions = mode === 'local' ? comfyLoras.map(n => ({ key: n, name: n }))     : r2Loras
+
+  const canGenerate = !generating && !!checkpoint && prompt.trim().length > 0
+
+  const handleGenerate = async () => {
+    if (!canGenerate) return
+    setGenerating(true)
+    setError(null)
+    setResultUrl(null)
+    setStatus('submitting')
+
+    const body = {
+      mode,
+      prompt:     prompt.trim(),
+      checkpoint: mode === 'runpod' ? checkpoint : checkpoint,
+      loras:      loras
+        .filter(l => l.key)
+        .map(l => ({ name: l.name, key: l.key, r2_key: l.key, strength: l.strength })),
+      width, height, steps, guidance,
+      seed: seed === -1 ? null : seed,
+    }
+
+    try {
+      const res  = await fetch('/api/admin/flux-inference/generate', {
+        method: 'POST', headers: authHeaders, body: JSON.stringify(body),
+      })
+      const data = await res.json() as { mode: string; job_id?: string; image_data_url?: string; error?: string; seed?: number }
+      if (!res.ok || data.error) { setError(data.error ?? 'Generation failed'); setGenerating(false); return }
+
+      if (data.mode === 'local' && data.image_data_url) {
+        setResultUrl(data.image_data_url)
+        setGenerating(false)
+      } else if (data.mode === 'runpod' && data.job_id) {
+        setJobId(data.job_id)
+        setStatus('running')
+      }
+    } catch (e) {
+      setError(String(e))
+      setGenerating(false)
+    }
+  }
+
+  const inputCls = "w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-white/30"
+  const labelCls = "block text-[11px] font-medium text-slate-400 mb-1"
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-30 bg-[#0a0a0f]/95 backdrop-blur-xl border-t border-white/10">
+      <div className="max-w-4xl mx-auto px-4 py-4 space-y-3">
+
+        {/* Header row */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">Custom Flux LoRA</span>
+          <div className="flex rounded-lg overflow-hidden border border-white/10 text-[11px]">
+            {(['local', 'runpod'] as FluxMode[]).map(m => (
+              <button key={m} onClick={() => { setMode(m); setCheckpoint(''); setLoras([]); setResultUrl(null); setError(null) }}
+                className={`px-3 py-1 font-medium transition-colors ${mode === m ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-white'}`}>
+                {m === 'local' ? 'Local (ComfyUI)' : 'RunPod'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto]">
+          {/* Checkpoint picker */}
+          <div>
+            <label className={labelCls}>Checkpoint</label>
+            {!modelsLoaded ? (
+              <div className="text-xs text-slate-500 py-2">Loading...</div>
+            ) : checkpoints.length === 0 ? (
+              <div className="text-xs text-slate-500 py-2">
+                {mode === 'local' ? 'ComfyUI not running or no checkpoints found' : 'No checkpoints found in R2 training/checkpoints/'}
+              </div>
+            ) : (
+              <select value={checkpoint} onChange={e => setCheckpoint(e.target.value)}
+                className={inputCls + ' cursor-pointer'}>
+                <option value="">— select checkpoint —</option>
+                {checkpoints.map(c => <option key={c.key} value={c.key}>{c.name}</option>)}
+              </select>
+            )}
+          </div>
+
+          {/* Prompt */}
+          <div>
+            <label className={labelCls}>Prompt</label>
+            <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={2}
+              placeholder="Describe the image..."
+              className={inputCls + ' resize-none'} />
+          </div>
+
+          {/* Generate button */}
+          <div className="flex items-end">
+            <button onClick={handleGenerate} disabled={!canGenerate}
+              className="w-full md:w-auto px-5 py-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed text-black text-sm font-bold transition-colors whitespace-nowrap">
+              {generating ? (mode === 'runpod' ? `${status}…` : 'Generating…') : 'Generate'}
+            </button>
+          </div>
+        </div>
+
+        {/* LoRA list */}
+        <div className="space-y-2">
+          {loras.map(lora => (
+            <div key={lora.id} className="flex items-center gap-2">
+              <select value={lora.key}
+                onChange={e => {
+                  const opt = loraOptions.find(o => o.key === e.target.value)
+                  updateLora(lora.id, { key: e.target.value, name: opt?.name ?? e.target.value })
+                }}
+                className="flex-1 bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-white/30 cursor-pointer">
+                <option value="">— select LoRA —</option>
+                {loraOptions.map(o => <option key={o.key} value={o.key}>{o.name}</option>)}
+              </select>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-500 w-14">str {lora.strength.toFixed(2)}</span>
+                <input type="range" min={0} max={2} step={0.05} value={lora.strength}
+                  onChange={e => updateLora(lora.id, { strength: parseFloat(e.target.value) })}
+                  className="w-24 accent-cyan-400" />
+              </div>
+              <button onClick={() => removeLora(lora.id)} className="text-slate-500 hover:text-red-400 transition-colors text-xs px-1">×</button>
+            </div>
+          ))}
+          <button onClick={addLora} className="text-[11px] text-slate-500 hover:text-cyan-400 transition-colors">
+            + Add LoRA
+          </button>
+        </div>
+
+        {/* Params row */}
+        <div className="flex flex-wrap gap-4 text-[11px]">
+          {[
+            { label: 'Steps',    value: steps,    min: 1,  max: 50,   step: 1,   set: setSteps,    fmt: (v: number) => v },
+            { label: 'Guidance', value: guidance, min: 1,  max: 10,   step: 0.5, set: setGuidance, fmt: (v: number) => v.toFixed(1) },
+            { label: 'Width',    value: width,    min: 512, max: 2048, step: 64,  set: setWidth,    fmt: (v: number) => v },
+            { label: 'Height',   value: height,   min: 512, max: 2048, step: 64,  set: setHeight,   fmt: (v: number) => v },
+          ].map(({ label, value, min, max, step, set, fmt }) => (
+            <div key={label} className="flex items-center gap-2">
+              <span className="text-slate-500 w-14">{label}: <span className="text-white">{fmt(value)}</span></span>
+              <input type="range" min={min} max={max} step={step} value={value}
+                onChange={e => set(parseFloat(e.target.value) as never)}
+                className="w-24 accent-cyan-400" />
+            </div>
+          ))}
+          <div className="flex items-center gap-2">
+            <span className="text-slate-500">Seed:</span>
+            <input type="number" value={seed === -1 ? '' : seed} placeholder="random"
+              onChange={e => setSeed(e.target.value === '' ? -1 : parseInt(e.target.value))}
+              className="w-24 bg-black/40 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none" />
+          </div>
+        </div>
+
+        {/* Error */}
+        {error && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</div>}
+
+        {/* Result */}
+        {resultUrl && (
+          <div className="flex items-start gap-3">
+            <img src={resultUrl} alt="Generated" className="rounded-lg max-h-64 border border-white/10 object-contain" />
+            <div className="flex flex-col gap-2">
+              <a href={resultUrl} download="flux-output.png" target="_blank" rel="noreferrer"
+                className="text-xs text-cyan-400 hover:text-cyan-300 underline">Download</a>
+              <button onClick={() => setResultUrl(null)} className="text-xs text-slate-500 hover:text-white">Clear</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -8654,7 +8908,10 @@ export default function PortalV2Page() {
               onSelectToggle={handleSelectToggle}
             />
           </div>
-          {/* Image prompt box */}
+          {/* Custom Flux LoRA panel — replaces PromptBox for that model */}
+          {selectedModel.isCustomFlux ? (
+            <CustomFluxPanel />
+          ) : (
           <PromptBox
             model={selectedModel}
             onModelChange={setSelectedModel}
@@ -8683,6 +8940,7 @@ export default function PortalV2Page() {
             isGenerationMaintenance={isGenerationMaintenance && !isAdminAccount && !isAuditAccount}
             isAdminAccount={isAdminAccount}
           />
+          )}
         </>
       ) : !user ? (
         /* Video — not signed in */
