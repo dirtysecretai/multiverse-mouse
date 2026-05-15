@@ -26,6 +26,7 @@ RUN ln -sf $(which tensorboard) /usr/bin/tensorboard && \
 # Override with our customized/patched files
 COPY FluxModelLoader.py /workspace/OneTrainer/modules/modelLoader/flux/FluxModelLoader.py
 COPY TrainConfig.py /workspace/OneTrainer/modules/util/config/TrainConfig.py
+COPY GenericTrainer.py /workspace/OneTrainer/modules/trainer/GenericTrainer.py
 COPY flux1dev_transformer_config/ /workspace/OneTrainer/flux1dev_transformer_config/
 COPY flux1dev_vae_config/ /workspace/OneTrainer/flux1dev_vae_config/
 
