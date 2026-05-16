@@ -185,25 +185,25 @@ def _handle_inference(job_id: str, inp: dict) -> dict:
         t5 = t5.to(torch.bfloat16)
         tokenizer_2 = AutoTokenizer.from_pretrained('google/t5-v1_1-xxl')
 
-        # VAE
+        # Local config dirs bundled in the Docker image — no HF token needed
+        _ot_root         = '/workspace/OneTrainer/OneTrainer'
+        _vae_cfg_dir     = os.path.join(_ot_root, 'flux1dev_vae_config')
+        _trans_cfg_dir   = os.path.join(_ot_root, 'flux1dev_transformer_config')
+
+        # VAE — pass local config dir so from_single_file never hits HF
         logs.append('[inference] Loading VAE...')
-        try:
-            vae = AutoencoderKL.from_single_file(vae_path, torch_dtype=torch.bfloat16)
-        except Exception as _vae_err:
-            logs.append(f'[inference] VAE from_single_file failed ({_vae_err}), loading from HF...')
-            _flush_logs(r2, bucket, job_id, logs)
-            vae = AutoencoderKL.from_pretrained(
-                'black-forest-labs/FLUX.1-schnell', subfolder='vae', torch_dtype=torch.bfloat16
-            )
+        vae = AutoencoderKL.from_single_file(vae_path, config=_vae_cfg_dir, torch_dtype=torch.bfloat16)
 
         # Transformer from the custom checkpoint
         logs.append('[inference] Loading transformer from checkpoint...')
         _flush_logs(r2, bucket, job_id, logs)
-        transformer = FluxTransformer2DModel.from_single_file(ckpt_path, torch_dtype=torch.bfloat16)
+        transformer = FluxTransformer2DModel.from_single_file(
+            ckpt_path, config=_trans_cfg_dir, torch_dtype=torch.bfloat16
+        )
 
-        # Scheduler config (tiny JSON — downloaded from HF, cached)
-        scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
-            'black-forest-labs/FLUX.1-schnell', subfolder='scheduler'
+        # Scheduler — hardcode Flux Dev params, no HF download needed
+        scheduler = FlowMatchEulerDiscreteScheduler(
+            num_train_timesteps=1000, shift=3.0, use_dynamic_shifting=True
         )
 
         logs.append('[inference] Assembling FluxPipeline from components...')
