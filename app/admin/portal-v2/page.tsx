@@ -8138,7 +8138,7 @@ export default function PortalV2Page() {
       if (pollInFlight) return
       pollInFlight = true
       pollCount++
-      if (pollCount > 48) {
+      if (pollCount > 360) {
         clearInterval(interval)
         delete nb2PollingIntervals.current[requestId]
         if (ticketCost > 0) {
