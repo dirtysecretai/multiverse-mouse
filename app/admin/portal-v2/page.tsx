@@ -3257,8 +3257,11 @@ function CustomFluxPanel({
     }
 
     try {
+      const pass = typeof sessionStorage !== 'undefined' ? (sessionStorage.getItem('admin-password') ?? '') : ''
       const res  = await fetch('/api/admin/flux-inference/generate', {
-        method: 'POST', headers: authHeaders, body: JSON.stringify(body),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(pass ? { 'x-admin-password': pass } : {}) },
+        body: JSON.stringify(body),
       })
       const data = await res.json() as { mode: string; job_id?: string; image_data_url?: string; error?: string; seed?: number }
       if (!res.ok || data.error) { setError(data.error ?? 'Generation failed'); setGenerating(false); return }
