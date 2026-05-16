@@ -3156,15 +3156,18 @@ function CustomFluxPanel({
   const [r2Loras, setR2Loras]                   = useState<Array<{key:string;name:string}>>([])
   const [modelsLoaded, setModelsLoaded]         = useState(false)
 
-  const adminPassword = typeof sessionStorage !== 'undefined' ? (sessionStorage.getItem('admin-password') ?? '') : ''
+  // sessionStorage is unavailable during SSR — read it in useEffect so the
+  // auth header is set on the client after mount, not on the server.
+  const [adminPassword, setAdminPassword] = useState('')
+  useEffect(() => {
+    setAdminPassword(sessionStorage.getItem('admin-password') ?? '')
+  }, [])
   const authHeaders = useMemo(() => ({
     'Content-Type': 'application/json',
     ...(adminPassword ? { 'x-admin-password': adminPassword } : {}),
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [])
+  }), [adminPassword])
 
-  // Load available models
-  useEffect(() => {
+  const refreshModels = useCallback(() => {
     setModelsLoaded(false)
     fetch('/api/admin/flux-inference/models', { headers: authHeaders })
       .then(r => r.json())
@@ -3177,6 +3180,9 @@ function CustomFluxPanel({
       })
       .catch(() => setModelsLoaded(true))
   }, [authHeaders])
+
+  // Load available models on mount
+  useEffect(() => { refreshModels() }, [refreshModels])
 
   // RunPod polling is handled by the parent via onStartNb2Polling
 
@@ -3493,8 +3499,13 @@ function CustomFluxPanel({
                   {!modelsLoaded ? (
                     <div className="px-3 py-2 text-[11px] text-slate-500">Loading...</div>
                   ) : checkpoints.length === 0 ? (
-                    <div className="px-3 py-2 text-[11px] text-slate-500">
-                      {mode === 'local' ? 'ComfyUI not running' : 'No checkpoints in R2'}
+                    <div className="px-3 py-2 text-[11px] text-slate-500 flex items-center justify-between gap-2">
+                      <span>{mode === 'local' ? 'ComfyUI not running' : 'No checkpoints in R2'}</span>
+                      {mode === 'runpod' && (
+                        <button onClick={refreshModels} className="text-slate-500 hover:text-white transition-colors" title="Refresh">
+                          <RefreshCw size={11} />
+                        </button>
+                      )}
                     </div>
                   ) : checkpoints.map(c => (
                     <button key={c.key} onClick={() => { setCheckpoint(c.key); setCkptOpen(false) }}
