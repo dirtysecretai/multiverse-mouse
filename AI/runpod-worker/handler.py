@@ -187,7 +187,14 @@ def _handle_inference(job_id: str, inp: dict) -> dict:
 
         # VAE
         logs.append('[inference] Loading VAE...')
-        vae = AutoencoderKL.from_single_file(vae_path, torch_dtype=torch.bfloat16)
+        try:
+            vae = AutoencoderKL.from_single_file(vae_path, torch_dtype=torch.bfloat16)
+        except Exception as _vae_err:
+            logs.append(f'[inference] VAE from_single_file failed ({_vae_err}), loading from HF...')
+            _flush_logs(r2, bucket, job_id, logs)
+            vae = AutoencoderKL.from_pretrained(
+                'black-forest-labs/FLUX.1-schnell', subfolder='vae', torch_dtype=torch.bfloat16
+            )
 
         # Transformer from the custom checkpoint
         logs.append('[inference] Loading transformer from checkpoint...')
