@@ -4,12 +4,6 @@ const RUNPOD_API   = 'https://api.runpod.ai/v2'
 const COMFYUI_URL  = 'http://localhost:8188'
 const POLL_TIMEOUT = 120_000 // 2 min max for ComfyUI poll
 
-function checkAuth(req: Request) {
-  const pass = process.env.ADMIN_PASSWORD
-  if (!pass) return true
-  return req.headers.get('x-admin-password') === pass
-}
-
 // Build a ComfyUI API-format workflow for Flux + optional LoRAs
 function buildFluxWorkflow(opts: {
   checkpoint: string
@@ -137,8 +131,6 @@ async function pollComfyHistory(promptId: string): Promise<{ filename: string; s
 }
 
 export async function POST(req: Request) {
-  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   let body: {
     mode: 'local' | 'runpod'
     prompt: string
