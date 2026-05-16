@@ -3167,18 +3167,29 @@ function CustomFluxPanel({
     ...(adminPassword ? { 'x-admin-password': adminPassword } : {}),
   }), [adminPassword])
 
+  const [modelsError, setModelsError] = useState<string | null>(null)
+
   const refreshModels = useCallback(() => {
     setModelsLoaded(false)
-    fetch('/api/admin/flux-inference/models', { headers: authHeaders })
+    setModelsError(null)
+    const ctrl = new AbortController()
+    const tid = setTimeout(() => ctrl.abort(), 12000)
+    fetch('/api/admin/flux-inference/models', { headers: authHeaders, signal: ctrl.signal })
       .then(r => r.json())
-      .then((d: { comfy: { checkpoints: string[]; loras: string[] }; r2: { checkpoints: Array<{key:string;name:string}>; loras: Array<{key:string;name:string}> } }) => {
+      .then((d: { comfy: { checkpoints: string[]; loras: string[] }; r2: { checkpoints: Array<{key:string;name:string}>; loras: Array<{key:string;name:string}>; missingEnv?: string[] } }) => {
         setComfyCheckpoints(d.comfy?.checkpoints ?? [])
         setComfyLoras(d.comfy?.loras ?? [])
         setR2Checkpoints(d.r2?.checkpoints ?? [])
         setR2Loras(d.r2?.loras ?? [])
+        if (d.r2?.missingEnv?.length) setModelsError(`Missing env: ${d.r2.missingEnv.join(', ')}`)
+        if ((d as { error?: string }).error) setModelsError((d as { error?: string }).error ?? null)
         setModelsLoaded(true)
       })
-      .catch(() => setModelsLoaded(true))
+      .catch((e: unknown) => {
+        setModelsError(e instanceof Error && e.name === 'AbortError' ? 'Request timed out' : String(e))
+        setModelsLoaded(true)
+      })
+      .finally(() => clearTimeout(tid))
   }, [authHeaders])
 
   // Load available models on mount
@@ -3497,7 +3508,14 @@ function CustomFluxPanel({
               {ckptOpen && (
                 <div className="absolute bottom-full mb-1.5 left-0 z-50 min-w-[260px] rounded-xl bg-[#0e1018] border border-white/10 shadow-2xl overflow-hidden py-1 max-h-64 overflow-y-auto">
                   {!modelsLoaded ? (
-                    <div className="px-3 py-2 text-[11px] text-slate-500">Loading...</div>
+                    <div className="px-3 py-2 text-[11px] text-slate-500 flex items-center gap-2">
+                      <Loader2 size={11} className="animate-spin shrink-0" />Loading...
+                    </div>
+                  ) : modelsError ? (
+                    <div className="px-3 py-2 space-y-1">
+                      <div className="text-[11px] text-red-400 break-all">{modelsError}</div>
+                      <button onClick={refreshModels} className="text-[10px] text-slate-500 hover:text-white flex items-center gap-1"><RefreshCw size={10} />Retry</button>
+                    </div>
                   ) : checkpoints.length === 0 ? (
                     <div className="px-3 py-2 text-[11px] text-slate-500 flex items-center justify-between gap-2">
                       <span>{mode === 'local' ? 'ComfyUI not running' : 'No checkpoints in R2'}</span>
