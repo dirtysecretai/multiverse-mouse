@@ -3199,11 +3199,13 @@ function CustomFluxPanel({
   const handleLoraUpload = async (file: File) => {
     setLoraUploading(true)
     setLoraUploadProgress(0)
+    const pass = typeof sessionStorage !== 'undefined' ? (sessionStorage.getItem('admin-password') ?? '') : ''
+    const uploadAuthHeaders: Record<string, string> = { 'Content-Type': 'application/json', ...(pass ? { 'x-admin-password': pass } : {}) }
     try {
       // Get presigned URL
       const presignRes = await fetch('/api/admin/onetrainer/cloud/upload', {
         method: 'POST',
-        headers: authHeaders,
+        headers: uploadAuthHeaders,
         body: JSON.stringify({ type: 'lora', filename: file.name, contentType: 'application/octet-stream' }),
       })
       if (!presignRes.ok) { setError('Failed to get upload URL'); return }
@@ -3220,13 +3222,9 @@ function CustomFluxPanel({
         xhr.send(file)
       })
 
-      // Add to LoRA list
+      // Add to LoRA list and refresh picker
       setLoras(prev => [...prev, { id: `lora-${Date.now()}`, name: file.name, key, strength: 1.0 }])
-      // Refresh R2 list so it appears in the picker too
-      fetch('/api/admin/flux-inference/models', { headers: authHeaders })
-        .then(r => r.json())
-        .then((d: { r2: { loras: Array<{key:string;name:string}> } }) => setR2Loras(d.r2?.loras ?? []))
-        .catch(() => {})
+      refreshModels()
     } catch (e) {
       setError(`LoRA upload failed: ${String(e)}`)
     } finally {
