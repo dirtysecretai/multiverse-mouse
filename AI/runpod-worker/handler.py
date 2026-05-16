@@ -71,42 +71,54 @@ def _download(r2, key: str, dest: str, label: str, logs: list) -> bool:
         return False
 
 
+INFERENCE_CACHE = '/workspace/inference_cache'
+
+
 def _handle_inference(job_id: str, inp: dict) -> dict:
     """Run Flux image inference with optional LoRAs."""
-    import sys
-    # Use OneTrainer's bundled diffusers (has our QK-norm patch applied)
+    # OneTrainer's bundled diffusers has the QK-norm patch for transformer-only checkpoints
     sys.path.insert(0, '/workspace/OneTrainer/src/diffusers/src')
 
     import torch
-    from diffusers import FluxPipeline
+    from diffusers import (FluxPipeline, FluxTransformer2DModel,
+                           AutoencoderKL, FlowMatchEulerDiscreteScheduler)
+    from transformers import CLIPTextModel, CLIPTokenizer, T5EncoderModel, T5Config, AutoTokenizer
 
     logs: list = []
-    r2 = _r2()
+    r2     = _r2()
     bucket = os.environ['R2_BUCKET_NAME']
     run_dir = os.path.join(WORK_DIR, job_id)
     os.makedirs(run_dir, exist_ok=True)
+    os.makedirs(INFERENCE_CACHE, exist_ok=True)
+    os.makedirs(MODELS_DIR, exist_ok=True)
 
-    prompt    = inp.get('prompt', '')
-    ckpt_key  = inp['checkpoint_r2_key']
-    loras     = inp.get('loras', [])          # [{r2_key, strength}]
-    width     = int(inp.get('width', 1024))
-    height    = int(inp.get('height', 1024))
-    steps     = int(inp.get('steps', 20))
-    guidance  = float(inp.get('guidance', 3.5))
-    seed      = inp.get('seed')               # None = random
-    out_key   = inp.get('output_r2_key') or f'inference/outputs/{job_id}.png'
+    prompt   = inp.get('prompt', '')
+    ckpt_key = inp['checkpoint_r2_key']
+    loras    = inp.get('loras', [])
+    width    = int(inp.get('width', 1024))
+    height   = int(inp.get('height', 1024))
+    steps    = int(inp.get('steps', 20))
+    guidance = float(inp.get('guidance', 3.5))
+    seed     = inp.get('seed')
+    out_key  = inp.get('output_r2_key') or f'inference/outputs/{job_id}.png'
 
     logs.append(f'[inference] Starting job {job_id}')
     _flush_logs(r2, bucket, job_id, logs)
 
-    # 1. Download checkpoint
-    ckpt_path = os.path.join(run_dir, 'checkpoint.safetensors')
-    if not _download(r2, ckpt_key, ckpt_path, 'checkpoint', logs):
+    # 1. Checkpoint — cached by filename so warm workers skip the download
+    ckpt_filename = ckpt_key.split('/')[-1]
+    ckpt_path = os.path.join(INFERENCE_CACHE, ckpt_filename)
+    if not os.path.exists(ckpt_path):
+        logs.append(f'[inference] Downloading checkpoint {ckpt_filename}...')
         _flush_logs(r2, bucket, job_id, logs)
-        return {'success': False, 'error': 'Checkpoint download failed', 'logs': logs}
+        if not _download(r2, ckpt_key, ckpt_path, 'checkpoint', logs):
+            _flush_logs(r2, bucket, job_id, logs)
+            return {'success': False, 'error': 'Checkpoint download failed', 'logs': logs}
+    else:
+        logs.append(f'[inference] Checkpoint cached: {ckpt_filename}')
     _flush_logs(r2, bucket, job_id, logs)
 
-    # 2. Download LoRAs
+    # 2. LoRAs (job-specific, not cached)
     lora_paths = []
     for i, lora in enumerate(loras):
         lora_path = os.path.join(run_dir, f'lora_{i}.safetensors')
@@ -114,24 +126,93 @@ def _handle_inference(job_id: str, inp: dict) -> dict:
             _flush_logs(r2, bucket, job_id, logs)
             return {'success': False, 'error': f"LoRA {i+1} download failed", 'logs': logs}
         lora_paths.append({'path': lora_path, 'strength': float(lora.get('strength', 1.0))})
-        _flush_logs(r2, bucket, job_id, logs)
+    _flush_logs(r2, bucket, job_id, logs)
 
     # 3. Load pipeline
     logs.append('[inference] Loading Flux pipeline...')
     _flush_logs(r2, bucket, job_id, logs)
+
     try:
+        # Happy path: checkpoint includes all components
         pipe = FluxPipeline.from_single_file(ckpt_path, torch_dtype=torch.bfloat16)
-    except Exception as _e:
-        if 'CLIPTextModel' in str(_e):
-            # Some Flux checkpoints don't bundle CLIP — load it separately from HuggingFace
-            logs.append('[inference] CLIP not in checkpoint — loading openai/clip-vit-large-patch14...')
-            _flush_logs(r2, bucket, job_id, logs)
-            from transformers import CLIPTextModel
-            _clip = CLIPTextModel.from_pretrained('openai/clip-vit-large-patch14', torch_dtype=torch.bfloat16)
-            pipe = FluxPipeline.from_single_file(ckpt_path, text_encoder=_clip, torch_dtype=torch.bfloat16)
-        else:
-            raise
+        logs.append('[inference] Full pipeline loaded from checkpoint.')
+
+    except Exception as _first_err:
+        _COMPONENT_ERRORS = ('CLIPTextModel', 'AutoencoderKL', 'T5EncoderModel', 'SingleFileComponentError')
+        if not any(x in str(_first_err) for x in _COMPONENT_ERRORS):
+            raise  # unexpected error — surface it
+
+        # Transformer-only checkpoint (common with community Flux models).
+        # The same CLIP/T5/VAE files used for training are already in R2 under training/models/.
+        logs.append('[inference] Checkpoint is transformer-only — fetching CLIP/T5/VAE from R2...')
+        _flush_logs(r2, bucket, job_id, logs)
+
+        clip_path = os.path.join(MODELS_DIR, 'clip_l.safetensors')
+        t5_path   = os.path.join(MODELS_DIR, 't5xxl_fp8_e4m3fn.safetensors')
+        vae_path  = os.path.join(MODELS_DIR, 'flux_vae.safetensors')
+
+        for _r2key, _local, _label in [
+            ('training/models/clip_l.safetensors',            clip_path, 'CLIP'),
+            ('training/models/t5xxl_fp8_e4m3fn.safetensors',  t5_path,   'T5'),
+            ('training/models/flux_vae.safetensors',           vae_path,  'VAE'),
+        ]:
+            if not os.path.exists(_local):
+                logs.append(f'[inference] Downloading {_label}...')
+                if not _download(r2, _r2key, _local, _label, logs):
+                    _flush_logs(r2, bucket, job_id, logs)
+                    return {'success': False, 'error': f'{_label} download failed', 'logs': logs}
+            else:
+                logs.append(f'[inference] {_label} cached')
+        _flush_logs(r2, bucket, job_id, logs)
+
+        # CLIP text encoder
+        logs.append('[inference] Loading CLIP...')
+        try:
+            clip = CLIPTextModel.from_single_file(clip_path, torch_dtype=torch.bfloat16)
+        except Exception:
+            clip = CLIPTextModel.from_pretrained('openai/clip-vit-large-patch14', torch_dtype=torch.bfloat16)
+        tokenizer = CLIPTokenizer.from_pretrained('openai/clip-vit-large-patch14')
+
+        # T5 text encoder — fp8 file, convert weights to bfloat16 at load time
+        logs.append('[inference] Loading T5 (fp8 → bf16)...')
+        _flush_logs(r2, bucket, job_id, logs)
+        from safetensors.torch import load_file as _sf_load
+        _t5_sd = _sf_load(t5_path)
+        _t5_sd = {k: v.to(torch.bfloat16) for k, v in _t5_sd.items()}
+        _t5_cfg = T5Config.from_pretrained('google/t5-v1_1-xxl')
+        t5 = T5EncoderModel(_t5_cfg)
+        t5.load_state_dict(_t5_sd, strict=False)
+        t5 = t5.to(torch.bfloat16)
+        tokenizer_2 = AutoTokenizer.from_pretrained('google/t5-v1_1-xxl')
+
+        # VAE
+        logs.append('[inference] Loading VAE...')
+        vae = AutoencoderKL.from_single_file(vae_path, torch_dtype=torch.bfloat16)
+
+        # Transformer from the custom checkpoint
+        logs.append('[inference] Loading transformer from checkpoint...')
+        _flush_logs(r2, bucket, job_id, logs)
+        transformer = FluxTransformer2DModel.from_single_file(ckpt_path, torch_dtype=torch.bfloat16)
+
+        # Scheduler config (tiny JSON — downloaded from HF, cached)
+        scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+            'black-forest-labs/FLUX.1-schnell', subfolder='scheduler'
+        )
+
+        logs.append('[inference] Assembling FluxPipeline from components...')
+        pipe = FluxPipeline(
+            scheduler=scheduler,
+            text_encoder=clip,
+            tokenizer=tokenizer,
+            text_encoder_2=t5,
+            tokenizer_2=tokenizer_2,
+            vae=vae,
+            transformer=transformer,
+        )
+
     pipe = pipe.to('cuda')
+    logs.append('[inference] Pipeline ready.')
+    _flush_logs(r2, bucket, job_id, logs)
 
     # 4. Load LoRAs
     for i, li in enumerate(lora_paths):
@@ -142,10 +223,10 @@ def _handle_inference(job_id: str, inp: dict) -> dict:
         names   = [f'lora_{i}' for i in range(len(lora_paths))]
         weights = [li['strength'] for li in lora_paths]
         pipe.set_adapters(names, adapter_weights=weights)
-        _flush_logs(r2, bucket, job_id, logs)
+    _flush_logs(r2, bucket, job_id, logs)
 
     # 5. Generate
-    logs.append(f'[inference] Generating {width}×{height} image ({steps} steps)...')
+    logs.append(f'[inference] Generating {width}×{height} ({steps} steps)...')
     _flush_logs(r2, bucket, job_id, logs)
     gen = torch.Generator('cuda').manual_seed(int(seed)) if seed is not None else None
     result = pipe(prompt=prompt, width=width, height=height,
@@ -155,7 +236,7 @@ def _handle_inference(job_id: str, inp: dict) -> dict:
     # 6. Upload result
     out_path = os.path.join(run_dir, 'output.png')
     image.save(out_path, format='PNG')
-    logs.append(f'[inference] Uploading result to R2 ({out_key})...')
+    logs.append(f'[inference] Uploading to R2 ({out_key})...')
     try:
         r2.upload_file(out_path, bucket, out_key)
         logs.append('[inference] Done.')
