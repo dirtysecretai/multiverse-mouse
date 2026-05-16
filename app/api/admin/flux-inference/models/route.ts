@@ -3,12 +3,6 @@ import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3'
 
 const COMFYUI_URL = 'http://localhost:8188'
 
-function checkAuth(req: Request) {
-  const pass = process.env.ADMIN_PASSWORD
-  if (!pass) return true
-  return req.headers.get('x-admin-password') === pass
-}
-
 function makeR2() {
   return new S3Client({
     region:   'auto',
@@ -65,9 +59,7 @@ async function listComfyModels(nodeType: string): Promise<string[]> {
   } catch { return [] }
 }
 
-export async function GET(req: Request) {
-  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
+export async function GET() {
   const missingEnv = ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME']
     .filter(k => !process.env[k])
 

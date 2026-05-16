@@ -3156,17 +3156,6 @@ function CustomFluxPanel({
   const [r2Loras, setR2Loras]                   = useState<Array<{key:string;name:string}>>([])
   const [modelsLoaded, setModelsLoaded]         = useState(false)
 
-  // sessionStorage is unavailable during SSR — read it in useEffect so the
-  // auth header is set on the client after mount, not on the server.
-  const [adminPassword, setAdminPassword] = useState('')
-  useEffect(() => {
-    setAdminPassword(sessionStorage.getItem('admin-password') ?? '')
-  }, [])
-  const authHeaders = useMemo(() => ({
-    'Content-Type': 'application/json',
-    ...(adminPassword ? { 'x-admin-password': adminPassword } : {}),
-  }), [adminPassword])
-
   const [modelsError, setModelsError] = useState<string | null>(null)
 
   const refreshModels = useCallback(() => {
@@ -3174,7 +3163,7 @@ function CustomFluxPanel({
     setModelsError(null)
     const ctrl = new AbortController()
     const tid = setTimeout(() => ctrl.abort(), 12000)
-    fetch('/api/admin/flux-inference/models', { headers: authHeaders, signal: ctrl.signal })
+    fetch('/api/admin/flux-inference/models', { signal: ctrl.signal })
       .then(r => r.json())
       .then((d: { comfy: { checkpoints: string[]; loras: string[] }; r2: { checkpoints: Array<{key:string;name:string}>; loras: Array<{key:string;name:string}>; missingEnv?: string[] } }) => {
         setComfyCheckpoints(d.comfy?.checkpoints ?? [])
@@ -3182,7 +3171,6 @@ function CustomFluxPanel({
         setR2Checkpoints(d.r2?.checkpoints ?? [])
         setR2Loras(d.r2?.loras ?? [])
         if (d.r2?.missingEnv?.length) setModelsError(`Missing env: ${d.r2.missingEnv.join(', ')}`)
-        if ((d as { error?: string }).error) setModelsError((d as { error?: string }).error ?? null)
         setModelsLoaded(true)
       })
       .catch((e: unknown) => {
@@ -3190,7 +3178,7 @@ function CustomFluxPanel({
         setModelsLoaded(true)
       })
       .finally(() => clearTimeout(tid))
-  }, [authHeaders])
+  }, [])
 
   // Load available models on mount
   useEffect(() => { refreshModels() }, [refreshModels])
